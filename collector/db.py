@@ -702,7 +702,9 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                     like_dislike_ratio = None
                     views = video_data.get("view_count", 0)
                     likes = video_data.get("like_count", 0)
-                    dislikes = video_data.get("estimated_dislikes", 0)
+                    dislikes = video_data.get("estimated_dislikes")
+                    if dislikes is None:
+                        dislikes = 0
 
                     if views > 0:
                         like_dislike_ratio = (likes - dislikes) / views
@@ -733,7 +735,7 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                             video_data.get("upload_date"),
                             video_data.get("thumbnail"),
                             video_data.get("uploader"),
-                            video_data.get("uploader_id"),
+                            video_data.get("uploader_id") or None,
                             features.get("original_artist"),
                             features.get("featured_artists"),
                             features.get("song_title"),
