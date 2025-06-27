@@ -56,7 +56,7 @@ def test_database_schema_version():
             version = con.execute(
                 "SELECT version FROM schema_info ORDER BY version DESC LIMIT 1"
             ).fetchone()[0]
-            assert version == 4, f"Expected schema version 4, got {version}"
+            assert version == 7, f"Expected schema version 7, got {version}"
     finally:
         if db_path.exists():
             db_path.unlink()
@@ -181,3 +181,23 @@ def test_pool_settings_applied(tmp_path):
     dbm = DatabaseManager(cfg)
     assert dbm._max_pool_size == 3
     assert dbm._pool_timeout == 5.0
+
+
+def test_migrations_applied(tmp_path):
+    """Ensure migrations 5-7 apply correctly on new setup."""
+    db_path = tmp_path / "migrations.db"
+
+    DatabaseManager(DatabaseConfig(path=str(db_path), backup_enabled=False))
+
+    with sqlite3.connect(db_path) as con:
+        versions = {row[0] for row in con.execute("SELECT version FROM schema_info").fetchall()}
+        assert {5, 6, 7}.issubset(versions)
+
+        # Migration 6 adds additional MusicBrainz columns
+        columns = {row[1] for row in con.execute("PRAGMA table_info(videos)")}
+        assert "record_label" in columns
+        assert "recording_length_ms" in columns
+
+        # Migration 7 introduces search cache table
+        tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert "search_cache" in tables
