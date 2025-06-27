@@ -1,0 +1,2 @@
+collector
+karaoke_video_collector
