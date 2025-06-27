@@ -44,7 +44,9 @@ except ImportError:  # pragma: no cover - optional dependency
     class AsyncClientWithForceClose(httpx.AsyncClient):  # type: ignore
         async def force_close(self) -> None:  # pragma: no cover - httpx missing
             pass
+
 else:
+
     class AsyncClientWithForceClose(httpx.AsyncClient):  # type: ignore
         async def force_close(self) -> None:  # pragma: no cover - depends on httpx internals
             transport = getattr(self, "_transport", None)

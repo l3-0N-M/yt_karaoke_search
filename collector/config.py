@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 try:
     import yaml  # type: ignore
+
     YamlError = getattr(yaml, "YAMLError", Exception)
 except ImportError:  # pragma: no cover - optional dependency
     import json
