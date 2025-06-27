@@ -124,11 +124,6 @@ def cli():
 def collect(config, queries, max_per_query, output_db, verbose, dry_run, multi_strategy):
     """Collect karaoke videos from YouTube."""
 
-    # Setup logging
-    log_level = logging.DEBUG if verbose else logging.INFO
-    setup_logging(level=log_level)
-
-    # Load configuration
     if config:
         collector_config = load_config(config)
     else:
@@ -141,6 +136,16 @@ def collect(config, queries, max_per_query, output_db, verbose, dry_run, multi_s
         collector_config.dry_run = True
     if multi_strategy:
         collector_config.search.use_multi_strategy = True
+
+    log_cfg = collector_config.logging
+    log_level = logging.DEBUG if verbose else getattr(logging, log_cfg.level.upper(), logging.INFO)
+    setup_logging(
+        level=log_level,
+        log_file=log_cfg.file_path,
+        max_bytes=log_cfg.max_file_size_mb * 1024 * 1024,
+        backup_count=log_cfg.backup_count,
+        console_output=log_cfg.console_output,
+    )
 
     # Default queries if none provided
     if not queries:
@@ -179,7 +184,6 @@ def collect(config, queries, max_per_query, output_db, verbose, dry_run, multi_s
 )
 def collect_channel(channel_url, config, max_videos, no_incremental, log_level, multi_strategy):
     """Collect karaoke videos from a specific YouTube channel."""
-    setup_logging(getattr(logging, log_level.upper()))
 
     if config:
         collector_config = load_config(config)
@@ -188,6 +192,18 @@ def collect_channel(channel_url, config, max_videos, no_incremental, log_level, 
 
     if multi_strategy:
         collector_config.search.use_multi_strategy = True
+
+    log_cfg = collector_config.logging
+    level = getattr(logging, log_level.upper()) if log_level else getattr(
+        logging, log_cfg.level.upper(), logging.INFO
+    )
+    setup_logging(
+        level=level,
+        log_file=log_cfg.file_path,
+        max_bytes=log_cfg.max_file_size_mb * 1024 * 1024,
+        backup_count=log_cfg.backup_count,
+        console_output=log_cfg.console_output,
+    )
 
     collector = KaraokeCollector(collector_config)
 
@@ -218,12 +234,23 @@ def collect_channel(channel_url, config, max_videos, no_incremental, log_level, 
 @click.option("--log-level", default="INFO", help="Logging level")
 def collect_channels(channels_file, config, max_videos, log_level):
     """Collect karaoke videos from multiple channels (one URL per line in file)."""
-    setup_logging(getattr(logging, log_level.upper()))
 
     if config:
         collector_config = load_config(config)
     else:
         collector_config = CollectorConfig()
+
+    log_cfg = collector_config.logging
+    level = getattr(logging, log_level.upper()) if log_level else getattr(
+        logging, log_cfg.level.upper(), logging.INFO
+    )
+    setup_logging(
+        level=level,
+        log_file=log_cfg.file_path,
+        max_bytes=log_cfg.max_file_size_mb * 1024 * 1024,
+        backup_count=log_cfg.backup_count,
+        console_output=log_cfg.console_output,
+    )
 
     # Read channel URLs from file
     try:
