@@ -8,9 +8,9 @@ from typing import Any, Dict, List, Optional
 
 from .config import CollectorConfig
 from .db import DatabaseManager
+from .enhanced_search import MultiStrategySearchEngine
 from .processor import VideoProcessor
 from .search_engine import SearchEngine
-from .enhanced_search import MultiStrategySearchEngine
 
 try:
     from tqdm.asyncio import tqdm_asyncio
