@@ -2,9 +2,13 @@ import subprocess
 import sys
 import venv
 from pathlib import Path
+import importlib.util
+import pytest
 
 
 def test_editable_install(tmp_path):
+    if importlib.util.find_spec("wheel") is None:
+        pytest.skip("wheel package is required for editable install test")
     project_root = Path(__file__).resolve().parents[1]
     env_dir = tmp_path / "venv"
     venv.EnvBuilder(with_pip=True, system_site_packages=True).create(env_dir)
