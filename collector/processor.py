@@ -246,7 +246,7 @@ class VideoProcessor:
                 "comment_count": info.get("comment_count") or 0,
                 "upload_date": info.get("upload_date") or "",
                 "uploader": info.get("uploader") or "",
-                "uploader_id": info.get("uploader_id") or "",
+                "uploader_id": info.get("uploader_id") or None,
                 "thumbnail": info.get("thumbnail") or "",
                 "tags": info.get("tags") or [],
                 "formats": info.get("formats") or [],
