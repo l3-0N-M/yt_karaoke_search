@@ -180,6 +180,8 @@ def test_process_video_uses_music_metadata(monkeypatch):
     assert called['count'] == 1
     assert result.video_data.get('estimated_release_year') == 2020
 
+    scores = result.video_data.get('quality_scores', {})
+
     # Validate overall score weighting and range
     expected_overall = (
         scores['technical_score'] * 0.3 +
