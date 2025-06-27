@@ -146,3 +146,30 @@
 2025-06-27 16:28:02,766 - collector.processor - ERROR - HTTP client cleanup error: Event loop is closed
 2025-06-27 16:28:02,797 - collector.main - INFO - Cleanup completed
 2025-06-27 16:28:02,812 - collector.db - INFO - Closed 1 pooled database connections
+2025-06-27 16:36:17,168 - collector.db - INFO - Database initialized: karaoke_videos.db
+2025-06-27 16:36:17,215 - collector.main - INFO - Processing channel: https://www.youtube.com/@BandaisuanKaraoke001
+2025-06-27 16:36:17,820 - collector.search - INFO - Extracted channel info: BandaisuanKaraoke001 - Videos
+2025-06-27 16:36:20,998 - collector.search - INFO - Extracted 60 videos from channel: BandaisuanKaraoke001 - Videos
+2025-06-27 16:36:20,999 - collector.main - INFO - Found 60 videos in channel: BandaisuanKaraoke001 - Videos
+2025-06-27 16:36:20,999 - collector.main - INFO - Skipped 60 videos already in database
+2025-06-27 16:36:20,999 - collector.main - INFO - All videos already processed or filtered out, skipping batch
+2025-06-27 16:36:21,013 - collector.main - INFO - Channel collection completed: 0 videos in 3.8s
+2025-06-27 16:36:21,035 - collector.main - INFO - Cleanup completed
+2025-06-27 16:36:21,041 - collector.db - INFO - Closed 1 pooled database connections
+2025-06-27 16:37:38,676 - collector.db - WARNING - Failed to create performance index: no such table: main.channels
+2025-06-27 16:37:38,677 - collector.db - WARNING - Failed to create performance index: no such table: main.channels
+2025-06-27 16:37:38,722 - collector.db - INFO - Applied migration: Initial schema (v1)
+2025-06-27 16:37:38,752 - collector.db - INFO - Applied migration: Updated trigger (v2)
+2025-06-27 16:37:38,753 - collector.db - INFO - Skipped migration 003; columns already present
+2025-06-27 16:37:38,799 - collector.db - INFO - Applied migration: Channels support (v4)
+2025-06-27 16:37:38,819 - collector.db - WARNING - Failed to apply migration 005: table videos_new has 18 columns but 22 values were supplied
+2025-06-27 16:37:38,827 - collector.db - INFO - Database initialized: karaoke_videos.db
+2025-06-27 16:37:38,881 - collector.main - INFO - Processing channel: https://www.youtube.com/@BandaisuanKaraoke001
+2025-06-27 16:37:39,673 - collector.search - INFO - Extracted channel info: BandaisuanKaraoke001 - Videos
+2025-06-27 16:37:42,371 - collector.search - INFO - Extracted 60 videos from channel: BandaisuanKaraoke001 - Videos
+2025-06-27 16:37:42,372 - collector.main - INFO - Found 60 videos in channel: BandaisuanKaraoke001 - Videos
+2025-06-27 16:37:42,373 - collector.main - INFO - Processing 60 new videos (after duration filter)
+2025-06-27 16:38:41,177 - collector.main - INFO - Channel collection completed: 60 videos in 62.3s
+2025-06-27 16:38:41,180 - collector.processor - ERROR - HTTP client cleanup error: Event loop is closed
+2025-06-27 16:38:41,221 - collector.main - INFO - Cleanup completed
+2025-06-27 16:38:41,232 - collector.db - INFO - Closed 1 pooled database connections
