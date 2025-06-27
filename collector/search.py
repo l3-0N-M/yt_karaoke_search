@@ -4,6 +4,7 @@ import asyncio
 import logging
 import random
 import time
+from datetime import datetime
 from typing import Dict, List, Optional
 
 try:
@@ -394,3 +395,37 @@ class SearchEngine:
                 score += weight
 
         return min(score, 2.0)
+
+    def _parse_upload_date(self, upload_date: str) -> Optional[datetime]:
+        """Parse yt-dlp upload date string to datetime object."""
+        if not upload_date:
+            return None
+
+        try:
+            # yt-dlp provides dates in YYYYMMDD format
+            if len(upload_date) == 8 and upload_date.isdigit():
+                return datetime.strptime(upload_date, "%Y%m%d")
+            # Try other common formats as fallback
+            elif len(upload_date) == 10 and upload_date.count("-") == 2:
+                return datetime.strptime(upload_date, "%Y-%m-%d")
+            else:
+                logger.warning(f"Unknown upload date format: {upload_date}")
+                return None
+        except ValueError as e:
+            logger.warning(f"Failed to parse upload date '{upload_date}': {e}")
+            return None
+
+    def _is_video_after_date(self, upload_date: str, after_date: str) -> bool:
+        """Check if video upload date is after the given date."""
+        if not after_date or not upload_date:
+            return True  # Include video if we can't determine dates
+
+        video_date = self._parse_upload_date(upload_date)
+        cutoff_date = self._parse_upload_date(
+            after_date.replace("-", "").replace(":", "").replace(" ", "")[:8]
+        )
+
+        if not video_date or not cutoff_date:
+            return True  # Include video if we can't parse dates
+
+        return video_date > cutoff_date

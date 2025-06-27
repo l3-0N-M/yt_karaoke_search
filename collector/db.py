@@ -4,6 +4,7 @@ import contextlib
 import logging
 import shutil
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional
@@ -23,17 +24,44 @@ class DatabaseManager:
         self.db_path = Path(config.path)
         self.backup_dir = self.db_path.parent / "backups"
         self.migrations_dir = self.db_path.parent / "migrations"
+
+        # Connection pool to prevent connection exhaustion
+        self._connection_pool = []
+        self._pool_lock = threading.Lock()
+        self._max_pool_size = 10
+        self._pool_timeout = 30.0
+
         self.setup_database()
+
+    def _get_pooled_connection(self) -> sqlite3.Connection:
+        """Get a connection from the pool or create a new one."""
+        with self._pool_lock:
+            if self._connection_pool:
+                return self._connection_pool.pop()
+
+        # Create new connection if pool is empty
+        conn = sqlite3.connect(str(self.db_path), timeout=self._pool_timeout)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        return conn
+
+    def _return_pooled_connection(self, conn: sqlite3.Connection):
+        """Return a connection to the pool or close it if pool is full."""
+        if conn:
+            with self._pool_lock:
+                if len(self._connection_pool) < self._max_pool_size:
+                    self._connection_pool.append(conn)
+                    return
+            # Pool is full, close the connection
+            conn.close()
 
     @contextlib.contextmanager
     def get_connection(self) -> Generator[sqlite3.Connection, None, None]:
-        """Context manager for database connections with proper error handling."""
+        """Context manager for database connections with connection pooling."""
         conn = None
         try:
-            conn = sqlite3.connect(str(self.db_path), timeout=30.0)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("PRAGMA journal_mode = WAL")
+            conn = self._get_pooled_connection()
             yield conn
             conn.commit()
         except Exception as e:
@@ -43,7 +71,7 @@ class DatabaseManager:
             raise
         finally:
             if conn:
-                conn.close()
+                self._return_pooled_connection(conn)
 
     def setup_database(self):
         """Create database schema with migrations support."""

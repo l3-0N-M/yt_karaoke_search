@@ -80,10 +80,22 @@ class VideoProcessor:
     def __init__(self, config: CollectorConfig):
         self.config = config
         self.yt_dlp_opts = self._setup_yt_dlp()
+
+        # Enhanced HTTP client with proper timeout and resource management
         self.http_client = httpx.AsyncClient(
-            timeout=config.scraping.timeout_seconds,
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            timeout=httpx.Timeout(
+                connect=10.0,  # Connection timeout
+                read=config.scraping.timeout_seconds,  # Read timeout
+                write=10.0,  # Write timeout
+                pool=5.0   # Pool timeout
+            ),
+            limits=httpx.Limits(
+                max_connections=10,
+                max_keepalive_connections=5,
+                keepalive_expiry=30.0  # Close idle connections
+            ),
         )
+        self._cleanup_completed = False
 
     def _setup_yt_dlp(self) -> Dict:
         """Configure yt-dlp for comprehensive metadata extraction."""
@@ -494,8 +506,22 @@ class VideoProcessor:
         return max(min(sum(confidence_factors) - error_penalty, 1.0), 0.0)
 
     async def cleanup(self):
-        """Cleanup resources."""
+        """Comprehensive cleanup of all network resources."""
+        if self._cleanup_completed:
+            return
+
         try:
-            await self.http_client.aclose()
+            # Close HTTP client with timeout
+            if hasattr(self, 'http_client') and self.http_client:
+                await asyncio.wait_for(self.http_client.aclose(), timeout=5.0)
+                logger.debug("HTTP client closed successfully")
+        except asyncio.TimeoutError:
+            logger.warning("HTTP client cleanup timed out")
         except Exception as e:
-            logger.error(f"Cleanup error: {e}")
+            logger.error(f"HTTP client cleanup error: {e}")
+        finally:
+            self._cleanup_completed = True
+
+        # Force garbage collection to clean up any remaining resources
+        import gc
+        gc.collect()

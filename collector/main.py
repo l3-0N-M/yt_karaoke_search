@@ -54,26 +54,47 @@ class KaraokeCollector:
     def _cleanup_memory_cache(self, force: bool = False):
         """Cleanup memory cache to prevent unbounded growth."""
         current_time = time.time()
-        cache_age = current_time - self._last_cache_cleanup
 
-        # Clean if cache is too large, or periodically (every 30 minutes), or forced
-        should_clean = (
-            len(self.processed_video_ids) > self._memory_cache_cleanup_threshold
-            or cache_age > 1800  # 30 minutes
-            or force
-        )
+        # Check if cleanup is needed (lock-free check first)
+        with self._processed_ids_lock:
+            cache_age = current_time - self._last_cache_cleanup
+            current_size = len(self.processed_video_ids)
 
-        if should_clean:
-            with self._processed_ids_lock:
-                old_size = len(self.processed_video_ids)
-                # Keep only recent video IDs if cache is too large
-                if old_size > self._memory_cache_limit:
-                    # Get recent video IDs from database
-                    recent_ids = self.db_manager.get_recent_video_ids(days=7)
+            # Clean if cache is too large, or periodically (every 30 minutes), or forced
+            should_clean = (
+                current_size > self._memory_cache_cleanup_threshold
+                or cache_age > 1800  # 30 minutes
+                or force
+            )
+
+            if not should_clean:
+                return
+
+            # Prevent concurrent cleanup operations
+            if hasattr(self, '_cleanup_in_progress') and self._cleanup_in_progress:
+                return
+            self._cleanup_in_progress = True
+
+        try:
+            # Perform cleanup outside of the main lock to reduce contention
+            if current_size > self._memory_cache_limit:
+                # Get recent video IDs from database (outside lock)
+                recent_ids = self.db_manager.get_recent_video_ids(days=7)
+
+                # Update cache atomically
+                with self._processed_ids_lock:
+                    old_size = len(self.processed_video_ids)
                     self.processed_video_ids = recent_ids
+                    self._last_cache_cleanup = current_time
                     logger.info(f"Memory cache cleaned: {old_size} -> {len(self.processed_video_ids)} video IDs")
-
-                self._last_cache_cleanup = current_time
+            else:
+                # Just update timestamp
+                with self._processed_ids_lock:
+                    self._last_cache_cleanup = current_time
+        finally:
+            # Always clear the cleanup flag
+            with self._processed_ids_lock:
+                self._cleanup_in_progress = False
 
     def _is_video_processed(self, video_id: str, worker_id: str = None) -> bool:
         """Check if video is processed using worker-local cache + global cache + database fallback."""
