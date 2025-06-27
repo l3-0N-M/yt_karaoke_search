@@ -42,8 +42,15 @@ class SearchEngine:
         self.scraping_config = scraping_config
         self.yt_dlp_opts = self._setup_yt_dlp()
 
+        # Ensure an event loop exists so object creation works in synchronous contexts
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
         # Rate limiting to prevent API blocking
-        self._request_semaphore = asyncio.Semaphore(2)  # Max 2 concurrent requests
+        self._request_semaphore = asyncio.Semaphore(2)
         self._last_request_time = 0
         self._min_request_interval = 1.0  # 1 second between requests
         self._request_count = 0
