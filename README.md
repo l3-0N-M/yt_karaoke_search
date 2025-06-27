@@ -1,6 +1,6 @@
 # Karaoke Video Collector
 
-[![CI](https://github.com/your-username/karaoke-video-collector/workflows/CI/badge.svg)](https://github.com/your-username/karaoke-video-collector/actions)
+[![CI](https://github.com/l3-0N-M/yt_karaoke_search/workflows/CI/badge.svg)](https://github.com/l3-0N-M/yt_karaoke_search/actions)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -28,16 +28,16 @@ A comprehensive tool for collecting karaoke video data from YouTube with confide
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd karaoke-video-collector
+git clone https://github.com/l3-0N-M/yt_karaoke_search.git
+cd yt_karaoke_search
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Or install as a package
+# Install as editable package
 pip install -e .
 
-# For development
+# For development with additional tools
 pip install -e ".[dev]"
 ```
 
@@ -91,11 +91,11 @@ processed = await collector.collect_from_channel(channel_url, max_videos=5000)
 
 # Collect from multiple channels
 channel_urls = ["https://www.youtube.com/@Channel1", "https://www.youtube.com/@Channel2"]
-total = await collector.collect_from_channels(channel_urls, max_videos_per_channel=10000)
+total = await collector.collect_from_channels(channel_urls, max_videos=10000)
 
 # Get statistics
 stats = await collector.get_statistics()
-print(f"Total videos: {stats['total_videos']:,}")
+print(f"Total videos: {stats.get('total_videos', 0):,}")
 
 # Cleanup resources when done
 await collector.cleanup()
