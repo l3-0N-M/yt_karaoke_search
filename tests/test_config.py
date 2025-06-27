@@ -1,3 +1,4 @@
+import pytest
 import yaml
 
 from collector.config import load_config, save_config_template
@@ -26,3 +27,28 @@ def test_save_config_template(tmp_path):
     assert output.exists()
     data = yaml.safe_load(output.read_text())
     assert "database" in data and "logging" in data
+
+
+def test_load_config_ignores_extra_keys(tmp_path):
+    cfg_path = tmp_path / "extra.yaml"
+    cfg_path.write_text(
+        """
+        database:
+          path: sample.db
+          unknown: 123
+        """
+    )
+    cfg = load_config(str(cfg_path))
+    assert cfg.database.path == "sample.db"
+
+
+def test_validation_error(tmp_path):
+    cfg_path = tmp_path / "invalid.yaml"
+    cfg_path.write_text(
+        """
+        database:
+          backup_interval_hours: 0
+        """
+    )
+    with pytest.raises(ValueError):
+        load_config(str(cfg_path))
