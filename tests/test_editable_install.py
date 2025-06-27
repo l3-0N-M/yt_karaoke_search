@@ -1,7 +1,7 @@
 import subprocess
 import sys
-from pathlib import Path
 import venv
+from pathlib import Path
 
 
 def test_editable_install(tmp_path):
