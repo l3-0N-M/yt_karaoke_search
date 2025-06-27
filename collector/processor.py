@@ -5,8 +5,8 @@ import logging
 import random
 import re
 import time
-from dataclasses import dataclass
-from typing import Dict, List, Optional, cast
+from dataclasses import asdict, dataclass
+from typing import Dict, List, Optional, Tuple, cast
 from urllib.parse import quote_plus
 
 try:
@@ -73,6 +73,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from .advanced_parser import AdvancedTitleParser
 from .config import CollectorConfig
+from .validation_corrector import ValidationCorrector
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,9 @@ class VideoProcessor:
             self.advanced_parser = AdvancedTitleParser(config)
         else:
             self.advanced_parser = None
+
+        # Validator for post-processing metadata checks
+        self.validator = ValidationCorrector()
 
     def _setup_yt_dlp(self) -> Dict:
         """Configure yt-dlp for comprehensive metadata extraction."""
@@ -242,10 +246,23 @@ class VideoProcessor:
             and features.get("original_artist")
             and features.get("song_title")
         ):
-            music_data = await self._get_music_metadata(
+            music_data, recording = await self._get_music_metadata(
                 features["original_artist"], features["song_title"]
             )
             video_data.update(music_data)
+            if recording:
+                validation, suggestion = self.validator.validate(
+                    features["original_artist"], features["song_title"], recording
+                )
+                video_data["validation"] = asdict(validation)
+                if suggestion:
+                    video_data["correction_suggestion"] = asdict(suggestion)
+                if self.advanced_parser:
+                    self.advanced_parser.apply_validation_feedback(
+                        features["original_artist"],
+                        features["song_title"],
+                        validation,
+                    )
 
     async def _get_ryd_data(self, video_id: str) -> Dict:
         """Get Return YouTube Dislike data with confidence scoring."""
@@ -296,11 +313,11 @@ class VideoProcessor:
 
         return min(sum(confidence_factors), 1.0)
 
-    async def _get_music_metadata(self, artist: str, song: str) -> Dict:
+    async def _get_music_metadata(self, artist: str, song: str) -> Tuple[Dict, Optional[Dict]]:
         """Get comprehensive music metadata from MusicBrainz API with rate limiting."""
         try:
             if not self.http_client:
-                return {"release_year_confidence": 0.0}
+                return {"release_year_confidence": 0.0}, None
 
             # Enforce MusicBrainz rate limiting (1 request per second)
             current_time = time.time()
@@ -314,8 +331,12 @@ class VideoProcessor:
             # Enhanced MusicBrainz search with comprehensive data inclusion
             raw_query = f"artist:{artist} AND recording:{song}"
             query = quote_plus(raw_query)
-            # Include artist-credits, releases, tags, and genres
-            url = f"https://musicbrainz.org/ws/2/recording/?query={query}&limit=3&fmt=json&inc=artist-credits+releases+tags+genres"
+            # Include credits and relationship info for richer context
+            url = (
+                "https://musicbrainz.org/ws/2/recording/?query="
+                f"{query}&limit=3&fmt=json&inc="
+                "artist-credits+artist-rels+recording-rels+releases+tags+genres"
+            )
 
             headers = {
                 "User-Agent": self.config.data_sources.musicbrainz_user_agent,
@@ -334,12 +355,15 @@ class VideoProcessor:
                     # Process the best matching recording
                     best_recording = self._select_best_recording(recordings, artist, song)
                     if best_recording:
-                        return self._extract_recording_metadata(best_recording, artist, song)
+                        return (
+                            self._extract_recording_metadata(best_recording, artist, song),
+                            best_recording,
+                        )
 
         except Exception as e:
             logger.debug(f"MusicBrainz lookup failed for {artist} - {song}: {e}")
 
-        return {"musicbrainz_confidence": 0.0}
+        return {"musicbrainz_confidence": 0.0}, None
 
     def _select_best_recording(
         self, recordings: List[Dict], target_artist: str, target_song: str
@@ -1106,10 +1130,15 @@ class VideoProcessor:
         ryd_confidence = video_data.get("ryd_confidence", 0)
         confidence_factors.append(ryd_confidence * 0.1)
 
+        # Validation result from MusicBrainz cross-check
+        validation_score = video_data.get("validation", {}).get("validation_score", 0.0)
+        confidence_factors.append(validation_score * 0.2)
+
         # Penalty for errors
         error_penalty = min(len(errors) * 0.1, 0.3)
 
-        return max(min(sum(confidence_factors) - error_penalty, 1.0), 0.0)
+        base = max(min(sum(confidence_factors) - error_penalty, 1.0), 0.0)
+        return min(base * (0.7 + 0.3 * validation_score), 1.0)
 
     async def cleanup(self):
         """Comprehensive cleanup of all network resources."""

@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional
 
+from .validation_corrector import ValidationResult
+
 try:
     from .search.fuzzy_matcher import FuzzyMatcher
 
@@ -745,6 +747,15 @@ class AdvancedTitleParser:
                 self.known_artists.add(result.original_artist)
             if result.song_title:
                 self.known_songs.add(result.song_title)
+
+    def apply_validation_feedback(
+        self, artist: str, song: str, validation_result: "ValidationResult"
+    ) -> None:
+        """Update internal datasets based on validation results."""
+        if validation_result.artist_valid and artist:
+            self.known_artists.add(artist)
+        if validation_result.song_valid and song:
+            self.known_songs.add(song)
 
     def _clean_extracted_text(self, text: str) -> str:
         """Clean extracted text with advanced techniques."""

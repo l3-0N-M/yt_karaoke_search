@@ -195,7 +195,8 @@ def test_process_video_uses_music_metadata(monkeypatch):
 
     async def dummy_get_music_metadata(artist, song):
         called["count"] += 1
-        return {"estimated_release_year": 2020, "release_year_confidence": 0.9}
+        recording = {"title": song, "artist-credit": [{"name": artist}]}
+        return ({"estimated_release_year": 2020, "release_year_confidence": 0.9}, recording)
 
     monkeypatch.setattr(processor, "_extract_basic_metadata", dummy_extract_basic_metadata)
     monkeypatch.setattr(processor, "_get_ryd_data", dummy_get_ryd_data)
@@ -234,4 +235,31 @@ def test_helpers_handle_missing_http_client():
     music = asyncio.run(processor._get_music_metadata("a", "b"))
 
     assert ryd == {"ryd_confidence": 0.0}
-    assert music == {"release_year_confidence": 0.0}
+    assert music == ({"release_year_confidence": 0.0}, None)
+
+
+def test_processor_validation_integration(monkeypatch):
+    config = CollectorConfig()
+    config.data_sources.ryd_api_enabled = False
+
+    processor = VideoProcessor(config)
+
+    async def dummy_extract_basic_metadata(url):
+        return {"video_id": "v1", "title": "Artist - Song (Karaoke)", "description": "", "tags": []}
+
+    async def dummy_get_music_metadata(artist, song):
+        recording = {"title": song, "artist-credit": [{"name": artist}]}
+        return ({"musicbrainz_confidence": 0.9}, recording)
+
+    monkeypatch.setattr(processor, "_extract_basic_metadata", dummy_extract_basic_metadata)
+    monkeypatch.setattr(processor, "_get_music_metadata", dummy_get_music_metadata)
+    monkeypatch.setattr(processor, "_get_ryd_data", lambda vid: {})
+
+    async def run():
+        res = await processor.process_video("http://x")
+        await processor.cleanup()
+        return res
+
+    result = asyncio.run(run())
+    assert result.video_data["validation"]["artist_valid"]
+    assert result.video_data["validation"]["song_valid"]
