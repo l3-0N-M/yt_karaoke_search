@@ -74,6 +74,23 @@ karaoke-collector create-config --output my_config.yaml
 karaoke-collector stats
 ```
 
+### Multi-Strategy Search
+
+The collector can optionally run an advanced search engine that queries multiple
+providers and ranks results for better coverage. Enable it in the configuration
+file with `search.use_multi_strategy: true`:
+
+```yaml
+search:
+  use_multi_strategy: true
+```
+
+Run channel collection with this option enabled:
+
+```bash
+karaoke-collector collect-channel "https://www.youtube.com/@KaraokeChannel" --config config.yaml
+```
+
 ### Python API
 
 ```python
