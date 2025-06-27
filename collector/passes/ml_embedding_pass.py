@@ -97,9 +97,9 @@ class EnhancedMLEmbeddingPass:
             return
 
         try:
-            self.embedding_model = SentenceTransformer(self.embedding_model_name)
+            self.embedding_model = SentenceTransformer(self.embedding_model_name, device="cpu")
             logger.info(f"Initialized embedding model: {self.embedding_model_name}")
-
+            self.has_embedding_model = True
         except Exception as e:
             logger.warning(f"Failed to initialize embedding model: {e}")
             self.embedding_model = None
@@ -426,7 +426,7 @@ class EnhancedMLEmbeddingPass:
 
         if match_type == "artist":
             known_entities = self.artist_candidates
-        elif match_type == "song":
+        elif match_type == "song": 
             known_entities = self.song_candidates
         else:
             return None
@@ -461,7 +461,11 @@ class EnhancedMLEmbeddingPass:
         """Calculate cosine similarity between two embeddings."""
 
         if HAS_SKLEARN:
-            return sklearn_metrics.cosine_similarity([embedding1], [embedding2])[0][0]
+            return sklearn_metrics.cosine_similarity(
+                embedding1.reshape(1, -1), embedding2.reshape(1, -1)
+            )[0][0]
+        elif not HAS_SKLEARN:
+            logger.warning("scikit-learn is not available, using fallback cosine similarity")
         else:
             # Fallback implementation
             dot_product = np.dot(embedding1, embedding2)
@@ -481,40 +485,48 @@ class EnhancedMLEmbeddingPass:
         if not fuzzy_result and not semantic_result:
             return None
 
-        # If only one result, return it with adjusted confidence
-        if fuzzy_result and not semantic_result:
-            fuzzy_result.confidence *= 0.9  # Slight penalty for single method
-            fuzzy_result.method = "hybrid_fuzzy_only"
-            return fuzzy_result
+        # Determine the better result and calculate combined confidence
+        if fuzzy_result and semantic_result:
+            fuzzy_confidence = getattr(fuzzy_result, "confidence", 0.0)
+            semantic_confidence = getattr(semantic_result, "confidence", 0.0)
+            combined_confidence = (
+                fuzzy_confidence * self.fuzzy_weight
+                + semantic_confidence * self.embedding_weight
+            )
+            better_result = (
+                fuzzy_result if fuzzy_confidence > semantic_confidence else semantic_result
+            )
+        elif fuzzy_result:
+            better_result = fuzzy_result
+            combined_confidence = getattr(fuzzy_result, "confidence", 0.0)
+        elif semantic_result:
+            better_result = semantic_result
+            combined_confidence = getattr(semantic_result, "confidence", 0.0)
+        else:
+            return None
 
-        if semantic_result and not fuzzy_result:
-            semantic_result.confidence *= 0.9  # Slight penalty for single method
-            semantic_result.method = "hybrid_semantic_only"
-            return semantic_result
+        # Apply confidence adjustments
+        if better_result.method != "hybrid_combination":
+            combined_confidence *= 0.9  # Slight penalty for non-hybrid results
 
-        # Combine both results
-        combined_confidence = (
-            fuzzy_result.confidence * self.fuzzy_weight
-            + semantic_result.confidence * self.embedding_weight
-        )
+        if (
+            better_result is None
+            or not hasattr(better_result, "original_artist")
+            or not hasattr(better_result, "song_title")
+        ):
+            return None
 
-        # Use the better of the two for actual values, but combined confidence
-        better_result = (
-            fuzzy_result
-            if fuzzy_result.confidence > semantic_result.confidence
-            else semantic_result
-        )
-
-        # Create hybrid result
         hybrid_result = ParseResult(
             original_artist=better_result.original_artist,
             song_title=better_result.song_title,
             confidence=combined_confidence,
             method="hybrid_fuzzy_semantic",
-            pattern_used=f"hybrid_fuzzy:{fuzzy_result.confidence:.2f}_semantic:{semantic_result.confidence:.2f}",
+            pattern_used=(
+                f"hybrid_fuzzy:{getattr(fuzzy_result, 'confidence', 0.0):.2f}_semantic:{getattr(semantic_result, 'confidence', 0.0):.2f}"
+            ),
             metadata={
-                "fuzzy_confidence": fuzzy_result.confidence,
-                "semantic_confidence": semantic_result.confidence,
+                "fuzzy_confidence": getattr(fuzzy_result, "confidence", 0.0),
+                "semantic_confidence": getattr(semantic_result, "confidence", 0.0),
                 "combined_confidence": combined_confidence,
                 "method": "hybrid_combination",
             },
@@ -636,7 +648,7 @@ class EnhancedMLEmbeddingPass:
                     logger.warning(f"Failed to generate embedding for new entity '{text}': {e}")
 
             candidates[text] = candidate
-
+    
     def get_statistics(self) -> Dict:
         """Get statistics for the ML embedding pass."""
 

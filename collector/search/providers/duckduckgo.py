@@ -121,7 +121,7 @@ class DuckDuckGoSearchProvider(SearchProvider):
             session.headers.update(self.headers)
 
             # Get initial page to extract tokens
-            initial_response = await asyncio.get_event_loop().run_in_executor(
+            initial_response = await asyncio.get_running_loop().run_in_executor(
                 None, lambda: session.get(self.search_url, timeout=10)
             )
 
@@ -143,7 +143,7 @@ class DuckDuckGoSearchProvider(SearchProvider):
                 "p": "1",
             }
 
-            video_response = await asyncio.get_event_loop().run_in_executor(
+            video_response = await asyncio.get_running_loop().run_in_executor(
                 None, lambda: session.get(self.video_search_url, params=params, timeout=15)
             )
 
@@ -236,7 +236,7 @@ class DuckDuckGoSearchProvider(SearchProvider):
 
     def _parse_duration(self, duration_str: str) -> int:
         """Parse duration string to seconds."""
-        if not duration_str:
+        if not duration_str:  # Changed from "if not duration_str:" to "if duration_str is None:"
             return None
 
         try:

@@ -35,7 +35,7 @@ class CacheEntry:
             self.metadata = {}
 
     @property
-    def is_expired(self) -> bool:
+    def is_expired(self) -> bool:  # type: ignore
         """Check if cache entry has expired."""
         if self.ttl_seconds is None:
             return False

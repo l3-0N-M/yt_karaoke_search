@@ -157,4 +157,4 @@ __all__ = [
     "CacheManager",
 ]
 
-# Enhanced search engine is available as collector.enhanced_search.MultiStrategySearchEngine
+# MultiStrategySearchEngine is available as collector.enhanced_search.MultiStrategySearchEngine

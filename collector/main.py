@@ -198,7 +198,7 @@ class KaraokeCollector:
                 logger.info(f"Found {len(video_urls)} videos for '{query}'")
 
                 # Process videos
-                processed_count = await self._process_video_batch(video_urls)
+                processed_count = await self._process_video_batch([asdict(v) if isinstance(v, SearchResult) else v for v in video_urls])
                 total_processed += processed_count
 
             except Exception as e:
@@ -357,7 +357,7 @@ class KaraokeCollector:
                 logger.warning(f"No videos found in channel: {channel_data.get('channel_name')}")
                 return 0
 
-            logger.info(
+            logger.debug(
                 f"Found {len(video_list)} videos in channel: {channel_data.get('channel_name')}"
             )
 

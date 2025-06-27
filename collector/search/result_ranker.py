@@ -40,7 +40,7 @@ class RankingResult:
     popularity_score: float = 0.0
     metadata_score: float = 0.0
     final_score: float = 0.0
-    ranking_factors: Dict = None
+    ranking_factors: Dict = field(default_factory=dict)
 
     def __post_init__(self):
         if self.ranking_factors is None:
@@ -227,14 +227,14 @@ class ResultRanker:
             score += desc_ratio * 0.1  # Description matches weighted lower
 
         # Bonus for exact artist/song matching if available
-        if hasattr(result, "parsed_artist") and hasattr(result, "parsed_song"):
-            if result.parsed_artist and result.parsed_song:
-                artist_in_query = any(result.parsed_artist.lower() in term for term in query_terms)
-                song_in_query = any(result.parsed_song.lower() in term for term in query_terms)
-                if artist_in_query and song_in_query:
-                    score += 0.2
+        parsed_artist = getattr(result, "parsed_artist", None)
+        parsed_song = getattr(result, "parsed_song", None)
+        if parsed_artist and parsed_song:
+            artist_in_query = any(parsed_artist.lower() in term for term in query_terms)
+            song_in_query = any(parsed_song.lower() in term for term in query_terms)
+            if artist_in_query and song_in_query:
+                score += 0.2
 
-        # Penalty for very long titles (likely spam)
         if len(title) > 100:
             score *= 0.9
 
@@ -378,10 +378,10 @@ class ResultRanker:
             score = score / max_score
 
         # Bonus for having parsed artist/song information
-        if hasattr(result, "parsed_artist") and hasattr(result, "parsed_song"):
-            if result.parsed_artist and result.parsed_song:
-                score += 0.2
-
+        parsed_artist = getattr(result, "parsed_artist", None)
+        parsed_song = getattr(result, "parsed_song", None)
+        if parsed_artist and parsed_song:
+            score += 0.2
         return min(1.0, score)
 
     def _apply_contextual_adjustments(
@@ -460,7 +460,7 @@ class ResultRanker:
             "log_view_score": math.log10(max(1, result.view_count)) if result.view_count else 0,
             "upload_date": result.upload_date,
             "estimated_age_days": self._calculate_age_days(result.upload_date),
-        }
+        } # type: ignore
 
     def _get_metadata_details(self, result: SearchResult) -> Dict:
         """Get detailed metadata completeness information."""

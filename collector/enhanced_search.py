@@ -41,13 +41,13 @@ class MultiStrategySearchEngine:
 
         # Initialize core components
         self.cache_manager = CacheManager(
-            search_config.dict() if hasattr(search_config, "dict") else {}
+            asdict(search_config) if hasattr(search_config, "__dataclass_fields__") else {}
         )
         self.result_ranker = ResultRanker(
-            search_config.dict() if hasattr(search_config, "dict") else {}
+            asdict(search_config) if hasattr(search_config, "__dataclass_fields__") else {}
         )
         self.fuzzy_matcher = FuzzyMatcher(
-            search_config.dict() if hasattr(search_config, "dict") else {}
+            asdict(search_config) if hasattr(search_config, "__dataclass_fields__") else {}
         )
 
         # Initialize search providers
@@ -75,12 +75,12 @@ class MultiStrategySearchEngine:
 
         # Fallback providers
         if HAS_BING:
-            self.providers["bing"] = BingSearchProvider()
+            self.providers["bing"] = BingSearchProvider(self.scraping_config)
         else:
             logger.info("Bing search provider not available")
 
         if HAS_DUCKDUCKGO:
-            self.providers["duckduckgo"] = DuckDuckGoSearchProvider()
+            self.providers["duckduckgo"] = DuckDuckGoSearchProvider(self.scraping_config)
         else:
             logger.info("DuckDuckGo search provider not available")
 
@@ -157,7 +157,10 @@ class MultiStrategySearchEngine:
             cached_data = await self.cache_manager.get_search_results(
                 query, provider="multi", max_results=max_results
             )
+                # Set the default values
+                default_values = {"duration": None, "view_count": 0, "upload_date": None, "thumbnail_url": None, "description": None, "relevance_score": 0.0, "metadata": {}}
 
+                # If cached_data has values use it, otherwise use the default values
             if cached_data:
                 # Convert back to SearchResult objects
                 return [SearchResult(**result_dict) for result_dict in cached_data]

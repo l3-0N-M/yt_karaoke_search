@@ -165,7 +165,7 @@ class FuzzyMatcher:
 
         # 2. Jaro-Winkler similarity (if available)
         if HAS_JELLYFISH:
-            jaro_sim = jellyfish.jaro_winkler_similarity(norm1, norm2)
+            jaro_sim = jellyfish.jaro_winkler_similarity(norm1, norm2)  # type: ignore
             similarities.append(("jaro_winkler", jaro_sim))
 
         # 3. Levenshtein distance normalized
@@ -258,7 +258,7 @@ class FuzzyMatcher:
             return self._soundex_cache[text]
 
         try:
-            soundex = jellyfish.soundex(text) if HAS_JELLYFISH else self._basic_soundex(text)
+            soundex = jellyfish.soundex(text) if HAS_JELLYFISH else self._basic_soundex(text)  # type: ignore
             self._soundex_cache[text] = soundex
             return soundex
         except Exception as exc:
@@ -271,7 +271,7 @@ class FuzzyMatcher:
             return self._metaphone_cache[text]
 
         try:
-            metaphone = jellyfish.metaphone(text) if HAS_JELLYFISH else self._basic_metaphone(text)
+            metaphone = jellyfish.metaphone(text) if HAS_JELLYFISH else self._basic_metaphone(text)  # type: ignore
             self._metaphone_cache[text] = metaphone
             return metaphone
         except Exception as exc:
@@ -337,7 +337,7 @@ class FuzzyMatcher:
         if not query or not candidates:
             return None
 
-        min_score = min_score or self.min_similarity_threshold
+        min_score = min_score if min_score is not None else self.min_similarity_threshold
         best_match = None
         best_score = 0.0
 
@@ -376,7 +376,7 @@ class FuzzyMatcher:
         if not query or not candidates:
             return []
 
-        min_score = min_score or self.min_similarity_threshold
+        min_score = min_score if min_score is not None else self.min_similarity_threshold
         matches = []
 
         for candidate in candidates:
@@ -412,7 +412,7 @@ class FuzzyMatcher:
         if not query_artist or not query_song or not candidate_pairs:
             return None
 
-        min_score = min_score or self.min_similarity_threshold
+        min_score = min_score if min_score is not None else self.min_similarity_threshold
         best_match = None
         best_combined_score = 0.0
 

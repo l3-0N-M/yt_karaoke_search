@@ -107,7 +107,7 @@ class MultiPassParsingController:
         # Initialize fuzzy matcher for ML embedding pass
         from .search.fuzzy_matcher import FuzzyMatcher
 
-        fuzzy_matcher = FuzzyMatcher(config.dict() if hasattr(config, "dict") else {})
+        fuzzy_matcher = FuzzyMatcher(config.dict() if hasattr(config, "__dataclass_fields__") else {})
 
         self.ml_embedding_pass = EnhancedMLEmbeddingPass(advanced_parser, fuzzy_matcher, db_manager)
 

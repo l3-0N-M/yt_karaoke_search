@@ -59,7 +59,7 @@ class AdvancedTitleParser:
 
         # Initialize fuzzy matcher if available
         if HAS_FUZZY_MATCHER:
-            self.fuzzy_matcher = FuzzyMatcher(config)
+            self.fuzzy_matcher = FuzzyMatcher(config)  # type: ignore
         else:
             self.fuzzy_matcher = None
             logger.info("FuzzyMatcher not available, using basic fuzzy matching")

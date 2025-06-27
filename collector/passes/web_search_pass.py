@@ -314,12 +314,14 @@ class SERPCache:
     def _calculate_hit_rate(self) -> float:
         """Calculate cache hit rate."""
 
-        if not hasattr(self, "_total_requests"):
+        if not hasattr(self, "total_requests"):
             return 0.0
 
         hits = sum(entry.access_count for entry in self.cache.values())
-        return hits / max(self._total_requests, 1)
+        return hits / max(self.total_requests, 1)
 
+    def set_total_requests(self, total_requests: int):
+        self.total_requests = total_requests
     def _calculate_avg_age_hours(self) -> float:
         """Calculate average age of cache entries."""
 

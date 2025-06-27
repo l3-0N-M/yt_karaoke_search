@@ -126,7 +126,7 @@ class BingSearchProvider(SearchProvider):
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
-                lambda: requests.get(
+                lambda: requests.get(  # type: ignore
                     self.search_url, params=params, headers=self.headers, timeout=30
                 ),
             )
@@ -213,7 +213,7 @@ class BingSearchProvider(SearchProvider):
         except (ValueError, AttributeError):
             pass
 
-        return None
+        return 0
 
     def _process_bing_results(
         self, raw_results: List[Dict], original_query: str
