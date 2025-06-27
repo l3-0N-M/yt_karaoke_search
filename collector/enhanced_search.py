@@ -401,6 +401,22 @@ class MultiStrategySearchEngine:
             logger.error(f"Performance optimization failed: {e}")
             return {"error": str(e)}
 
+    async def extract_channel_info(self, channel_url: str) -> Dict:
+        """Retrieve channel information using the primary provider."""
+        provider = self.providers.get("youtube")
+        if not provider:
+            return {}
+        return await provider.extract_channel_info(channel_url)
+
+    async def extract_channel_videos(
+        self, channel_url: str, max_videos: Optional[int] = None, after_date: Optional[str] = None
+    ) -> List[SearchResult]:
+        """Retrieve videos from a channel using the primary provider."""
+        provider = self.providers.get("youtube")
+        if not provider:
+            return []
+        return await provider.extract_channel_videos(channel_url, max_videos, after_date)
+
     async def search_with_fallback_strategies(
         self, query: str, max_results: int = 100
     ) -> List[SearchResult]:

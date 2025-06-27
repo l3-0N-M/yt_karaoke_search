@@ -5,6 +5,9 @@ import logging
 import signal
 import time
 from typing import Any, Dict, List, Optional
+from dataclasses import asdict
+
+from .search.providers.base import SearchResult
 
 from .config import CollectorConfig
 from .db import DatabaseManager
@@ -344,6 +347,10 @@ class KaraokeCollector:
             video_list = await self.search_engine.extract_channel_videos(
                 channel_url, max_videos, after_date
             )
+
+            # Convert SearchResult objects to dictionaries for processing
+            if video_list and isinstance(video_list[0], SearchResult):
+                video_list = [asdict(v) for v in video_list]
 
             if not video_list:
                 logger.warning(f"No videos found in channel: {channel_data.get('channel_name')}")
