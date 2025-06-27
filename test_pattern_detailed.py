@@ -28,7 +28,7 @@ pos = 0
 for part_name, part_pattern in parts:
     print(f"\n{part_name}: {part_pattern}")
     print(f"Testing against: '{remaining_text[pos:]}'")
-    
+
     match = re.match(part_pattern, remaining_text[pos:])
     if match:
         matched_text = match.group(0)
@@ -41,7 +41,7 @@ for part_name, part_pattern in parts:
         print("No match")
         break
 
-print(f"\nFull pattern test:")
+print("\nFull pattern test:")
 match = re.search(full_pattern, test_title)
 if match:
     print(f"Groups: {match.groups()}")
@@ -49,37 +49,37 @@ if match:
         print(f"Group {i}: '{group}' (length: {len(group)})")
 
 # Now let's test what happens when we process this through the validation
-print(f"\nWhat happens after _clean_extracted_text:")
+print("\nWhat happens after _clean_extracted_text:")
 
 def _clean_extracted_text(text):
     """Simulated version of the cleaning function."""
     if not text:
         return ""
-    
-    # Remove extra quotes and brackets  
+
+    # Remove extra quotes and brackets
     cleaned = re.sub(r'^["\'`]+|["\'`]+$', "", text.strip())
     cleaned = re.sub(r"^\([^)]*\)|^\[[^\]]*\]", "", cleaned).strip()
-    
+
     # Remove trailing noise
     noise_patterns = [
         r"\s*\([^)]*(?:[Kk]araoke|[Ii]nstrumental|[Mm]inus|[Mm][Rr])[^)]*\)$",
         r"\s*\[[^\]]*(?:[Kk]araoke|[Ii]nstrumental|[Mm]inus|[Mm][Rr])[^\]]*\]$",
         r"\s*-\s*[Kk]araoke.*$",
-        r"\s*[Mm][Rr]$",  
+        r"\s*[Mm][Rr]$",
         r"\s*[Ii]nst\.?$",
         r"\s*\([^)]*[Kk]ey\)$",
     ]
-    
+
     for pattern in noise_patterns:
         cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
-    
+
     # Clean up whitespace
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    
+
     return cleaned
 
 if match:
-    print(f"Raw group 1: '{match.group(1)}'")  
+    print(f"Raw group 1: '{match.group(1)}'")
     print(f"Cleaned group 1: '{_clean_extracted_text(match.group(1))}'")
     print(f"Raw group 2: '{match.group(2)}'")
     print(f"Cleaned group 2: '{_clean_extracted_text(match.group(2))}'")

@@ -20,15 +20,15 @@ print("=" * 80)
 for title in test_titles:
     print(f"\nTitle: '{title}'")
     match = re.search(pattern, title, re.IGNORECASE | re.UNICODE)
-    
+
     if match:
         print(f"MATCH! Groups: {match.groups()}")
         print(f"Group 1: '{match.group(1)}'")
         print(f"Group 2: '{match.group(2)}'")
-        
+
         # This pattern has artist_group=2, title_group=1
         # So song_title would be match.group(1) and original_artist would be match.group(2)
-        print(f"Would extract as:")
+        print("Would extract as:")
         print(f"  song_title: '{match.group(1)}'")
         print(f"  original_artist: '{match.group(2)}'")
     else:

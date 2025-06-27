@@ -5,7 +5,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 

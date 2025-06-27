@@ -4,7 +4,7 @@ import logging
 import re
 import unicodedata
 from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional
 
@@ -539,7 +539,7 @@ class AdvancedTitleParser:
 
         # Extract potential artist/song candidates
         candidates = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b", title)
-        
+
         best_artist_match = None
         best_song_match = None
         best_combined_score = 0.0
@@ -549,17 +549,17 @@ class AdvancedTitleParser:
             artist_match = self.fuzzy_matcher.find_best_match(
                 candidate, list(self.known_artists), "artist", min_score=0.7
             )
-            
+
             if artist_match:
                 # Try to find corresponding song from remaining title
                 remaining_title = title.replace(candidate, "").strip()
                 remaining_candidates = re.findall(r"\b\w+(?:\s+\w+)*\b", remaining_title)
-                
+
                 for song_candidate in remaining_candidates:
                     song_match = self.fuzzy_matcher.find_best_match(
                         song_candidate, list(self.known_songs), "song", min_score=0.7
                     )
-                    
+
                     if song_match:
                         combined_score = artist_match.score * 0.6 + song_match.score * 0.4
                         if combined_score > best_combined_score:
@@ -571,7 +571,7 @@ class AdvancedTitleParser:
         song_match = self.fuzzy_matcher.find_best_match(
             title, list(self.known_songs), "song", min_score=0.8
         )
-        
+
         if song_match and song_match.score > best_combined_score:
             best_song_match = song_match
             best_artist_match = None
@@ -579,7 +579,7 @@ class AdvancedTitleParser:
 
         if best_artist_match or best_song_match:
             confidence = best_combined_score * 0.95  # Slight penalty for fuzzy matching
-            
+
             return ParseResult(
                 original_artist=best_artist_match.matched if best_artist_match else None,
                 song_title=best_song_match.matched if best_song_match else None,
