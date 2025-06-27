@@ -3,14 +3,13 @@
 import asyncio
 import sqlite3
 from pathlib import Path
-
-from collector.config import CollectorConfig
-from collector.db import DatabaseConfig, DatabaseManager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from collector.processor import ProcessingResult, VideoProcessor
 from collector.advanced_parser import ParseResult
+from collector.config import CollectorConfig
+from collector.db import DatabaseConfig, DatabaseManager
+from collector.processor import ProcessingResult, VideoProcessor
 
 
 def test_extract_karaoke_features():

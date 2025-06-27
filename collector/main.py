@@ -4,15 +4,14 @@ import asyncio
 import logging
 import signal
 import time
-from typing import Any, Dict, List, Optional
 from dataclasses import asdict
-
-from .search.providers.base import SearchResult
+from typing import Any, Dict, List, Optional
 
 from .config import CollectorConfig
 from .db import DatabaseManager
 from .enhanced_search import MultiStrategySearchEngine
 from .processor import VideoProcessor
+from .search.providers.base import SearchResult
 from .search_engine import SearchEngine
 
 try:
