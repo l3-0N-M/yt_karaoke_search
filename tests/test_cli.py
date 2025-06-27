@@ -9,4 +9,3 @@ def test_create_config_command(tmp_path):
     result = runner.invoke(cli.cli, ["create-config", "--output", str(out)])
     assert result.exit_code == 0
     assert out.exists()
-

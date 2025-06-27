@@ -13,30 +13,44 @@ class DummySearch:
             {"video_id": "a2", "url": "u2", "title": "t2", "duration": 80},
         ]
 
+
 class DummyProcessor:
     async def process_video(self, url):
         return ProcessingResult(
-            video_data={"video_id": url[-1], "url": url, "title": "x", "features": {}, "view_count": 0},
+            video_data={
+                "video_id": url[-1],
+                "url": url,
+                "title": "x",
+                "features": {},
+                "view_count": 0,
+            },
             confidence_score=1.0,
             processing_time=0,
             errors=[],
             warnings=[],
         )
+
     async def cleanup(self):
         pass
+
 
 class DummyDB:
     def __init__(self):
         self.saved = []
+
     def get_recent_video_ids(self, days=7):
         return set()
+
     def video_exists(self, vid):
         return False
+
     def get_existing_video_ids_batch(self, vids):
         return set()
+
     def save_video_data(self, result):
         self.saved.append(result.video_data["video_id"])
         return True
+
     def get_statistics(self):
         return {"total_videos": len(self.saved)}
 
@@ -51,4 +65,3 @@ def test_collect_videos(monkeypatch):
     count = asyncio.run(collector.collect_videos(["test"], 2))
     assert count == 2
     assert cast(DummyDB, collector.db_manager).saved == ["1", "2"]
-
