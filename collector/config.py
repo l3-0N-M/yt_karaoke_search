@@ -1,8 +1,8 @@
 """Configuration models using Pydantic for validation."""
 
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 from pathlib import Path
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 
 try:
     import yaml  # type: ignore

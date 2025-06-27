@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import sys
-from pathlib import Path
 import click
 
 from .config import CollectorConfig, load_config, save_config_template
@@ -70,7 +69,7 @@ def collect(config, queries, max_per_query, output_db, verbose, dry_run):
         print(f"Average confidence score: {stats.get('avg_confidence', 0):.2f}")
         
         if top_artists := stats.get('top_artists', []):
-            print(f"\nTop 10 Artists:")
+            print("\nTop 10 Artists:")
             for artist, count, avg_views in top_artists[:10]:
                 print(f"  {artist}: {count} videos (avg {avg_views:,.0f} views)")
         
@@ -109,7 +108,7 @@ def stats(config):
     print(f"Average quality score: {stats.get('avg_quality', 0):.2f}")
     
     if top_artists := stats.get('top_artists', []):
-        print(f"\nTop 10 Artists:")
+        print("\nTop 10 Artists:")
         for artist, count, avg_views in top_artists:
             print(f"  {artist}: {count} videos (avg {avg_views:,.0f} views)")
 

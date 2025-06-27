@@ -3,7 +3,7 @@
 import logging
 import random
 import asyncio
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 try:
     import yt_dlp  # type: ignore

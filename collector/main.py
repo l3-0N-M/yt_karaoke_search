@@ -4,7 +4,7 @@ import asyncio
 import time
 import signal
 import logging
-from typing import List, Dict, Set
+from typing import List, Dict
 
 from .config import CollectorConfig
 from .db import DatabaseManager
@@ -13,7 +13,6 @@ from .processor import VideoProcessor
 
 try:
     from tqdm.asyncio import tqdm_asyncio
-    from tqdm import tqdm
     HAS_TQDM = True
 except ImportError:
     HAS_TQDM = False

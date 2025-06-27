@@ -1,6 +1,5 @@
 """Unit tests for video processing functionality."""
 
-import pytest
 from pathlib import Path
 import sqlite3
 from collector.processor import VideoProcessor, ProcessingResult
@@ -21,10 +20,10 @@ def test_extract_karaoke_features():
     features = processor._extract_karaoke_features(video_data)
     
     # Check that features are detected
-    assert features['has_guide_vocals'] == True
-    assert features['has_scrolling_lyrics'] == True  
-    assert features['is_piano_only'] == True
-    assert features['is_acoustic'] == True
+    assert features['has_guide_vocals']
+    assert features['has_scrolling_lyrics']
+    assert features['is_piano_only']
+    assert features['is_acoustic']
     
 def test_extract_featured_artists():
     """Test featured artists extraction."""

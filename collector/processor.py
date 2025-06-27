@@ -6,6 +6,7 @@ import random
 import logging
 import asyncio
 from typing import Dict, List, Optional
+from urllib.parse import quote_plus
 from dataclasses import dataclass
 
 try:
@@ -235,7 +236,8 @@ class VideoProcessor:
         """Get release year from MusicBrainz API."""
         try:
             # Simple MusicBrainz search
-            query = f"artist:{artist} AND recording:{song}"
+            raw_query = f"artist:{artist} AND recording:{song}"
+            query = quote_plus(raw_query)
             url = f"https://musicbrainz.org/ws/2/recording/?query={query}&limit=1&fmt=json"
             
             headers = {

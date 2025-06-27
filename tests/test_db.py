@@ -1,6 +1,5 @@
 """Unit tests for database functionality."""
 
-import pytest
 import sqlite3
 import time
 from pathlib import Path
@@ -9,11 +8,13 @@ from collector.db import DatabaseManager, DatabaseConfig
 def test_trigger_migration(tmp_path):
     """Test that the updated_at trigger works correctly without recursion."""
     db_path = tmp_path / "test.db"
-    db_manager = DatabaseManager(DatabaseConfig(
-        path=str(db_path), 
-        backup_enabled=False,
-        vacuum_on_startup=False
-    ))
+    DatabaseManager(
+        DatabaseConfig(
+            path=str(db_path),
+            backup_enabled=False,
+            vacuum_on_startup=False,
+        )
+    )
     
     with sqlite3.connect(db_path) as con:
         # Insert a test video
@@ -36,10 +37,12 @@ def test_database_schema_version():
     db_path = Path(tempfile.gettempdir()) / "test_schema.db"
     
     try:
-        db_manager = DatabaseManager(DatabaseConfig(
-            path=str(db_path),
-            backup_enabled=False
-        ))
+        DatabaseManager(
+            DatabaseConfig(
+                path=str(db_path),
+                backup_enabled=False,
+            )
+        )
         
         with sqlite3.connect(db_path) as con:
             version = con.execute("SELECT version FROM schema_info ORDER BY version DESC LIMIT 1").fetchone()[0]
@@ -54,10 +57,12 @@ def test_new_columns_exist():
     db_path = Path(tempfile.gettempdir()) / "test_new_columns.db"
     
     try:
-        db_manager = DatabaseManager(DatabaseConfig(
-            path=str(db_path),
-            backup_enabled=False
-        ))
+        DatabaseManager(
+            DatabaseConfig(
+                path=str(db_path),
+                backup_enabled=False,
+            )
+        )
         
         with sqlite3.connect(db_path) as con:
             # Check that new columns exist in videos table
@@ -78,10 +83,12 @@ def test_feature_confidence_columns():
     db_path = Path(tempfile.gettempdir()) / "test_features.db"
     
     try:
-        db_manager = DatabaseManager(DatabaseConfig(
-            path=str(db_path),
-            backup_enabled=False
-        ))
+        DatabaseManager(
+            DatabaseConfig(
+                path=str(db_path),
+                backup_enabled=False,
+            )
+        )
         
         with sqlite3.connect(db_path) as con:
             # Check that confidence columns exist

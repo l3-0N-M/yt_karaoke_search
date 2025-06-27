@@ -6,7 +6,7 @@ import shutil
 import logging
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Generator, Dict, List, Any, Optional
+from typing import Generator, Dict, Any
 from .config import DatabaseConfig
 
 logger = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (3);
             cursor.execute("INSERT INTO schema_info (version) VALUES (1)")
             logger.info("Applied migration: Initial schema (v1)")
         
-        current_version = 1
+            current_version = 1
 
         if current_version < 2:
             # Apply migration from file
