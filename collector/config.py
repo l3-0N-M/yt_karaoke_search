@@ -89,7 +89,7 @@ class SearchConfig:
 
     # Optional regex patterns for extracting artist and song from titles
     title_patterns: List[str] = field(default_factory=list)
-    
+
     # Advanced parser settings
     use_advanced_parser: bool = True
     enable_fuzzy_matching: bool = True

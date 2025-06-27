@@ -59,8 +59,8 @@ except ImportError:  # pragma: no cover - optional dependency
         return None
 
 
-from .config import CollectorConfig
 from .advanced_parser import AdvancedTitleParser
+from .config import CollectorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class VideoProcessor:
             ),
         )
         self._cleanup_completed = False
-        
+
         # Initialize advanced parser if enabled
         if config.search.use_advanced_parser:
             self.advanced_parser = AdvancedTitleParser(config)
@@ -335,7 +335,7 @@ class VideoProcessor:
         if self.advanced_parser:
             uploader = video_data.get("uploader", "")
             parse_result = self.advanced_parser.parse_title(title, description, tags, uploader)
-            
+
             artist_info = {
                 "original_artist": parse_result.original_artist,
                 "song_title": parse_result.song_title,
@@ -343,18 +343,18 @@ class VideoProcessor:
                 "parsing_method": parse_result.method,
                 "pattern_used": parse_result.pattern_used,
             }
-            
+
             # Add featured artists if found
             if parse_result.featured_artists:
                 artist_info["featured_artists"] = parse_result.featured_artists
-            
+
             # Add alternative results for debugging
             if parse_result.alternative_results:
                 artist_info["alternative_extractions"] = parse_result.alternative_results
         else:
             # Fallback to original method
             artist_info = self._extract_artist_song_info(title, description, tags)
-        
+
         features.update(artist_info)
 
         # Extract featured artists
@@ -399,93 +399,93 @@ class VideoProcessor:
 
     def _extract_artist_song_info(self, title: str, description: str, tags: str = "") -> Dict:
         """Extract artist and song information from title using comprehensive pattern matching."""
-        
+
         # Comprehensive patterns for various karaoke naming schemes
         # Each pattern has: (regex, artist_group, title_group, confidence)
         karaoke_patterns = [
             # Quoted patterns - High confidence due to explicit formatting
             # Pattern: "Artist" - "Title" "(Karaoke Version)"
             (r'^"([^"]+)"\s*-\s*"([^"]+)"\s*\([^)]*[Kk]araoke[^)]*\)', 1, 2, 0.95),
-            
+
             # Pattern: Karaoke "Title" - "Artist" "*"
             (r'^[Kk]araoke\s+"([^"]+)"\s*-\s*"([^"]+)"', 2, 1, 0.95),
-            
+
             # Pattern: "Title" "(in the Style of "Artist")"
             (r'^"([^"]+)"\s*\([^)]*[Ss]tyle\s+of\s+"([^"]+)"[^)]*\)', 2, 1, 0.9),
-            
+
             # Pattern: "Sing King Karaoke - "Title" "(in the Style of "Artist")"
             (r'^[^-]+-\s*"([^"]+)"\s*\([^)]*[Ss]tyle\s+of\s+"([^"]+)"[^)]*\)', 2, 1, 0.9),
-            
+
             # Pattern: "Artist" - "Title" - "Karaoke Version from Zoom Karaoke"
             (r'^"([^"]+)"\s*-\s*"([^"]+)"\s*-\s*"[^"]*[Kk]araoke[^"]*"', 1, 2, 0.9),
-            
+
             # Pattern: "Artist"-"Title" ... "(Karaoke Version)" (complex format)
             (r'^"([^"]+)"-"([^"]+)"\s*(?:"[^"]*")*\s*\([^)]*[Kk]araoke[^)]*\)', 1, 2, 0.85),
-            
+
             # Pattern: "Movie" - "Title" "("Artist")" "(Karaoke Version)"
             (r'^"[^"]+"\s*-\s*"([^"]+)"\s*"?\(?"?([^")]+)"?\)?"\s*\([^)]*[Kk]araoke[^)]*\)', 2, 1, 0.85),
-            
+
             # Pattern: "Kids Karaoke" "Title" "Karaoke Version from Zoom Karaoke"
             (r'^"[^"]*[Kk]araoke[^"]*"\s*"([^"]+)"\s*"[^"]*[Kk]araoke[^"]*"', None, 1, 0.7),
-            
+
             # Bracket patterns
             # Pattern: [짱가라오케/원키/노래방] Artist-Title [ZZang KARAOKE] (Korean style)
             (r'^\[[^\]]*[Kk]araoke[^\]]*\]\s*([^-]+)-([^[\]]+)\s*\[[^\]]*[Kk]araoke[^\]]*\]', 1, 2, 0.9),
-            
+
             # Standard patterns without quotes
             # Pattern: Artist - Title (Karaoke Version)
             (r'^([^-]+?)\s*-\s*([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)', 1, 2, 0.85),
-            
+
             # Pattern: Title (in the Style of Artist)
             (r'^([^(]+?)\s*\([^)]*[Ss]tyle\s+of\s+([^)]+?)\)(?:[^(]*\([^)]*[Kk]araoke[^)]*\))?', 2, 1, 0.8),
-            
+
             # Pattern: Channel Name - Title (in the Style of Artist)
             (r'^[^-]+-\s*([^(]+?)\s*\([^)]*[Ss]tyle\s+of\s+([^)]+?)\)', 2, 1, 0.8),
-            
+
             # Pattern: Title by Artist (Karaoke)
             (r'^([^(]+?)\s+by\s+([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)', 2, 1, 0.8),
-            
+
             # Pattern: Artist - Title [Karaoke]
             (r'^([^-\[]+?)\s*-\s*([^\[]+?)\s*\[[^\]]*[Kk]araoke[^\]]*\]', 1, 2, 0.8),
-            
+
             # Pattern: Title - Artist (with various separators and optional karaoke indicator)
             (r'^([^-–—]+?)\s*[-–—]\s*([^(\[]+?)(?:\s*[\(\[][^)\]]*[Kk]araoke[^)\]]*[\)\]])?', 2, 1, 0.7),
-            
+
             # Generic karaoke pattern with title first
             (r'^([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)', None, 1, 0.6),
         ]
-        
+
         # Clean title for better matching
         clean_title = self._clean_title_for_parsing(title)
-        
+
         # Try each pattern
         for pattern, artist_group, title_group, confidence in karaoke_patterns:
             match = re.search(pattern, clean_title, re.IGNORECASE | re.UNICODE)
             if match:
                 result = {}
-                
+
                 if artist_group and artist_group <= len(match.groups()):
                     artist = self._clean_extracted_text(match.group(artist_group))
                     if self._is_valid_artist_name(artist):
                         result["original_artist"] = artist
-                
+
                 if title_group and title_group <= len(match.groups()):
                     song_title = self._clean_extracted_text(match.group(title_group))
                     if self._is_valid_song_title(song_title):
                         result["song_title"] = song_title
-                
+
                 if result:
                     result["artist_confidence"] = confidence
                     result["extraction_pattern"] = pattern
                     return result
-        
+
         # Fallback to description and tags
         desc_match = re.search(r"(?:by|artist|performed by):?\s*([^\n]+)", description, re.IGNORECASE)
         if desc_match:
             artist = self._clean_extracted_text(desc_match.group(1))
             if self._is_valid_artist_name(artist):
                 return {"original_artist": artist, "artist_confidence": 0.5}
-        
+
         # Try custom patterns from config
         for custom_pattern in self.config.search.title_patterns:
             try:
@@ -494,26 +494,26 @@ class VideoProcessor:
                     artist = self._clean_extracted_text(match.group(1))
                     song_title = self._clean_extracted_text(match.group(2))
                     result = {}
-                    
+
                     if self._is_valid_artist_name(artist):
                         result["original_artist"] = artist
                     if self._is_valid_song_title(song_title):
                         result["song_title"] = song_title
-                    
+
                     if result:
                         result["artist_confidence"] = 0.6
                         result["extraction_pattern"] = "custom"
                         return result
             except re.error:
                 logger.warning(f"Invalid regex pattern in config: {custom_pattern}")
-        
+
         return {"artist_confidence": 0.0}
-    
+
     def _clean_title_for_parsing(self, title: str) -> str:
         """Clean title to improve pattern matching."""
         # Remove common prefixes that interfere with parsing
         cleaned = title.strip()
-        
+
         # Remove leading content before actual title
         prefixes_to_remove = [
             r'^\[[^\]]*\]\s*',  # Remove [brackets] at start
@@ -521,21 +521,21 @@ class VideoProcessor:
             r'^.*?[Kk]araoke[^:]*:\s*',  # Remove "Something Karaoke: "
             r'^.*?presents\s*:?\s*',  # Remove "Channel presents: "
         ]
-        
+
         for prefix in prefixes_to_remove:
             cleaned = re.sub(prefix, '', cleaned, flags=re.IGNORECASE)
-        
+
         return cleaned.strip()
-    
+
     def _clean_extracted_text(self, text: str) -> str:
         """Clean extracted artist/title text."""
         if not text:
             return ""
-        
+
         # Remove extra quotes and brackets
         cleaned = re.sub(r'^["\'`]+|["\'`]+$', '', text.strip())
         cleaned = re.sub(r'^\([^)]*\)|^\[[^\]]*\]', '', cleaned).strip()
-        
+
         # Remove trailing noise
         noise_patterns = [
             r'\s*\([^)]*(?:[Kk]araoke|[Ii]nstrumental|[Mm]inus|[Mm][Rr])[^)]*\)$',
@@ -545,52 +545,52 @@ class VideoProcessor:
             r'\s*[Ii]nst\.?$',
             r'\s*\([^)]*[Kk]ey\)$',  # Remove (Key) variations
         ]
-        
+
         for pattern in noise_patterns:
             cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE).strip()
-        
+
         # Clean up whitespace
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-        
+
         return cleaned
-    
+
     def _is_valid_artist_name(self, artist: str) -> bool:
         """Check if extracted text looks like a valid artist name."""
         if not artist or len(artist.strip()) < 1:
             return False
-        
+
         # Filter out common non-artist terms (more restrictive list)
         invalid_terms = {
             'karaoke', 'instrumental', 'backing track', 'minus one', 'mr', 'inst',
             'version', 'sing along', 'cover', 'remix', 'quality', 'audio', 'video'
         }
-        
+
         artist_lower = artist.lower().strip()
         if artist_lower in invalid_terms:
             return False
-        
+
         # Allow more diverse characters (for international artists)
         # Check that at least 20% of characters are word characters
         word_chars = len(re.findall(r'\w', artist))
         if word_chars < len(artist) * 0.2:
             return False
-        
+
         return len(artist.strip()) <= 100  # Reasonable length limit
-    
+
     def _is_valid_song_title(self, title: str) -> bool:
         """Check if extracted text looks like a valid song title."""
         if not title or len(title.strip()) < 2:
             return False
-        
+
         # Similar validation as artist but more lenient
         invalid_terms = {
             'karaoke', 'instrumental', 'backing track', 'minus one', 'mr', 'inst'
         }
-        
+
         title_lower = title.lower().strip()
         if title_lower in invalid_terms:
             return False
-        
+
         return len(title.strip()) <= 200  # Reasonable length limit
 
     def _calculate_quality_scores(self, video_data: Dict) -> Dict:
