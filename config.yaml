@@ -20,12 +20,52 @@ search:
   primary_method: "yt_dlp"
   max_results_per_query: 100
   
+  # Multi-strategy search settings
+  enable_multi_strategy: true
+  fallback_threshold: 10  # Trigger fallback if primary returns < 10 results
+  max_fallback_providers: 2
+  enable_parallel_search: false  # Set to true for faster but more resource-intensive search
+  
   # Advanced parser settings
   use_advanced_parser: true
   enable_fuzzy_matching: true
   enable_pattern_learning: true
   min_confidence_threshold: 0.5
   enable_multi_language: true
+  
+  # Fuzzy matching configuration
+  fuzzy_matching:
+    min_similarity: 0.7
+    min_phonetic: 0.8
+    max_edit_distance: 3
+  
+  # Result ranking weights
+  ranking_weights:
+    relevance: 0.35
+    quality: 0.25
+    popularity: 0.20
+    metadata: 0.20
+  
+  # Caching configuration
+  caching:
+    enabled: true
+    l1_max_size: 1000  # In-memory cache size
+    l1_ttl_seconds: 300  # 5 minutes
+    l2_ttl_seconds: 3600  # 1 hour
+    l3_ttl_seconds: 86400  # 24 hours
+    cache_dir: "cache"
+  
+  # Provider-specific settings
+  providers:
+    youtube:
+      enabled: true
+      weight: 1.0
+    bing:
+      enabled: true
+      weight: 0.6
+    duckduckgo:
+      enabled: true
+      weight: 0.4
   
   # Optional regex patterns for custom title parsing
   # Each pattern should have 2 capture groups: (artist, title) or (title, artist)

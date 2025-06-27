@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """Enhanced database management with migrations and backups."""
 
-    SCHEMA_VERSION = 4  # Updated to version 4 for channels support
+    SCHEMA_VERSION = 7  # Updated to version 7 for cache support
 
     def __init__(self, config: DatabaseConfig):
         self.config = config
@@ -176,6 +176,76 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
             with open(migration_004_path, "w") as f:
                 f.write(migration_004_content)
 
+        # Create migration 007 for cache tables
+        migration_007_path = self.migrations_dir / "007_cache_tables.sql"
+        if not migration_007_path.exists():
+            migration_007_content = """-- Migration 007: Add cache tables for search optimization
+CREATE TABLE IF NOT EXISTS search_cache (
+    key TEXT PRIMARY KEY,
+    value BLOB NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    last_accessed TIMESTAMP NOT NULL,
+    access_count INTEGER DEFAULT 0,
+    ttl_seconds INTEGER,
+    size_bytes INTEGER DEFAULT 0,
+    metadata TEXT,
+    namespace TEXT,
+    query_hash TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_search_cache_created ON search_cache(created_at);
+CREATE INDEX IF NOT EXISTS idx_search_cache_accessed ON search_cache(last_accessed);
+CREATE INDEX IF NOT EXISTS idx_search_cache_namespace ON search_cache(namespace);
+CREATE INDEX IF NOT EXISTS idx_search_cache_query_hash ON search_cache(query_hash);
+
+-- Table for tracking search query performance
+CREATE TABLE IF NOT EXISTS search_analytics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL,
+    query_normalized TEXT,
+    provider TEXT,
+    result_count INTEGER DEFAULT 0,
+    response_time_ms INTEGER,
+    cache_hit BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_search_analytics_query ON search_analytics(query);
+CREATE INDEX IF NOT EXISTS idx_search_analytics_provider ON search_analytics(provider);
+CREATE INDEX IF NOT EXISTS idx_search_analytics_created ON search_analytics(created_at);
+
+-- Table for fuzzy matching reference data
+CREATE TABLE IF NOT EXISTS fuzzy_reference_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data_type TEXT NOT NULL, -- 'artist' or 'song'
+    original_text TEXT NOT NULL,
+    normalized_text TEXT NOT NULL,
+    popularity_score REAL DEFAULT 0.0,
+    confidence REAL DEFAULT 1.0,
+    source TEXT, -- 'musicbrainz', 'manual', 'extracted'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_fuzzy_ref_type ON fuzzy_reference_data(data_type);
+CREATE INDEX IF NOT EXISTS idx_fuzzy_ref_normalized ON fuzzy_reference_data(normalized_text);
+CREATE INDEX IF NOT EXISTS idx_fuzzy_ref_popularity ON fuzzy_reference_data(popularity_score);
+
+-- Trigger for fuzzy reference data updated_at
+CREATE TRIGGER IF NOT EXISTS trg_fuzzy_ref_updated
+AFTER UPDATE ON fuzzy_reference_data
+FOR EACH ROW
+WHEN OLD.updated_at = NEW.updated_at
+BEGIN
+  UPDATE fuzzy_reference_data SET updated_at = CURRENT_TIMESTAMP
+  WHERE id = NEW.id;
+END;
+
+INSERT OR REPLACE INTO schema_info(version) VALUES (7);
+"""
+            with open(migration_007_path, "w") as f:
+                f.write(migration_007_content)
+
     def _apply_migrations(self, cursor: sqlite3.Cursor, current_version: int):
         """Apply database migrations."""
         if current_version < 1:
@@ -266,6 +336,28 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
                     cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (6)")
                     logger.info("Skipped migration 006; MusicBrainz columns already present")
                 current_version = 6
+
+        if current_version < 7:
+            # Apply cache tables migration
+            migration_007_path = self.migrations_dir / "007_cache_tables.sql"
+            if migration_007_path.exists():
+                # Check if cache tables already exist
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='search_cache'"
+                )
+                if not cursor.fetchone():
+                    try:
+                        with open(migration_007_path, "r") as f:
+                            migration_sql = f.read()
+                        cursor.executescript(migration_sql)
+                        logger.info("Applied migration: Cache tables (v7)")
+                    except Exception as e:
+                        logger.warning(f"Failed to apply migration 007: {e}")
+                        cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (7)")
+                else:
+                    cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (7)")
+                    logger.info("Skipped migration 007; cache tables already exist")
+                current_version = 7
 
     def _create_initial_schema(self, cursor: sqlite3.Cursor):
         """Create the initial database schema."""

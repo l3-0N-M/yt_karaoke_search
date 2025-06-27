@@ -4,9 +4,15 @@ import logging
 import re
 import unicodedata
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional
+
+try:
+    from .search.fuzzy_matcher import FuzzyMatcher
+    HAS_FUZZY_MATCHER = True
+except ImportError:
+    HAS_FUZZY_MATCHER = False
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +53,13 @@ class AdvancedTitleParser:
         self.known_songs = set()
         self.channel_patterns = {}
         self.language_patterns = {}
+
+        # Initialize fuzzy matcher if available
+        if HAS_FUZZY_MATCHER:
+            self.fuzzy_matcher = FuzzyMatcher(config)
+        else:
+            self.fuzzy_matcher = None
+            logger.info("FuzzyMatcher not available, using basic fuzzy matching")
 
         # Load comprehensive patterns
         self._load_patterns()
@@ -283,8 +296,12 @@ class AdvancedTitleParser:
         heuristic_result = self._parse_with_heuristics(clean_title, description, tags)
         results.append(heuristic_result)
 
-        # Pass 5: Fuzzy matching against known data
-        if self.known_artists or self.known_songs:
+        # Pass 5: Advanced fuzzy matching against known data
+        if (self.known_artists or self.known_songs) and self.fuzzy_matcher:
+            fuzzy_result = self._parse_with_advanced_fuzzy_matching(clean_title)
+            results.append(fuzzy_result)
+        elif self.known_artists or self.known_songs:
+            # Fallback to basic fuzzy matching
             fuzzy_result = self._parse_with_fuzzy_matching(clean_title)
             results.append(fuzzy_result)
 
@@ -514,6 +531,69 @@ class AdvancedTitleParser:
             )
 
         return ParseResult(method="fuzzy_matching")
+
+    def _parse_with_advanced_fuzzy_matching(self, title: str) -> ParseResult:
+        """Parse using advanced fuzzy matching with phonetic similarity."""
+        if not self.fuzzy_matcher:
+            return ParseResult(method="advanced_fuzzy_matching")
+
+        # Extract potential artist/song candidates
+        candidates = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b", title)
+        
+        best_artist_match = None
+        best_song_match = None
+        best_combined_score = 0.0
+
+        # Try fuzzy matching against known artists
+        for candidate in candidates:
+            artist_match = self.fuzzy_matcher.find_best_match(
+                candidate, list(self.known_artists), "artist", min_score=0.7
+            )
+            
+            if artist_match:
+                # Try to find corresponding song from remaining title
+                remaining_title = title.replace(candidate, "").strip()
+                remaining_candidates = re.findall(r"\b\w+(?:\s+\w+)*\b", remaining_title)
+                
+                for song_candidate in remaining_candidates:
+                    song_match = self.fuzzy_matcher.find_best_match(
+                        song_candidate, list(self.known_songs), "song", min_score=0.7
+                    )
+                    
+                    if song_match:
+                        combined_score = artist_match.score * 0.6 + song_match.score * 0.4
+                        if combined_score > best_combined_score:
+                            best_combined_score = combined_score
+                            best_artist_match = artist_match
+                            best_song_match = song_match
+
+        # Also try direct song matching
+        song_match = self.fuzzy_matcher.find_best_match(
+            title, list(self.known_songs), "song", min_score=0.8
+        )
+        
+        if song_match and song_match.score > best_combined_score:
+            best_song_match = song_match
+            best_artist_match = None
+            best_combined_score = song_match.score
+
+        if best_artist_match or best_song_match:
+            confidence = best_combined_score * 0.95  # Slight penalty for fuzzy matching
+            
+            return ParseResult(
+                original_artist=best_artist_match.matched if best_artist_match else None,
+                song_title=best_song_match.matched if best_song_match else None,
+                confidence=confidence,
+                method="advanced_fuzzy_matching",
+                pattern_used=f"fuzzy_artist:{best_artist_match.score if best_artist_match else 0:.2f}_song:{best_song_match.score if best_song_match else 0:.2f}",
+                metadata={
+                    "artist_match": asdict(best_artist_match) if best_artist_match else None,
+                    "song_match": asdict(best_song_match) if best_song_match else None,
+                    "fuzzy_method": "advanced_with_phonetic"
+                }
+            )
+
+        return ParseResult(method="advanced_fuzzy_matching")
 
     def _create_result_from_match(
         self, match, artist_group, title_group, confidence, method, pattern
