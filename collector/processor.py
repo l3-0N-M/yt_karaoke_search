@@ -649,7 +649,7 @@ class VideoProcessor:
 
         formats = video_data.get("formats", [])
         if formats:
-            max_height = max((f.get("height", 0) for f in formats), default=0)
+            max_height = max((f.get("height") or 0 for f in formats), default=0)
             if max_height >= 1080:
                 technical_factors.append(0.4)
             elif max_height >= 720:
@@ -657,7 +657,7 @@ class VideoProcessor:
             elif max_height >= 480:
                 technical_factors.append(0.2)
 
-        max_abr = max((f.get("abr", 0) for f in formats), default=0)
+        max_abr = max((f.get("abr") or 0 for f in formats), default=0)
         if max_abr >= 192:
             technical_factors.append(0.3)
         elif max_abr >= 128:
