@@ -1,6 +1,7 @@
 """Unit tests for database functionality."""
 
 import sqlite3
+import logging
 import time
 from pathlib import Path
 
@@ -58,6 +59,24 @@ def test_database_schema_version():
     finally:
         if db_path.exists():
             db_path.unlink()
+
+
+def test_channel_indexes_created(tmp_path, caplog):
+    """Ensure channel-related indexes exist without warnings."""
+    db_path = tmp_path / "channels.db"
+
+    with caplog.at_level(logging.WARNING, logger="collector.db"):
+        DatabaseManager(
+            DatabaseConfig(path=str(db_path), backup_enabled=False)
+        )
+
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert not warnings, f"Unexpected warnings: {[w.message for w in warnings]}"
+
+    with sqlite3.connect(db_path) as con:
+        idxs = {row[1] for row in con.execute("PRAGMA index_list('channels')")}
+        assert "idx_channels_processed_karaoke" in idxs
+        assert "idx_channels_subscriber_count" in idxs
 
 
 def test_new_columns_exist():
