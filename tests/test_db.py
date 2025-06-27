@@ -167,3 +167,17 @@ def test_validation_table_and_insert(tmp_path):
             "SELECT artist_valid, song_valid, validation_score, suggested_title FROM validation_results WHERE video_id='vid1'"
         ).fetchone()
         assert row == (1, 0, 0.6, "X")
+
+
+def test_pool_settings_applied(tmp_path):
+    db_path = tmp_path / "pool.db"
+    cfg = DatabaseConfig(
+        path=str(db_path),
+        backup_enabled=False,
+        connection_pool_size=3,
+        connection_timeout=5.0,
+    )
+
+    dbm = DatabaseManager(cfg)
+    assert dbm._max_pool_size == 3
+    assert dbm._pool_timeout == 5.0

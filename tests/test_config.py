@@ -79,3 +79,18 @@ def test_validation_error(tmp_path):
     )
     with pytest.raises(ValueError):
         load_config(str(cfg_path))
+
+
+def test_custom_database_pool_settings(tmp_path):
+    cfg_path = tmp_path / "pool.yaml"
+    cfg_path.write_text(
+        """
+        database:
+          connection_pool_size: 5
+          connection_timeout: 5.5
+        """
+    )
+
+    cfg = load_config(str(cfg_path))
+    assert cfg.database.connection_pool_size == 5
+    assert cfg.database.connection_timeout == 5.5

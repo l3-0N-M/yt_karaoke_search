@@ -28,8 +28,8 @@ class DatabaseManager:
         # Connection pool to prevent connection exhaustion
         self._connection_pool = []
         self._pool_lock = threading.Lock()
-        self._max_pool_size = 10
-        self._pool_timeout = 30.0
+        self._max_pool_size = config.connection_pool_size
+        self._pool_timeout = config.connection_timeout
 
         self.setup_database()
 

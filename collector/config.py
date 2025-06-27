@@ -36,6 +36,8 @@ class DatabaseConfig:
     backup_retention_days: int = 7
     vacuum_threshold_mb: int = 100
     vacuum_on_startup: bool = False
+    connection_pool_size: int = 10
+    connection_timeout: float = 30.0
 
 
 @dataclass
