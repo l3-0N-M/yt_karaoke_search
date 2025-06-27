@@ -12,7 +12,7 @@ A comprehensive tool for collecting karaoke video data from YouTube with confide
 - **Channel-based collection** - Systematic processing of entire YouTube channels
 - **Enterprise scalability** - Handles 2,000-10,000 videos per channel efficiently
 - **Return YouTube Dislike integration** - Get estimated dislike counts with confidence scoring
-- **Advanced title parsing** - Multi-strategy parsing with ML-inspired techniques and adaptive learning
+- **Advanced title parsing** - 5-pass parsing ladder with confidence-based progression, ML techniques, and adaptive learning
 - **Comprehensive metadata extraction** - Artist names, song titles, featured artists, release years  
 - **Multi-language support** - Handles Korean, Japanese, Chinese, and other international formats
 - **Engagement analytics** - Like/dislike ratios and engagement scoring with penalties
@@ -126,7 +126,27 @@ await collector.cleanup()
 
 ## Advanced Title Parsing
 
-The collector features a sophisticated multi-strategy parsing system that handles diverse karaoke video naming schemes:
+The collector features a sophisticated multi-strategy parsing system that handles diverse karaoke video naming schemes with an advanced 5-pass parsing ladder:
+
+### Multi-Pass Parsing Ladder
+
+The system implements a progressive 5-pass parsing ladder with confidence-based stopping and intelligent resource management:
+
+```
+Pass 0: Channel Template Match     (Threshold: 0.85) - Fast, channel-specific patterns
+Pass 1: Auto-retemplate           (Threshold: 0.8)  - Recent upload pattern learning  
+Pass 2: ML/Embedding Similarity   (Threshold: 0.75) - Semantic and fuzzy matching
+Pass 3: Web Search Integration    (Threshold: 0.7)  - SERP-based parsing with caching
+Pass 4: Acoustic Fingerprint      (Threshold: 0.9)  - Audio analysis (placeholder)
+```
+
+**Key Features:**
+- **Confidence-based progression** - Stops at first pass meeting threshold
+- **Budget management** - CPU time and API call limits per video
+- **Drift detection** - Automatically detects when channel patterns change
+- **SERP caching** - 1-week TTL cache for web search results
+- **Language-aware** - Multi-language filler word removal
+- **Exponential backoff** - Intelligent retry with increasing delays
 
 ### Supported Formats
 - **Quoted formats**: `"Artist" - "Title" "(Karaoke Version)"`
@@ -164,7 +184,124 @@ search:
   
   # Enable multi-language pattern detection
   enable_multi_language: true
+  
+  # Multi-pass parsing ladder configuration
+  multi_pass:
+    enabled: true
+    stop_on_first_success: true
+    total_cpu_budget: 60.0
+    total_api_budget: 100
+    
+    # Individual pass settings
+    channel_template:
+      confidence_threshold: 0.85
+      timeout_seconds: 10.0
+    web_search:
+      enabled: true
+      confidence_threshold: 0.7
+      api_budget_limit: 20
 ```
+
+## Multi-Pass Parsing System
+
+The collector includes an advanced multi-pass parsing ladder system for maximum accuracy across diverse karaoke video formats. This system progressively applies different parsing strategies until a confident result is achieved.
+
+### Quick Setup
+
+```python
+from collector import KaraokeCollector, CollectorConfig
+from collector.config import load_config
+
+# Load configuration and enable multi-pass parsing
+config = load_config("config.yaml")
+config.search.multi_pass.enabled = True
+
+# Initialize with multi-pass enabled
+collector = KaraokeCollector(config)
+
+# Parse a challenging title
+result = await collector.multi_pass_controller.parse_video(
+    video_id="abc123",
+    title='Sing King Karaoke - "Bohemian Rhapsody" (Style of "Queen")',
+    channel_name="Sing King Karaoke",
+    channel_id="UC1234567890"
+)
+
+# Check results
+if result.final_result:
+    print(f"Artist: {result.final_result.original_artist}")
+    print(f"Song: {result.final_result.song_title}")
+    print(f"Confidence: {result.final_confidence:.2f}")
+    print(f"Method: {result.stopped_at_pass.value}")
+```
+
+### System Architecture
+
+The multi-pass system implements intelligent progression through five specialized passes:
+
+1. **Pass 0 - Channel Template**: Channel-specific learned patterns with drift detection
+2. **Pass 1 - Auto-retemplate**: Temporal pattern analysis for format changes
+3. **Pass 2 - ML/Embedding**: Semantic similarity with optional transformer models
+4. **Pass 3 - Web Search**: SERP integration with intelligent query cleaning
+5. **Pass 4 - Acoustic**: Audio fingerprinting (placeholder for future implementation)
+
+### Configuration Examples
+
+#### High-Accuracy Mode (Thorough)
+```yaml
+search:
+  multi_pass:
+    enabled: true
+    stop_on_first_success: false  # Try all passes
+    total_cpu_budget: 120.0
+    channel_template:
+      confidence_threshold: 0.9
+```
+
+#### Fast Mode (Speed-Optimized)
+```yaml
+search:
+  multi_pass:
+    enabled: true
+    total_cpu_budget: 30.0
+    auto_retemplate:
+      enabled: false
+    acoustic_fingerprint:
+      enabled: false
+```
+
+#### Web Search Focused
+```yaml
+search:
+  multi_pass:
+    enabled: true
+    web_search:
+      confidence_threshold: 0.6
+      api_budget_limit: 50
+      timeout_seconds: 180.0
+```
+
+### Performance Monitoring
+
+```python
+# Get comprehensive statistics
+stats = collector.multi_pass_controller.get_statistics()
+print(f"Success rate: {stats['success_rates']}")
+print(f"Average processing time: {stats['average_processing_time']}")
+
+# Monitor individual pass performance
+channel_stats = collector.multi_pass_controller.channel_template_pass.get_statistics()
+print(f"Learned patterns: {channel_stats['total_learned_patterns']}")
+print(f"Drift detected: {channel_stats['channels_with_drift']} channels")
+```
+
+### Integration Files
+
+- **Complete Guide**: See `MULTI_PASS_GUIDE.md` for detailed documentation
+- **Integration Example**: `collector/multi_pass_integration_example.py` for setup examples
+- **Test Suite**: `test_multi_pass_system.py` and `test_multi_pass_edge_cases.py` for comprehensive testing
+
+The multi-pass system is designed to be backward-compatible and disabled by default. Enable it when you need maximum parsing accuracy for challenging video titles.
 
 ## Configuration
 
@@ -282,10 +419,14 @@ karaoke-collector collect -q "test" -m 5 --verbose
 
 ## Recent Improvements
 
+- ✅ **Multi-pass parsing ladder** - Advanced 5-pass system with confidence-based progression and budget management
+- ✅ **Channel drift detection** - Automatically detects and adapts to changing channel patterns
+- ✅ **SERP integration** - Web search with intelligent query cleaning and caching
+- ✅ **Enhanced ML/embedding support** - Optional sentence-transformers with semantic similarity
+- ✅ **Comprehensive testing** - Complete test suite for multi-pass system with edge case coverage
 - ✅ **Enhanced regex patterns** - Fixed artist-song extraction for better accuracy
 - ✅ **Type safety improvements** - Resolved Pylance type checking issues  
 - ✅ **Code formatting** - Applied black formatting for consistent style
-- ✅ **Comprehensive testing** - All tests passing with coverage reporting
 - ✅ **Advanced parser stability** - Improved PatternStats dataclass handling
 
 ## Testing

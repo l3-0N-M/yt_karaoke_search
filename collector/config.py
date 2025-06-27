@@ -71,12 +71,93 @@ class DataSourceConfig:
 
 
 @dataclass
+class FuzzyMatchingConfig:
+    """Fuzzy matching configuration."""
+    
+    min_similarity: float = 0.7
+    min_phonetic: float = 0.8
+    max_edit_distance: int = 3
+
+
+@dataclass
+class MultiPassPassConfig:
+    """Configuration for a single pass in the multi-pass ladder."""
+    
+    enabled: bool = True
+    confidence_threshold: float = 0.8
+    timeout_seconds: float = 30.0
+    max_retries: int = 3
+    cpu_budget_limit: float = 10.0  # seconds
+    api_budget_limit: int = 10      # API calls
+    exponential_backoff_base: float = 2.0
+    exponential_backoff_max: float = 60.0
+
+
+@dataclass 
+class MultiPassConfig:
+    """Configuration for the multi-pass parsing ladder."""
+    
+    # Global settings
+    enabled: bool = False  # Disabled by default for backward compatibility
+    max_total_retries: int = 5
+    global_timeout_seconds: float = 300.0
+    stop_on_first_success: bool = True
+    
+    # Budget management
+    total_cpu_budget: float = 60.0    # seconds per video
+    total_api_budget: int = 100       # API calls per video
+    
+    # Backoff and retry
+    base_retry_delay: float = 1.0
+    max_retry_delay: float = 300.0
+    retry_exponential_base: float = 2.0
+    
+    # Per-pass configurations
+    channel_template: MultiPassPassConfig = field(default_factory=lambda: MultiPassPassConfig(
+        confidence_threshold=0.85,
+        timeout_seconds=10.0,
+        cpu_budget_limit=2.0,
+        api_budget_limit=0
+    ))
+    auto_retemplate: MultiPassPassConfig = field(default_factory=lambda: MultiPassPassConfig(
+        confidence_threshold=0.8,
+        timeout_seconds=30.0,
+        cpu_budget_limit=5.0,
+        api_budget_limit=2
+    ))
+    ml_embedding: MultiPassPassConfig = field(default_factory=lambda: MultiPassPassConfig(
+        confidence_threshold=0.75,
+        timeout_seconds=60.0,
+        cpu_budget_limit=10.0,
+        api_budget_limit=5
+    ))
+    web_search: MultiPassPassConfig = field(default_factory=lambda: MultiPassPassConfig(
+        confidence_threshold=0.7,
+        timeout_seconds=120.0,
+        cpu_budget_limit=15.0,
+        api_budget_limit=20
+    ))
+    acoustic_fingerprint: MultiPassPassConfig = field(default_factory=lambda: MultiPassPassConfig(
+        enabled=False,  # Placeholder for future implementation
+        confidence_threshold=0.9,
+        timeout_seconds=300.0,
+        cpu_budget_limit=60.0,
+        api_budget_limit=50
+    ))
+
+
+@dataclass
 class SearchConfig:
     """Search configuration and query categories."""
 
     primary_method: str = "yt_dlp"
     max_results_per_query: int = 100
     use_multi_strategy: bool = False
+    
+    # Enhanced search settings
+    fallback_threshold: int = 10
+    max_fallback_providers: int = 2
+    enable_parallel_search: bool = False
 
     search_categories: Dict[str, List[str]] = field(
         default_factory=lambda: {
@@ -104,6 +185,12 @@ class SearchConfig:
     enable_pattern_learning: bool = True
     min_confidence_threshold: float = 0.5
     enable_multi_language: bool = True
+    
+    # Fuzzy matching configuration
+    fuzzy_matching: FuzzyMatchingConfig = field(default_factory=FuzzyMatchingConfig)
+    
+    # Multi-pass parsing configuration
+    multi_pass: MultiPassConfig = field(default_factory=MultiPassConfig)
 
 
 @dataclass
@@ -187,6 +274,25 @@ def validate_config(cfg: CollectorConfig) -> None:
     # Search validation with reasonable bounds
     if not (1 <= cfg.search.max_results_per_query <= 1000):
         raise ValueError("max_results_per_query must be between 1 and 1000")
+    
+    # Multi-pass validation
+    if cfg.search.multi_pass.enabled:
+        if not (1 <= cfg.search.multi_pass.max_total_retries <= 20):
+            raise ValueError("multi_pass.max_total_retries must be between 1 and 20")
+        if not (1 <= cfg.search.multi_pass.global_timeout_seconds <= 3600):
+            raise ValueError("multi_pass.global_timeout_seconds must be between 1 and 3600")
+        if not (1 <= cfg.search.multi_pass.total_cpu_budget <= 600):
+            raise ValueError("multi_pass.total_cpu_budget must be between 1 and 600 seconds")
+        if not (1 <= cfg.search.multi_pass.total_api_budget <= 1000):
+            raise ValueError("multi_pass.total_api_budget must be between 1 and 1000")
+    
+    # Fuzzy matching validation
+    if not (0.1 <= cfg.search.fuzzy_matching.min_similarity <= 1.0):
+        raise ValueError("fuzzy_matching.min_similarity must be between 0.1 and 1.0")
+    if not (0.1 <= cfg.search.fuzzy_matching.min_phonetic <= 1.0):
+        raise ValueError("fuzzy_matching.min_phonetic must be between 0.1 and 1.0")
+    if not (1 <= cfg.search.fuzzy_matching.max_edit_distance <= 10):
+        raise ValueError("fuzzy_matching.max_edit_distance must be between 1 and 10")
 
     # Logging validation
     if not (1 <= cfg.logging.max_file_size_mb <= 1000):  # 1MB to 1GB
@@ -239,6 +345,31 @@ def load_config(config_path: Optional[str] = None) -> CollectorConfig:
             raise ValueError(f"Cannot read configuration file {config_path}: {e}")
 
         try:
+            # Handle nested search configuration
+            search_data = config_data.get("search", {})
+            
+            # Extract fuzzy matching config
+            fuzzy_data = search_data.pop("fuzzy_matching", {})
+            fuzzy_config = FuzzyMatchingConfig(
+                **_filter_fields(fuzzy_data, FuzzyMatchingConfig)
+            )
+            
+            # Extract multi-pass config
+            multi_pass_data = search_data.pop("multi_pass", {})
+            
+            # Extract per-pass configs
+            pass_configs = {}
+            for pass_name in ["channel_template", "auto_retemplate", "ml_embedding", "web_search", "acoustic_fingerprint"]:
+                pass_data = multi_pass_data.pop(pass_name, {})
+                pass_configs[pass_name] = MultiPassPassConfig(
+                    **_filter_fields(pass_data, MultiPassPassConfig)
+                )
+            
+            multi_pass_config = MultiPassConfig(
+                **_filter_fields(multi_pass_data, MultiPassConfig),
+                **pass_configs
+            )
+            
             cfg = CollectorConfig(
                 database=DatabaseConfig(
                     **_filter_fields(config_data.get("database", {}), DatabaseConfig)
@@ -249,7 +380,11 @@ def load_config(config_path: Optional[str] = None) -> CollectorConfig:
                 data_sources=DataSourceConfig(
                     **_filter_fields(config_data.get("data_sources", {}), DataSourceConfig)
                 ),
-                search=SearchConfig(**_filter_fields(config_data.get("search", {}), SearchConfig)),
+                search=SearchConfig(
+                    **_filter_fields(search_data, SearchConfig),
+                    fuzzy_matching=fuzzy_config,
+                    multi_pass=multi_pass_config
+                ),
                 logging=LoggingConfig(
                     **_filter_fields(config_data.get("logging", {}), LoggingConfig)
                 ),
