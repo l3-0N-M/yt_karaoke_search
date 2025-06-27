@@ -101,10 +101,17 @@ class DatabaseManager:
             )
 
             cursor.execute("SELECT version FROM schema_info ORDER BY version DESC LIMIT 1")
-            current_version = cursor.fetchone()
-            current_version = current_version[0] if current_version else 0
+            version_row = cursor.fetchone()
+            start_version = version_row[0] if version_row else 0
 
-            self._apply_migrations(cursor, current_version)
+            self._apply_migrations(cursor, start_version)
+
+            cursor.execute("SELECT version FROM schema_info ORDER BY version DESC LIMIT 1")
+            version_row = cursor.fetchone()
+            end_version = version_row[0] if version_row else start_version
+
+            if start_version < 4 <= end_version:
+                self._create_performance_indexes(cursor)
 
             if self.config.vacuum_on_startup:
                 self._conditional_vacuum(cursor)
@@ -504,7 +511,6 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
 
         # Create indexes
         self._create_indexes(cursor)
-        self._create_performance_indexes(cursor)
 
     def _create_indexes(self, cursor: sqlite3.Cursor):
         """Create database indexes for performance."""
