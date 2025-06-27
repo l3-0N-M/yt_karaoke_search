@@ -15,3 +15,6 @@ CREATE INDEX IF NOT EXISTS idx_videos_musicbrainz_recording_id ON videos(musicbr
 CREATE INDEX IF NOT EXISTS idx_videos_musicbrainz_artist_id ON videos(musicbrainz_artist_id);
 CREATE INDEX IF NOT EXISTS idx_videos_musicbrainz_genre ON videos(musicbrainz_genre);
 CREATE INDEX IF NOT EXISTS idx_videos_record_label ON videos(record_label);
+
+-- Update schema version
+INSERT OR REPLACE INTO schema_info(version) VALUES (6);
