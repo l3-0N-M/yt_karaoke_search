@@ -54,11 +54,16 @@ class LRUCache:
         self.max_size = max_size
         self.default_ttl = default_ttl
         self._cache = OrderedDict()
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
+
+    def _ensure_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def get(self, key: str) -> Optional[Any]:
         """Get value from cache."""
-        async with self._lock:
+        async with self._ensure_lock():
             if key not in self._cache:
                 return None
 
@@ -77,7 +82,7 @@ class LRUCache:
 
     async def put(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
         """Put value in cache."""
-        async with self._lock:
+        async with self._ensure_lock():
             ttl = ttl or self.default_ttl
 
             # Calculate size (approximate)
@@ -111,7 +116,7 @@ class LRUCache:
 
     async def delete(self, key: str) -> bool:
         """Delete entry from cache."""
-        async with self._lock:
+        async with self._ensure_lock():
             if key in self._cache:
                 del self._cache[key]
                 return True
@@ -119,12 +124,12 @@ class LRUCache:
 
     async def clear(self):
         """Clear all cache entries."""
-        async with self._lock:
+        async with self._ensure_lock():
             self._cache.clear()
 
     async def get_stats(self) -> Dict:
         """Get cache statistics."""
-        async with self._lock:
+        async with self._ensure_lock():
             total_size = sum(entry.size_bytes for entry in self._cache.values())
             expired_count = sum(1 for entry in self._cache.values() if entry.is_expired)
 
