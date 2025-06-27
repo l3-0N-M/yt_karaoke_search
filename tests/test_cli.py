@@ -49,7 +49,7 @@ def test_collect_command_multi_strategy(monkeypatch):
     captured = {}
 
     def _collector(cfg):
-        captured['flag'] = cfg.search.use_multi_strategy
+        captured["flag"] = cfg.search.use_multi_strategy
         return DummyCollector()
 
     monkeypatch.setattr(cli, "KaraokeCollector", _collector)
@@ -57,7 +57,7 @@ def test_collect_command_multi_strategy(monkeypatch):
 
     result = runner.invoke(cli.cli, ["collect", "-q", "test", "--multi-strategy"])
     assert result.exit_code == 0
-    assert captured.get('flag') is True
+    assert captured.get("flag") is True
 
 
 def test_collect_channel_command_event_loop(monkeypatch):
@@ -75,7 +75,7 @@ def test_collect_channel_multi_strategy(monkeypatch):
     captured = {}
 
     def _collector(cfg):
-        captured['flag'] = cfg.search.use_multi_strategy
+        captured["flag"] = cfg.search.use_multi_strategy
         return DummyCollector()
 
     monkeypatch.setattr(cli, "KaraokeCollector", _collector)
@@ -86,7 +86,7 @@ def test_collect_channel_multi_strategy(monkeypatch):
         ["collect-channel", "http://example.com", "--multi-strategy"],
     )
     assert result.exit_code == 0
-    assert captured.get('flag') is True
+    assert captured.get("flag") is True
 
 
 def test_collect_channels_command_event_loop(tmp_path, monkeypatch):
