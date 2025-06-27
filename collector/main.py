@@ -59,6 +59,7 @@ class KaraokeCollector:
         with self._processed_ids_lock:
             cache_age = current_time - self._last_cache_cleanup
             current_size = len(self.processed_video_ids)
+            snapshot_ids = set(self.processed_video_ids)
 
             # Clean if cache is too large, or periodically (every 30 minutes), or forced
             should_clean = (
@@ -84,7 +85,8 @@ class KaraokeCollector:
                 # Update cache atomically
                 with self._processed_ids_lock:
                     old_size = len(self.processed_video_ids)
-                    self.processed_video_ids = recent_ids
+                    new_ids = self.processed_video_ids - snapshot_ids
+                    self.processed_video_ids = recent_ids.union(new_ids)
                     self._last_cache_cleanup = current_time
                     logger.info(
                         f"Memory cache cleaned: {old_size} -> {len(self.processed_video_ids)} video IDs"
