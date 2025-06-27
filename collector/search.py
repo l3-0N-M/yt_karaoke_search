@@ -148,8 +148,9 @@ class SearchEngine:
             score += 1.0
 
         query_terms = query_lower.split()
-        matching_terms = sum(1 for term in query_terms if term in title_lower)
-        score += (matching_terms / len(query_terms)) * 0.5
+        if query_terms:  # Avoid division by zero
+            matching_terms = sum(1 for term in query_terms if term in title_lower)
+            score += (matching_terms / len(query_terms)) * 0.5
 
         quality_indicators = {
             "hd": 0.2,
