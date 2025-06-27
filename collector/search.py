@@ -70,6 +70,8 @@ class SearchEngine:
 
     def _execute_search(self, search_query: str) -> Dict:
         """Execute yt-dlp search in a thread-safe way."""
+        if yt_dlp is None:
+            raise RuntimeError("yt-dlp not available")
         with yt_dlp.YoutubeDL(self.yt_dlp_opts) as ydl:
             return ydl.extract_info(search_query, download=False)
 

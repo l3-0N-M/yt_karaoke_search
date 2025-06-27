@@ -4,7 +4,7 @@ import asyncio
 import logging
 import signal
 import time
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 from .config import CollectorConfig
 from .db import DatabaseManager
@@ -17,6 +17,7 @@ try:
     HAS_TQDM = True
 except ImportError:
     HAS_TQDM = False
+    tqdm_asyncio: Optional[Any] = None
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,7 @@ class KaraokeCollector:
 
         # Use progress bar if available and enabled
         if (
-            HAS_TQDM and self.config.ui.show_progress_bar and len(new_rows) > 10
+            HAS_TQDM and tqdm_asyncio and self.config.ui.show_progress_bar and len(new_rows) > 10
         ):  # Only show for larger batches
 
             tasks = [_worker(v) for v in new_rows]

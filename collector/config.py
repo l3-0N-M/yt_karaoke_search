@@ -7,7 +7,16 @@ from typing import Dict, List, Optional
 try:
     import yaml  # type: ignore
 except ImportError:  # pragma: no cover - optional dependency
-    import json as yaml  # type: ignore
+    import json
+
+    class yaml:
+        @staticmethod
+        def safe_load(f):
+            return json.load(f)
+
+        @staticmethod
+        def dump(data, f, default_flow_style=False, indent=2):
+            json.dump(data, f, indent=indent)
 
 
 @dataclass

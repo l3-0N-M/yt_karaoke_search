@@ -174,6 +174,8 @@ class VideoProcessor:
 
     def _extract_with_ytdlp(self, video_url: str) -> Dict:
         """Execute yt-dlp extraction in thread."""
+        if yt_dlp is None:
+            raise RuntimeError("yt-dlp not available")
         with yt_dlp.YoutubeDL(self.yt_dlp_opts) as ydl:
             return ydl.extract_info(video_url, download=False)
 
