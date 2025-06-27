@@ -6,7 +6,7 @@ import random
 import re
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 from urllib.parse import quote_plus
 
 try:
@@ -32,9 +32,14 @@ except ImportError:  # pragma: no cover - optional dependency
         def __init__(self, *args, **kwargs):
             pass
 
+    class _DummyTimeout:
+        def __init__(self, *args, **kwargs):
+            pass
+
     class httpx:
         AsyncClient = _DummyAsyncClient
         Limits = _DummyLimits
+        Timeout = _DummyTimeout
 
 
 try:
@@ -189,7 +194,8 @@ class VideoProcessor:
         if yt_dlp is None:
             raise RuntimeError("yt-dlp not available")
         with yt_dlp.YoutubeDL(self.yt_dlp_opts) as ydl:
-            return ydl.extract_info(video_url, download=False)
+            info = ydl.extract_info(video_url, download=False)
+            return cast(Dict, info)
 
     async def _enhance_with_external_data(
         self, video_data: Dict, errors: List[str], warnings: List[str]
