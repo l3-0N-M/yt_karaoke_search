@@ -20,7 +20,13 @@ search:
   primary_method: "yt_dlp"
   max_results_per_query: 100
   # Optional regex patterns for custom title parsing
-  title_patterns: []
+  # Each pattern should have 2 capture groups: (artist, title) or (title, artist)
+  # The enhanced parser will try these after built-in patterns
+  title_patterns:
+    # Example: "Custom Channel - Artist Name - Song Title"
+    # - '^Custom Channel - ([^-]+) - (.+)$'
+    # Example: "Artist: Song (Custom Format)"
+    # - '^([^:]+):\s*([^(]+)\s*\(Custom Format\)'
 
 data_sources:
   ryd_api_enabled: true
