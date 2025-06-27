@@ -735,7 +735,7 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                             video_data.get("upload_date"),
                             video_data.get("thumbnail"),
                             video_data.get("uploader"),
-                            video_data.get("uploader_id"),
+                            video_data.get("uploader_id") or None,
                             features.get("original_artist"),
                             features.get("featured_artists"),
                             features.get("song_title"),
