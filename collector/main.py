@@ -51,6 +51,13 @@ class KaraokeCollector:
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         self.shutdown_requested = True
 
+    def _safe_duration(self, duration):
+        """Safely convert duration to integer, handling None and invalid values."""
+        try:
+            return int(duration) if duration is not None else 0
+        except (ValueError, TypeError):
+            return 0
+
     async def _cleanup_memory_cache(self, force: bool = False):
         """Cleanup memory cache to prevent unbounded growth."""
         current_time = time.time()
@@ -240,8 +247,8 @@ class KaraokeCollector:
         for v in video_rows:
             if (
                 v["video_id"] not in existing_in_db
-                and (v.get("duration") or 0) >= 45
-                and (v.get("duration") or 0) <= 900
+                and self._safe_duration(v.get("duration")) >= 45
+                and self._safe_duration(v.get("duration")) <= 900
                 and not await self._is_video_processed(v["video_id"])
             ):
                 filtered_videos.append(v)

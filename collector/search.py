@@ -168,7 +168,11 @@ class SearchEngine:
             title = entry.get("title", "").lower()
             if self._is_likely_karaoke(title):
                 # Add duration heuristic filter
-                dur = entry.get("duration") or 0
+                dur = entry.get("duration")
+                try:
+                    dur = int(dur) if dur is not None else 0
+                except (ValueError, TypeError):
+                    dur = 0
                 if not (45 <= dur <= 900):  # 45s - 15min window
                     continue
 
@@ -311,7 +315,11 @@ class SearchEngine:
 
                 # Apply basic filtering
                 title = entry.get("title", "").lower()
-                duration = entry.get("duration") or 0
+                duration = entry.get("duration")
+                try:
+                    duration = int(duration) if duration is not None else 0
+                except (ValueError, TypeError):
+                    duration = 0
 
                 # Skip very short or very long videos
                 if not (30 <= duration <= 1200):  # 30s - 20min window for channels

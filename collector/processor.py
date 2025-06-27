@@ -136,6 +136,13 @@ class VideoProcessor:
             "user_agent": random.choice(self.config.scraping.user_agents),
         }
 
+    def _safe_int(self, value):
+        """Safely convert value to integer, handling None and invalid values."""
+        try:
+            return int(value) if value is not None else 0
+        except (ValueError, TypeError):
+            return 0
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def process_video(self, video_url: str) -> ProcessingResult:
         """Process a single video comprehensively."""
@@ -649,7 +656,7 @@ class VideoProcessor:
 
         formats = video_data.get("formats", [])
         if formats:
-            max_height = max((f.get("height") or 0 for f in formats), default=0)
+            max_height = max((self._safe_int(f.get("height")) for f in formats), default=0)
             if max_height >= 1080:
                 technical_factors.append(0.4)
             elif max_height >= 720:
@@ -657,7 +664,7 @@ class VideoProcessor:
             elif max_height >= 480:
                 technical_factors.append(0.2)
 
-        max_abr = max((f.get("abr") or 0 for f in formats), default=0)
+        max_abr = max((self._safe_int(f.get("abr")) for f in formats), default=0)
         if max_abr >= 192:
             technical_factors.append(0.3)
         elif max_abr >= 128:

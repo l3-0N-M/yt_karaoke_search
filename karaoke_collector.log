@@ -173,3 +173,24 @@
 2025-06-27 16:38:41,180 - collector.processor - ERROR - HTTP client cleanup error: Event loop is closed
 2025-06-27 16:38:41,221 - collector.main - INFO - Cleanup completed
 2025-06-27 16:38:41,232 - collector.db - INFO - Closed 1 pooled database connections
+2025-06-27 17:11:27,207 - collector.db - INFO - Database backed up to: backups/karaoke_videos_20250627_171127.db
+2025-06-27 17:11:27,210 - collector.db - INFO - Database initialized: karaoke_videos.db
+2025-06-27 17:11:27,291 - collector.main - INFO - Processing channel: https://www.youtube.com/@BandaisuanKaraoke001
+2025-06-27 17:11:28,012 - collector.search - INFO - Extracted channel info: BandaisuanKaraoke001 - Videos
+2025-06-27 17:11:31,146 - collector.search - INFO - Extracted 3 videos from channel: BandaisuanKaraoke001 - Videos
+2025-06-27 17:11:31,147 - collector.main - INFO - Found 3 videos in channel: BandaisuanKaraoke001 - Videos
+2025-06-27 17:11:31,147 - collector.main - INFO - Skipped 3 videos already in database
+2025-06-27 17:11:31,147 - collector.main - INFO - All videos already processed or filtered out, skipping batch
+2025-06-27 17:11:31,161 - collector.main - INFO - Channel collection completed: 0 videos in 3.9s
+2025-06-27 17:11:31,195 - collector.main - INFO - Cleanup completed
+2025-06-27 17:11:31,203 - collector.db - INFO - Closed 1 pooled database connections
+2025-06-27 17:11:42,054 - collector.db - INFO - Database initialized: karaoke_videos.db
+2025-06-27 17:11:42,103 - collector.main - INFO - Processing channel: https://www.youtube.com/@BandaisuanKaraoke001
+2025-06-27 17:11:42,811 - collector.search - INFO - Extracted channel info: BandaisuanKaraoke001 - Videos
+2025-06-27 17:11:45,172 - collector.search - INFO - Extracted 2 videos from channel: BandaisuanKaraoke001 - Videos
+2025-06-27 17:11:45,172 - collector.main - INFO - Found 2 videos in channel: BandaisuanKaraoke001 - Videos
+2025-06-27 17:11:45,172 - collector.main - INFO - Skipped 2 videos already in database
+2025-06-27 17:11:45,173 - collector.main - INFO - All videos already processed or filtered out, skipping batch
+2025-06-27 17:11:45,180 - collector.main - INFO - Channel collection completed: 0 videos in 3.1s
+2025-06-27 17:11:45,202 - collector.main - INFO - Cleanup completed
+2025-06-27 17:11:45,211 - collector.db - INFO - Closed 1 pooled database connections
