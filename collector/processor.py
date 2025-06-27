@@ -96,12 +96,16 @@ class VideoProcessor:
                 pool=5.0,  # Pool timeout
             ),
             limits=httpx.Limits(
-                max_connections=10,
-                max_keepalive_connections=5,
-                keepalive_expiry=30.0,  # Close idle connections
+                max_connections=50,  # Increased for concurrent operations
+                max_keepalive_connections=20,  # Increased keepalive pool
+                keepalive_expiry=60.0,  # Longer keepalive for efficiency
             ),
         )
         self._cleanup_completed = False
+
+        # Rate limiting for MusicBrainz (1 request per second)
+        self._musicbrainz_last_request = 0
+        self._musicbrainz_min_interval = 1.0  # MusicBrainz requires 1 req/sec limit
 
         # Initialize advanced parser if enabled
         if config.search.use_advanced_parser:
@@ -272,8 +276,17 @@ class VideoProcessor:
         return min(sum(confidence_factors), 1.0)
 
     async def _get_music_metadata(self, artist: str, song: str) -> Dict:
-        """Get release year from MusicBrainz API."""
+        """Get release year from MusicBrainz API with rate limiting."""
         try:
+            # Enforce MusicBrainz rate limiting (1 request per second)
+            current_time = time.time()
+            time_since_last = current_time - self._musicbrainz_last_request
+            if time_since_last < self._musicbrainz_min_interval:
+                sleep_time = self._musicbrainz_min_interval - time_since_last
+                await asyncio.sleep(sleep_time)
+
+            self._musicbrainz_last_request = time.time()
+
             # Simple MusicBrainz search
             raw_query = f"artist:{artist} AND recording:{song}"
             query = quote_plus(raw_query)
@@ -736,18 +749,56 @@ class VideoProcessor:
             return
 
         try:
-            # Close HTTP client with timeout
+            # Close HTTP client with timeout and force close on failure
             if hasattr(self, "http_client") and self.http_client:
-                await asyncio.wait_for(self.http_client.aclose(), timeout=5.0)
-                logger.debug("HTTP client closed successfully")
-        except asyncio.TimeoutError:
-            logger.warning("HTTP client cleanup timed out")
+                try:
+                    await asyncio.wait_for(self.http_client.aclose(), timeout=10.0)
+                    logger.debug("HTTP client closed successfully")
+                except asyncio.TimeoutError:
+                    logger.warning("HTTP client graceful close timed out, forcing close")
+                    # Force close if graceful close fails
+                    try:
+                        if hasattr(self.http_client, "_client") and hasattr(
+                            self.http_client._client, "close"
+                        ):
+                            await self.http_client._client.close()
+                    except Exception as fe:
+                        logger.error(f"Force close failed: {fe}")
+                except Exception as e:
+                    logger.error(f"HTTP client cleanup error: {e}")
+                finally:
+                    # Ensure we don't leak references
+                    self.http_client = None
         except Exception as e:
-            logger.error(f"HTTP client cleanup error: {e}")
+            logger.error(f"Cleanup failed: {e}")
         finally:
             self._cleanup_completed = True
 
         # Force garbage collection to clean up any remaining resources
+        import gc
+
+        gc.collect()
+
+    def __del__(self):
+        """Ensure cleanup is called when object is destroyed."""
+        if not self._cleanup_completed and hasattr(self, "http_client"):
+            # Schedule cleanup in event loop if possible
+            try:
+                import asyncio
+
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self.cleanup())
+            except RuntimeError:
+                # No event loop available, force close synchronously
+                if hasattr(self, "http_client") and self.http_client:
+                    try:
+                        import asyncio
+
+                        asyncio.run(self.http_client.aclose())
+                    except Exception:
+                        pass  # Best effort cleanup
+
         import gc
 
         gc.collect()

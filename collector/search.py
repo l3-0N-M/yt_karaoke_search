@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover - optional dependency
     yt_dlp = None
 
 try:
-    from tenacity import retry, stop_after_attempt, wait_exponential  # type: ignore
+    from tenacity import retry, stop_after_attempt, wait_exponential, wait_random  # type: ignore
 except ImportError:  # pragma: no cover - optional dependency
 
     def retry(*dargs, **dkwargs):
@@ -26,6 +26,9 @@ except ImportError:  # pragma: no cover - optional dependency
         return None
 
     def wait_exponential(*args, **kwargs):
+        return None
+
+    def wait_random(*args, **kwargs):
         return None
 
 
@@ -49,14 +52,15 @@ class SearchEngine:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        # Rate limiting to prevent API blocking
+        # Rate limiting to prevent API blocking - more conservative limits
         self._request_semaphore = asyncio.Semaphore(2)
         self._last_request_time = 0
-        self._min_request_interval = 1.0  # 1 second between requests
+        self._min_request_interval = 2.0  # 2 seconds between requests (more conservative)
         self._request_count = 0
         self._rate_limit_window_start = time.time()
-        self._max_requests_per_hour = 3600  # Conservative limit
+        self._max_requests_per_hour = 360  # Much more conservative limit (6 per minute)
         self._backoff_factor = 1.0
+        self._max_backoff = 60.0  # Cap backoff at 1 minute
 
     def _setup_yt_dlp(self) -> Dict:
         """Called once; we'll still override UA right before each query."""
@@ -97,9 +101,12 @@ class SearchEngine:
                 await asyncio.sleep(sleep_time)
 
             try:
-                # Execute the request
+                # Execute the request with timeout to prevent deadlock
                 loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(None, request_func, *args, **kwargs)
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(None, request_func, *args, **kwargs),
+                    timeout=300.0,  # 5 minute timeout
+                )
 
                 # Success: reduce backoff factor
                 self._backoff_factor = max(1.0, self._backoff_factor * 0.9)
@@ -108,15 +115,23 @@ class SearchEngine:
 
                 return result
 
+            except asyncio.TimeoutError:
+                # Timeout: treat as failure and increase backoff
+                self._backoff_factor = min(self._max_backoff, self._backoff_factor * 2.0)
+                logger.error("Request timed out after 5 minutes, increasing backoff")
+                raise
             except Exception as e:
-                # Failure: increase backoff factor
-                self._backoff_factor = min(10.0, self._backoff_factor * 1.5)
+                # Failure: increase backoff factor with proper cap
+                self._backoff_factor = min(self._max_backoff, self._backoff_factor * 1.5)
                 logger.warning(
                     f"Request failed, increasing backoff to {self._backoff_factor:.2f}x: {e}"
                 )
                 raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10) + wait_random(0, 2),
+    )
     async def search_videos(self, query: str, max_results: int = 100) -> List[Dict]:
         """Search for videos using yt-dlp with error handling."""
         search_query = f"ytsearch{max_results}:{query}"

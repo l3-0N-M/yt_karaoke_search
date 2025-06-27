@@ -1,8 +1,10 @@
 """Configuration models using simple dataclasses."""
 
+import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type
+from urllib.parse import urlparse
 
 try:
     import yaml  # type: ignore
@@ -17,6 +19,9 @@ except ImportError:  # pragma: no cover - optional dependency
         @staticmethod
         def dump(data, f, default_flow_style=False, indent=2):
             json.dump(data, f, indent=indent)
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -142,59 +147,117 @@ def _filter_fields(data: Dict[str, Any], cls: Type[Any]) -> Dict[str, Any]:
 
 
 def validate_config(cfg: CollectorConfig) -> None:
-    """Basic sanity checks for loaded configuration values."""
-    if cfg.database.backup_interval_hours <= 0:
-        raise ValueError("backup_interval_hours must be positive")
+    """Enhanced validation with bounds checking and security validation."""
+    # Database validation with reasonable bounds
+    if not (1 <= cfg.database.backup_interval_hours <= 8760):  # 1 hour to 1 year
+        raise ValueError("backup_interval_hours must be between 1 and 8760 (1 year)")
     if cfg.database.backup_retention_days < 0:
         raise ValueError("backup_retention_days cannot be negative")
-    if cfg.database.vacuum_threshold_mb <= 0:
-        raise ValueError("vacuum_threshold_mb must be positive")
+    if not (1 <= cfg.database.vacuum_threshold_mb <= 100000):  # 1MB to 100GB
+        raise ValueError("vacuum_threshold_mb must be between 1 and 100000 MB")
 
-    if cfg.scraping.max_concurrent_workers <= 0:
-        raise ValueError("max_concurrent_workers must be positive")
-    if cfg.scraping.max_retries < 0:
-        raise ValueError("max_retries cannot be negative")
-    if cfg.scraping.timeout_seconds <= 0:
-        raise ValueError("timeout_seconds must be positive")
+    # Scraping validation with reasonable bounds to prevent resource exhaustion
+    if not (1 <= cfg.scraping.max_concurrent_workers <= 50):
+        raise ValueError("max_concurrent_workers must be between 1 and 50")
+    if not (0 <= cfg.scraping.max_retries <= 10):
+        raise ValueError("max_retries must be between 0 and 10")
+    if not (1 <= cfg.scraping.timeout_seconds <= 3600):  # Max 1 hour
+        raise ValueError("timeout_seconds must be between 1 and 3600")
 
+    # Data sources validation
     if not 0 <= cfg.data_sources.ryd_confidence_threshold <= 1:
         raise ValueError("ryd_confidence_threshold must be between 0 and 1")
 
-    if cfg.search.max_results_per_query <= 0:
-        raise ValueError("max_results_per_query must be positive")
+    # URL validation for security
+    def validate_url(url: str, name: str):
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme not in ("http", "https"):
+                raise ValueError(f"{name} must be a valid HTTP/HTTPS URL")
+            if not parsed.netloc:
+                raise ValueError(f"{name} must have a valid hostname")
+        except Exception as e:
+            raise ValueError(f"Invalid {name}: {e}")
 
-    if cfg.logging.max_file_size_mb <= 0:
-        raise ValueError("max_file_size_mb must be positive")
-    if cfg.logging.backup_count < 0:
-        raise ValueError("backup_count cannot be negative")
+    validate_url(cfg.data_sources.ryd_api_url, "ryd_api_url")
 
-    if cfg.ui.progress_update_interval <= 0:
-        raise ValueError("progress_update_interval must be positive")
+    # Search validation with reasonable bounds
+    if not (1 <= cfg.search.max_results_per_query <= 1000):
+        raise ValueError("max_results_per_query must be between 1 and 1000")
+
+    # Logging validation
+    if not (1 <= cfg.logging.max_file_size_mb <= 1000):  # 1MB to 1GB
+        raise ValueError("max_file_size_mb must be between 1 and 1000 MB")
+    if not (0 <= cfg.logging.backup_count <= 100):
+        raise ValueError("backup_count must be between 0 and 100")
+
+    # Validate logging level
+    valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    if cfg.logging.level.upper() not in valid_levels:
+        raise ValueError(f"logging.level must be one of: {valid_levels}")
+
+    # UI validation
+    if not (0.1 <= cfg.ui.progress_update_interval <= 60):  # 0.1s to 1 minute
+        raise ValueError("progress_update_interval must be between 0.1 and 60 seconds")
+
+    # Path validation (basic security check)
+    def validate_path(path: str, name: str):
+        try:
+            resolved = Path(path).resolve()
+            # Warn about potentially unsafe paths
+            if ".." in str(resolved) or str(resolved).count("/") > 10:
+                logger.warning(f"{name} path may be unsafe: {path}")
+        except Exception as e:
+            raise ValueError(f"Invalid {name} path: {e}")
+
+    validate_path(cfg.database.path, "database.path")
+    validate_path(cfg.logging.file_path, "logging.file_path")
 
 
 def load_config(config_path: Optional[str] = None) -> CollectorConfig:
     """Load configuration from YAML file or return defaults."""
     if config_path and Path(config_path).exists():
-        with open(config_path, "r", encoding="utf-8") as f:
-            config_data = yaml.safe_load(f)
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config_data = yaml.safe_load(f)
 
-        cfg = CollectorConfig(
-            database=DatabaseConfig(
-                **_filter_fields(config_data.get("database", {}), DatabaseConfig)
-            ),
-            scraping=ScrapingConfig(
-                **_filter_fields(config_data.get("scraping", {}), ScrapingConfig)
-            ),
-            data_sources=DataSourceConfig(
-                **_filter_fields(config_data.get("data_sources", {}), DataSourceConfig)
-            ),
-            search=SearchConfig(**_filter_fields(config_data.get("search", {}), SearchConfig)),
-            logging=LoggingConfig(**_filter_fields(config_data.get("logging", {}), LoggingConfig)),
-            ui=UIConfig(**_filter_fields(config_data.get("ui", {}), UIConfig)),
-            incremental_mode=config_data.get("incremental_mode", True),
-            skip_existing=config_data.get("skip_existing", True),
-            dry_run=config_data.get("dry_run", False),
-        )
+            # Handle None/empty/non-dict configs
+            if config_data is None:
+                logger.warning(f"Configuration file {config_path} is empty, using defaults")
+                config_data = {}
+            elif not isinstance(config_data, dict):
+                raise ValueError(
+                    f"Configuration file must contain a dictionary, got {type(config_data).__name__}"
+                )
+
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML in configuration file {config_path}: {e}")
+        except (IOError, OSError) as e:
+            raise ValueError(f"Cannot read configuration file {config_path}: {e}")
+
+        try:
+            cfg = CollectorConfig(
+                database=DatabaseConfig(
+                    **_filter_fields(config_data.get("database", {}), DatabaseConfig)
+                ),
+                scraping=ScrapingConfig(
+                    **_filter_fields(config_data.get("scraping", {}), ScrapingConfig)
+                ),
+                data_sources=DataSourceConfig(
+                    **_filter_fields(config_data.get("data_sources", {}), DataSourceConfig)
+                ),
+                search=SearchConfig(**_filter_fields(config_data.get("search", {}), SearchConfig)),
+                logging=LoggingConfig(
+                    **_filter_fields(config_data.get("logging", {}), LoggingConfig)
+                ),
+                ui=UIConfig(**_filter_fields(config_data.get("ui", {}), UIConfig)),
+                incremental_mode=config_data.get("incremental_mode", True),
+                skip_existing=config_data.get("skip_existing", True),
+                dry_run=config_data.get("dry_run", False),
+            )
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Invalid configuration values in {config_path}: {e}")
+
         validate_config(cfg)
         return cfg
     cfg = CollectorConfig()

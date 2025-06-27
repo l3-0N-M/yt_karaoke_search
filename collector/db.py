@@ -54,7 +54,10 @@ class DatabaseManager:
                     self._connection_pool.append(conn)
                     return
             # Pool is full, close the connection
-            conn.close()
+            try:
+                conn.close()
+            except Exception as e:
+                logger.warning(f"Failed to close database connection: {e}")
 
     @contextlib.contextmanager
     def get_connection(self) -> Generator[sqlite3.Connection, None, None]:
@@ -227,6 +230,21 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
                     cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (4)")
                     logger.info("Skipped migration 004; channels table already exists")
                 current_version = 4
+
+        if current_version < 5:
+            # Apply foreign key constraints migration
+            migration_005_path = self.migrations_dir / "005_add_foreign_keys.sql"
+            if migration_005_path.exists():
+                try:
+                    with open(migration_005_path, "r") as f:
+                        migration_sql = f.read()
+                    cursor.executescript(migration_sql)
+                    logger.info("Applied migration: Foreign key constraints (v5)")
+                except Exception as e:
+                    logger.warning(f"Failed to apply migration 005: {e}")
+                    # Update version even if migration partially failed to avoid retry loops
+                    cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (5)")
+                current_version = 5
 
     def _create_initial_schema(self, cursor: sqlite3.Cursor):
         """Create the initial database schema."""
@@ -481,122 +499,135 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
             return set()
 
     def save_video_data(self, result):
-        """Save processed video data to database."""
+        """Save processed video data to database with atomic transactions."""
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
+                # Start explicit transaction for atomicity
+                conn.execute("BEGIN IMMEDIATE")
+                try:
+                    cursor = conn.cursor()
 
-                video_data = result.video_data
-                features = video_data.get("features", {})
-                quality_scores = video_data.get("quality_scores", {})
+                    video_data = result.video_data
+                    features = video_data.get("features", {})
+                    quality_scores = video_data.get("quality_scores", {})
 
-                # Calculate like/dislike to views ratio
-                like_dislike_ratio = None
-                views = video_data.get("view_count", 0)
-                likes = video_data.get("like_count", 0)
-                dislikes = video_data.get("estimated_dislikes", 0)
+                    # Calculate like/dislike to views ratio
+                    like_dislike_ratio = None
+                    views = video_data.get("view_count", 0)
+                    likes = video_data.get("like_count", 0)
+                    dislikes = video_data.get("estimated_dislikes", 0)
 
-                if views > 0:
-                    like_dislike_ratio = (likes - dislikes) / views
+                    if views > 0:
+                        like_dislike_ratio = (likes - dislikes) / views
 
-                # Insert main video record
-                cursor.execute(
-                    """
-                    INSERT OR REPLACE INTO videos (
-                        video_id, url, title, description, duration_seconds,
-                        view_count, like_count, comment_count, upload_date,
-                        thumbnail_url, channel_name, channel_id, original_artist,
-                        featured_artists, song_title, estimated_release_year,
-                        like_dislike_to_views_ratio
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        video_data.get("video_id"),
-                        video_data.get("url"),
-                        video_data.get("title"),
-                        video_data.get("description", "")[:2000],
-                        video_data.get("duration_seconds"),
-                        video_data.get("view_count"),
-                        video_data.get("like_count"),
-                        video_data.get("comment_count"),
-                        video_data.get("upload_date"),
-                        video_data.get("thumbnail"),
-                        video_data.get("uploader"),
-                        video_data.get("uploader_id"),
-                        features.get("original_artist"),
-                        features.get("featured_artists"),
-                        features.get("song_title"),
-                        video_data.get("estimated_release_year"),
-                        like_dislike_ratio,
-                    ),
-                )
-
-                # Insert features with confidence scores
-                cursor.execute(
-                    """
-                    INSERT OR REPLACE INTO video_features (
-                        video_id, has_guide_vocals, has_scrolling_lyrics,
-                        has_backing_vocals, is_instrumental_only, is_piano_only,
-                        is_acoustic, has_guide_vocals_confidence, has_scrolling_lyrics_confidence,
-                        has_backing_vocals_confidence, is_instrumental_only_confidence,
-                        is_piano_only_confidence, is_acoustic_confidence, confidence_score
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        video_data.get("video_id"),
-                        features.get("has_guide_vocals", False),
-                        features.get("has_scrolling_lyrics", False),
-                        features.get("has_backing_vocals", False),
-                        features.get("is_instrumental_only", False),
-                        features.get("is_piano_only", False),
-                        features.get("is_acoustic", False),
-                        features.get("has_guide_vocals_confidence", 0.0),
-                        features.get("has_scrolling_lyrics_confidence", 0.0),
-                        features.get("has_backing_vocals_confidence", 0.0),
-                        features.get("is_instrumental_only_confidence", 0.0),
-                        features.get("is_piano_only_confidence", 0.0),
-                        features.get("is_acoustic_confidence", 0.0),
-                        result.confidence_score,
-                    ),
-                )
-
-                # Insert quality scores
-                cursor.execute(
-                    """
-                    INSERT OR REPLACE INTO quality_scores (
-                        video_id, overall_score, technical_score,
-                        engagement_score, metadata_completeness
-                    ) VALUES (?, ?, ?, ?, ?)
-                """,
-                    (
-                        video_data.get("video_id"),
-                        quality_scores.get("overall_score", 0),
-                        quality_scores.get("technical_score", 0),
-                        quality_scores.get("engagement_score", 0),
-                        quality_scores.get("metadata_completeness", 0),
-                    ),
-                )
-
-                # Insert RYD data if available
-                if video_data.get("estimated_dislikes") is not None:
+                    # Insert main video record
                     cursor.execute(
                         """
-                        INSERT OR REPLACE INTO ryd_data (
-                            video_id, estimated_dislikes, ryd_likes, ryd_rating, ryd_confidence
+                        INSERT OR REPLACE INTO videos (
+                            video_id, url, title, description, duration_seconds,
+                            view_count, like_count, comment_count, upload_date,
+                            thumbnail_url, channel_name, channel_id, original_artist,
+                            featured_artists, song_title, estimated_release_year,
+                            like_dislike_to_views_ratio
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        (
+                            video_data.get("video_id"),
+                            video_data.get("url"),
+                            video_data.get("title"),
+                            video_data.get("description", "")[:2000],
+                            video_data.get("duration_seconds"),
+                            video_data.get("view_count"),
+                            video_data.get("like_count"),
+                            video_data.get("comment_count"),
+                            video_data.get("upload_date"),
+                            video_data.get("thumbnail"),
+                            video_data.get("uploader"),
+                            video_data.get("uploader_id"),
+                            features.get("original_artist"),
+                            features.get("featured_artists"),
+                            features.get("song_title"),
+                            video_data.get("estimated_release_year"),
+                            like_dislike_ratio,
+                        ),
+                    )
+
+                    # Insert features with confidence scores
+                    cursor.execute(
+                        """
+                        INSERT OR REPLACE INTO video_features (
+                            video_id, has_guide_vocals, has_scrolling_lyrics,
+                            has_backing_vocals, is_instrumental_only, is_piano_only,
+                            is_acoustic, has_guide_vocals_confidence, has_scrolling_lyrics_confidence,
+                            has_backing_vocals_confidence, is_instrumental_only_confidence,
+                            is_piano_only_confidence, is_acoustic_confidence, confidence_score
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        (
+                            video_data.get("video_id"),
+                            features.get("has_guide_vocals", False),
+                            features.get("has_scrolling_lyrics", False),
+                            features.get("has_backing_vocals", False),
+                            features.get("is_instrumental_only", False),
+                            features.get("is_piano_only", False),
+                            features.get("is_acoustic", False),
+                            features.get("has_guide_vocals_confidence", 0.0),
+                            features.get("has_scrolling_lyrics_confidence", 0.0),
+                            features.get("has_backing_vocals_confidence", 0.0),
+                            features.get("is_instrumental_only_confidence", 0.0),
+                            features.get("is_piano_only_confidence", 0.0),
+                            features.get("is_acoustic_confidence", 0.0),
+                            result.confidence_score,
+                        ),
+                    )
+
+                    # Insert quality scores
+                    cursor.execute(
+                        """
+                        INSERT OR REPLACE INTO quality_scores (
+                            video_id, overall_score, technical_score,
+                            engagement_score, metadata_completeness
                         ) VALUES (?, ?, ?, ?, ?)
                     """,
                         (
                             video_data.get("video_id"),
-                            video_data.get("estimated_dislikes"),
-                            video_data.get("ryd_likes"),
-                            video_data.get("ryd_rating"),
-                            video_data.get("ryd_confidence"),
+                            quality_scores.get("overall_score", 0),
+                            quality_scores.get("technical_score", 0),
+                            quality_scores.get("engagement_score", 0),
+                            quality_scores.get("metadata_completeness", 0),
                         ),
                     )
 
+                    # Insert RYD data if available
+                    if video_data.get("estimated_dislikes") is not None:
+                        cursor.execute(
+                            """
+                            INSERT OR REPLACE INTO ryd_data (
+                                video_id, estimated_dislikes, ryd_likes, ryd_rating, ryd_confidence
+                            ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                            (
+                                video_data.get("video_id"),
+                                video_data.get("estimated_dislikes"),
+                                video_data.get("ryd_likes"),
+                                video_data.get("ryd_rating"),
+                                video_data.get("ryd_confidence"),
+                            ),
+                        )
+
+                    # Commit the transaction if all operations succeeded
+                    conn.execute("COMMIT")
+                    return True
+
+                except Exception as e:
+                    # Rollback on any failure
+                    conn.execute("ROLLBACK")
+                    logger.error(f"Database transaction failed, rolled back: {e}")
+                    raise
+
         except Exception as e:
             logger.error(f"Database save failed: {e}")
-            raise
+            return False
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get comprehensive database statistics."""
@@ -766,3 +797,24 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
         except Exception as e:
             logger.error(f"Failed to get existing video IDs: {e}")
             return set()  # Return empty set to avoid skipping on error
+
+    def close_all_connections(self):
+        """Close all pooled connections for clean shutdown."""
+        with self._pool_lock:
+            connections_closed = 0
+            while self._connection_pool:
+                conn = self._connection_pool.pop()
+                try:
+                    conn.close()
+                    connections_closed += 1
+                except Exception as e:
+                    logger.warning(f"Failed to close pooled connection: {e}")
+            if connections_closed > 0:
+                logger.info(f"Closed {connections_closed} pooled database connections")
+
+    def __del__(self):
+        """Ensure connections are closed when object is destroyed."""
+        try:
+            self.close_all_connections()
+        except Exception:
+            pass  # Best effort cleanup

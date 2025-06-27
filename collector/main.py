@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import signal
-import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -35,12 +34,13 @@ class KaraokeCollector:
         self._memory_cache_limit = 50000  # Limit in-memory cache size
         self._memory_cache_cleanup_threshold = 60000  # Clean when this size reached
         self.processed_video_ids = set()  # Start with empty set, load as needed
-        self._processed_ids_lock = threading.RLock()  # Use RLock for nested locking
+        self._processed_ids_lock = asyncio.Lock()  # Use async lock for async operations
         self._last_cache_cleanup = time.time()
 
         # Reduce lock contention with worker-local state
         self._worker_local_cache = {}  # Worker-specific caches
-        self._global_stats_lock = threading.Lock()  # Separate lock for stats
+        self._global_stats_lock = asyncio.Lock()  # Use async lock for stats
+        self._cleanup_in_progress = False  # Prevent concurrent cleanup
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -51,15 +51,18 @@ class KaraokeCollector:
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         self.shutdown_requested = True
 
-    def _cleanup_memory_cache(self, force: bool = False):
+    async def _cleanup_memory_cache(self, force: bool = False):
         """Cleanup memory cache to prevent unbounded growth."""
         current_time = time.time()
 
-        # Check if cleanup is needed (lock-free check first)
-        with self._processed_ids_lock:
+        # Check if cleanup is needed with async lock
+        async with self._processed_ids_lock:
+            # Prevent concurrent cleanup operations
+            if self._cleanup_in_progress:
+                return
+
             cache_age = current_time - self._last_cache_cleanup
             current_size = len(self.processed_video_ids)
-            snapshot_ids = set(self.processed_video_ids)
 
             # Clean if cache is too large, or periodically (every 30 minutes), or forced
             should_clean = (
@@ -71,36 +74,40 @@ class KaraokeCollector:
             if not should_clean:
                 return
 
-            # Prevent concurrent cleanup operations
-            if hasattr(self, "_cleanup_in_progress") and self._cleanup_in_progress:
-                return
             self._cleanup_in_progress = True
 
         try:
-            # Perform cleanup outside of the main lock to reduce contention
+            # Perform cleanup - keep recent IDs
             if current_size > self._memory_cache_limit:
                 # Get recent video IDs from database (outside lock)
                 recent_ids = self.db_manager.get_recent_video_ids(days=7)
 
                 # Update cache atomically
-                with self._processed_ids_lock:
+                async with self._processed_ids_lock:
                     old_size = len(self.processed_video_ids)
-                    new_ids = self.processed_video_ids - snapshot_ids
-                    self.processed_video_ids = recent_ids.union(new_ids)
+                    # Keep recent database IDs plus any new ones added during cleanup
+                    self.processed_video_ids = recent_ids.union(
+                        self.processed_video_ids.intersection(recent_ids)
+                    )
+                    # Enforce hard limit
+                    if len(self.processed_video_ids) > self._memory_cache_limit:
+                        self.processed_video_ids = set(
+                            list(self.processed_video_ids)[: self._memory_cache_limit]
+                        )
                     self._last_cache_cleanup = current_time
                     logger.info(
                         f"Memory cache cleaned: {old_size} -> {len(self.processed_video_ids)} video IDs"
                     )
             else:
                 # Just update timestamp
-                with self._processed_ids_lock:
+                async with self._processed_ids_lock:
                     self._last_cache_cleanup = current_time
         finally:
             # Always clear the cleanup flag
-            with self._processed_ids_lock:
+            async with self._processed_ids_lock:
                 self._cleanup_in_progress = False
 
-    def _is_video_processed(self, video_id: str, worker_id: Optional[str] = None) -> bool:
+    async def _is_video_processed(self, video_id: str, worker_id: Optional[str] = None) -> bool:
         """Check if video is processed using worker-local cache + global cache + database fallback."""
         # Use worker-local cache to reduce lock contention
         if worker_id:
@@ -109,7 +116,7 @@ class KaraokeCollector:
                 return True
 
         # Check global memory cache with minimal lock time
-        with self._processed_ids_lock:
+        async with self._processed_ids_lock:
             if video_id in self.processed_video_ids:
                 # Update worker-local cache
                 if worker_id:
@@ -124,11 +131,11 @@ class KaraokeCollector:
         # If not in cache, check database (expensive operation outside lock)
         if self.db_manager.video_exists(video_id):
             # Add to both caches
-            with self._processed_ids_lock:
+            async with self._processed_ids_lock:
                 self.processed_video_ids.add(video_id)
-                # Periodic cleanup check
+                # Periodic cleanup check (schedule as background task)
                 if len(self.processed_video_ids) > self._memory_cache_cleanup_threshold:
-                    self._cleanup_memory_cache()
+                    asyncio.create_task(self._cleanup_memory_cache())
 
             if worker_id:
                 if worker_id not in self._worker_local_cache:
@@ -187,7 +194,7 @@ class KaraokeCollector:
                 worker_id = "unknown"
 
             # Use optimized video processed check with worker-local cache
-            if self._is_video_processed(vid, worker_id):
+            if await self._is_video_processed(vid, worker_id):
                 return
 
             async with sem:
@@ -196,7 +203,7 @@ class KaraokeCollector:
                     if result.is_success:
                         if self.db_manager.save_video_data(result):
                             # Thread-safe updates to shared state (minimized lock time)
-                            with self._processed_ids_lock:
+                            async with self._processed_ids_lock:
                                 self.processed_video_ids.add(vid)
 
                             # Update worker-local cache
@@ -205,7 +212,7 @@ class KaraokeCollector:
                             self._worker_local_cache[worker_id].add(vid)
 
                             # Update processed count with separate lock
-                            with self._global_stats_lock:
+                            async with self._global_stats_lock:
                                 processed += 1
 
                             logger.debug(
@@ -235,7 +242,7 @@ class KaraokeCollector:
                 v["video_id"] not in existing_in_db
                 and (v.get("duration") or 0) >= 45
                 and (v.get("duration") or 0) <= 900
-                and not self._is_video_processed(v["video_id"])
+                and not await self._is_video_processed(v["video_id"])
             ):
                 filtered_videos.append(v)
 
@@ -265,7 +272,7 @@ class KaraokeCollector:
 
         # Cleanup memory periodically and clear worker caches
         if len(new_rows) > 1000:  # Only for large batches
-            self._cleanup_memory_cache()
+            await self._cleanup_memory_cache()
             # Clear worker-local caches to prevent memory leaks
             self._worker_local_cache.clear()
 
