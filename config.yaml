@@ -1,0 +1,37 @@
+# Example configuration file (save as config.yaml)
+
+database:
+  path: "karaoke_videos.db"
+  backup_enabled: true
+  backup_retention_days: 7
+  vacuum_threshold_mb: 100
+
+scraping:
+  max_concurrent_workers: 5
+  max_retries: 3
+  timeout_seconds: 60  # Increased for large playlists/4K results
+
+search:
+  primary_method: "yt_dlp"
+  max_results_per_query: 100
+
+data_sources:
+  ryd_api_enabled: true
+  ryd_timeout: 10
+  ryd_confidence_threshold: 0.1
+  musicbrainz_enabled: true
+  musicbrainz_timeout: 5
+
+logging:
+  level: "INFO"
+  file_path: "karaoke_collector.log"
+  console_output: true
+
+ui:
+  show_progress_bar: true
+  save_thumbnails: false
+
+# Runtime settings
+incremental_mode: true
+skip_existing: true
+dry_run: false
