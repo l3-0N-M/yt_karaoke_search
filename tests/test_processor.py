@@ -222,3 +222,16 @@ def test_process_video_uses_music_metadata(monkeypatch):
 
     assert 0 <= scores["overall_score"] <= 1
     assert abs(scores["overall_score"] - expected_overall) < 1e-6
+
+
+def test_helpers_handle_missing_http_client():
+    cfg = CollectorConfig()
+    processor = VideoProcessor(cfg)
+
+    processor.http_client = None
+
+    ryd = asyncio.run(processor._get_ryd_data("abc123"))
+    music = asyncio.run(processor._get_music_metadata("a", "b"))
+
+    assert ryd == {"ryd_confidence": 0.0}
+    assert music == {"release_year_confidence": 0.0}

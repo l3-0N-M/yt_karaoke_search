@@ -41,6 +41,16 @@ except ImportError:  # pragma: no cover - optional dependency
         Limits = _DummyLimits
         Timeout = _DummyTimeout
 
+    class AsyncClientWithForceClose(httpx.AsyncClient):  # type: ignore
+        async def force_close(self) -> None:  # pragma: no cover - httpx missing
+            pass
+else:
+    class AsyncClientWithForceClose(httpx.AsyncClient):  # type: ignore
+        async def force_close(self) -> None:  # pragma: no cover - depends on httpx internals
+            transport = getattr(self, "_transport", None)
+            if transport and hasattr(transport, "aclose"):
+                await transport.aclose()
+
 
 try:
     from tenacity import retry, stop_after_attempt, wait_exponential  # type: ignore
@@ -88,7 +98,7 @@ class VideoProcessor:
         self.yt_dlp_opts = self._setup_yt_dlp()
 
         # Enhanced HTTP client with proper timeout and resource management
-        self.http_client = httpx.AsyncClient(
+        self.http_client: Optional[AsyncClientWithForceClose] = AsyncClientWithForceClose(
             timeout=httpx.Timeout(
                 connect=10.0,  # Connection timeout
                 read=config.scraping.timeout_seconds,  # Read timeout
@@ -231,6 +241,8 @@ class VideoProcessor:
     async def _get_ryd_data(self, video_id: str) -> Dict:
         """Get Return YouTube Dislike data with confidence scoring."""
         try:
+            if not self.http_client:
+                return {"ryd_confidence": 0.0}
             url = f"{self.config.data_sources.ryd_api_url}?videoId={video_id}"
             response = await self.http_client.get(url, timeout=self.config.data_sources.ryd_timeout)
 
@@ -278,6 +290,8 @@ class VideoProcessor:
     async def _get_music_metadata(self, artist: str, song: str) -> Dict:
         """Get release year from MusicBrainz API with rate limiting."""
         try:
+            if not self.http_client:
+                return {"release_year_confidence": 0.0}
             # Enforce MusicBrainz rate limiting (1 request per second)
             current_time = time.time()
             time_since_last = current_time - self._musicbrainz_last_request
@@ -758,10 +772,8 @@ class VideoProcessor:
                     logger.warning("HTTP client graceful close timed out, forcing close")
                     # Force close if graceful close fails
                     try:
-                        if hasattr(self.http_client, "_client") and hasattr(
-                            self.http_client._client, "close"
-                        ):
-                            await self.http_client._client.close()
+                        if hasattr(self.http_client, "force_close"):
+                            await self.http_client.force_close()
                     except Exception as fe:
                         logger.error(f"Force close failed: {fe}")
                 except Exception as e:

@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 try:
     import yaml  # type: ignore
+    YamlError = getattr(yaml, "YAMLError", Exception)
 except ImportError:  # pragma: no cover - optional dependency
     import json
 
@@ -230,7 +231,7 @@ def load_config(config_path: Optional[str] = None) -> CollectorConfig:
                     f"Configuration file must contain a dictionary, got {type(config_data).__name__}"
                 )
 
-        except yaml.YAMLError as e:
+        except YamlError as e:
             raise ValueError(f"Invalid YAML in configuration file {config_path}: {e}")
         except (IOError, OSError) as e:
             raise ValueError(f"Cannot read configuration file {config_path}: {e}")
