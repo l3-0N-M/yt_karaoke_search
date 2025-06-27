@@ -300,8 +300,8 @@ class VideoProcessor:
         """Get comprehensive music metadata from MusicBrainz API with rate limiting."""
         try:
             if not self.http_client:
-                return {"musicbrainz_confidence": 0.0}
-            
+                return {"release_year_confidence": 0.0}
+
             # Enforce MusicBrainz rate limiting (1 request per second)
             current_time = time.time()
             time_since_last = current_time - self._musicbrainz_last_request
@@ -335,98 +335,106 @@ class VideoProcessor:
                     best_recording = self._select_best_recording(recordings, artist, song)
                     if best_recording:
                         return self._extract_recording_metadata(best_recording, artist, song)
-                        
+
         except Exception as e:
             logger.debug(f"MusicBrainz lookup failed for {artist} - {song}: {e}")
 
         return {"musicbrainz_confidence": 0.0}
 
-    def _select_best_recording(self, recordings: List[Dict], target_artist: str, target_song: str) -> Optional[Dict]:
+    def _select_best_recording(
+        self, recordings: List[Dict], target_artist: str, target_song: str
+    ) -> Optional[Dict]:
         """Select the best matching recording from MusicBrainz results."""
         if not recordings:
             return None
-            
+
         best_recording = None
         best_score = 0
-        
+
         for recording in recordings:
             score = 0
-            
+
             # Score based on artist name similarity
             artist_credits = recording.get("artist-credit", [])
             if artist_credits:
                 recording_artist = artist_credits[0].get("name", "").lower()
-                if target_artist.lower() in recording_artist or recording_artist in target_artist.lower():
+                if (
+                    target_artist.lower() in recording_artist
+                    or recording_artist in target_artist.lower()
+                ):
                     score += 50
                 elif self._fuzzy_match(target_artist.lower(), recording_artist):
                     score += 30
-            
+
             # Score based on song title similarity
             recording_title = recording.get("title", "").lower()
             if target_song.lower() in recording_title or recording_title in target_song.lower():
                 score += 50
             elif self._fuzzy_match(target_song.lower(), recording_title):
                 score += 30
-            
+
             # Prefer recordings with more releases (indicates popularity)
             releases = recording.get("releases", [])
             score += min(len(releases), 10)  # Cap at 10 bonus points
-            
+
             # Prefer recordings with tags/genres
             if recording.get("tags") or recording.get("genres"):
                 score += 5
-                
+
             if score > best_score:
                 best_score = score
                 best_recording = recording
-                
+
         return best_recording if best_score > 30 else None  # Minimum threshold
 
     def _fuzzy_match(self, str1: str, str2: str) -> bool:
         """Simple fuzzy string matching."""
         # Remove common words and punctuation
         stop_words = {"the", "a", "an", "and", "or", "but", "feat", "ft"}
-        
+
         def clean_string(s):
             import re
-            s = re.sub(r'[^\w\s]', '', s.lower())
+
+            s = re.sub(r"[^\w\s]", "", s.lower())
             words = [w for w in s.split() if w not in stop_words]
-            return ' '.join(words)
-        
+            return " ".join(words)
+
         clean1 = clean_string(str1)
         clean2 = clean_string(str2)
-        
+
         # Check if 70% of words match
         words1 = set(clean1.split())
         words2 = set(clean2.split())
-        
+
         if not words1 or not words2:
             return False
-            
+
         intersection = words1 & words2
         union = words1 | words2
-        
+
         return len(intersection) / len(union) >= 0.7
 
-    def _extract_recording_metadata(self, recording: Dict, target_artist: str, target_song: str) -> Dict:
+    def _extract_recording_metadata(
+        self, recording: Dict, target_artist: str, target_song: str
+    ) -> Dict:
         """Extract comprehensive metadata from a MusicBrainz recording."""
         metadata = {}
-        
+
         # Extract MusicBrainz IDs
         metadata["musicbrainz_recording_id"] = recording.get("id")
-        
+
         # Extract artist information
         artist_credits = recording.get("artist-credit", [])
         if artist_credits:
             metadata["musicbrainz_artist_id"] = artist_credits[0].get("artist", {}).get("id")
-        
+
         # Extract release information and year
         releases = recording.get("releases", [])
         if releases:
             # Find earliest release date
             earliest_year = None
             record_labels = set()
-            
+
             for release in releases:
                 # Extract release date
                 date = release.get("date")
@@ -437,47 +445,47 @@ class VideoProcessor:
                             earliest_year = year
                     except ValueError:
                         pass
-                
+
                 # Extract record labels
                 label_info = release.get("label-info", [])
                 for label in label_info:
                     label_name = label.get("label", {}).get("name")
                     if label_name:
                         record_labels.add(label_name)
-            
+
             if earliest_year:
                 metadata["estimated_release_year"] = earliest_year
-            
+
             if record_labels:
                 metadata["record_label"] = ", ".join(sorted(record_labels)[:3])  # Limit to top 3
-        
+
         # Extract recording length
         length_ms = recording.get("length")
         if length_ms:
             metadata["recording_length_ms"] = length_ms
-        
+
         # Extract and classify genres/tags
         genre_info = self._extract_and_classify_genres(recording)
         metadata.update(genre_info)
-        
+
         # Calculate confidence score
         metadata["musicbrainz_confidence"] = self._calculate_musicbrainz_confidence(
             recording, target_artist, target_song, metadata
         )
-        
+
         return metadata
 
     def _extract_and_classify_genres(self, recording: Dict) -> Dict:
         """Extract and classify genres from MusicBrainz tags and genres."""
         all_tags = []
-        
+
         # Extract genres (newer MusicBrainz field)
         genres = recording.get("genres", [])
         for genre in genres:
             tag_name = genre.get("name", "").lower()
             if tag_name:
                 all_tags.append(tag_name)
-        
+
         # Extract tags (older but more comprehensive field)
         tags = recording.get("tags", [])
         for tag in tags:
@@ -485,28 +493,46 @@ class VideoProcessor:
             count = tag.get("count", 0)
             if tag_name and count > 0:  # Only include tags with positive count
                 all_tags.append(tag_name)
-        
+
         # Classify into primary genre
         primary_genre = self._classify_primary_genre(all_tags)
-        
+
         # Store all tags as JSON string for future analysis
         import json
+
         tags_json = json.dumps(all_tags[:20])  # Limit to top 20 tags
-        
-        return {
-            "musicbrainz_genre": primary_genre,
-            "musicbrainz_tags": tags_json
-        }
+
+        return {"musicbrainz_genre": primary_genre, "musicbrainz_tags": tags_json}
 
     def _classify_primary_genre(self, tags: List[str]) -> Optional[str]:
         """Classify tags into primary genre categories."""
         genre_mapping = {
             # Rock and derivatives
-            "rock": ["rock", "hard rock", "soft rock", "classic rock", "alternative rock", "indie rock"],
+            "rock": [
+                "rock",
+                "hard rock",
+                "soft rock",
+                "classic rock",
+                "alternative rock",
+                "indie rock",
+            ],
             "pop": ["pop", "pop rock", "dance-pop", "electropop", "teen pop", "synth-pop"],
             "jazz": ["jazz", "smooth jazz", "bebop", "swing", "fusion", "big band"],
-            "classical": ["classical", "orchestral", "opera", "symphony", "chamber music", "baroque"],
-            "blues": ["blues", "electric blues", "chicago blues", "delta blues", "rhythm and blues"],
+            "classical": [
+                "classical",
+                "orchestral",
+                "opera",
+                "symphony",
+                "chamber music",
+                "baroque",
+            ],
+            "blues": [
+                "blues",
+                "electric blues",
+                "chicago blues",
+                "delta blues",
+                "rhythm and blues",
+            ],
             "country": ["country", "bluegrass", "americana", "folk country", "country rock"],
             "folk": ["folk", "folk rock", "traditional folk", "contemporary folk", "acoustic"],
             "electronic": ["electronic", "techno", "house", "ambient", "drum and bass", "dubstep"],
@@ -518,9 +544,9 @@ class VideoProcessor:
             "punk": ["punk", "punk rock", "hardcore punk", "pop punk"],
             "funk": ["funk", "p-funk", "funk rock"],
             "gospel": ["gospel", "contemporary gospel", "traditional gospel"],
-            "world": ["world music", "ethnic", "traditional", "regional"]
+            "world": ["world music", "ethnic", "traditional", "regional"],
         }
-        
+
         # Count matches for each genre category
         genre_scores = {}
         for tag in tags:
@@ -529,31 +555,36 @@ class VideoProcessor:
                     if keyword in tag:
                         genre_scores[genre] = genre_scores.get(genre, 0) + 1
                         break
-        
+
         # Return the genre with highest score
         if genre_scores:
             return max(genre_scores.items(), key=lambda x: x[1])[0].title()
-        
+
         return None
 
-    def _calculate_musicbrainz_confidence(self, recording: Dict, target_artist: str, target_song: str, metadata: Dict) -> float:
+    def _calculate_musicbrainz_confidence(
+        self, recording: Dict, target_artist: str, target_song: str, metadata: Dict
+    ) -> float:
         """Calculate confidence score for MusicBrainz match."""
         confidence = 0.0
-        
+
         # Base confidence for having a match
         confidence += 0.3
-        
+
         # Artist name match quality
         artist_credits = recording.get("artist-credit", [])
         if artist_credits:
             recording_artist = artist_credits[0].get("name", "").lower()
             if target_artist.lower() == recording_artist:
                 confidence += 0.3
-            elif target_artist.lower() in recording_artist or recording_artist in target_artist.lower():
+            elif (
+                target_artist.lower() in recording_artist
+                or recording_artist in target_artist.lower()
+            ):
                 confidence += 0.2
             elif self._fuzzy_match(target_artist.lower(), recording_artist):
                 confidence += 0.1
-        
+
         # Song title match quality
         recording_title = recording.get("title", "").lower()
         if target_song.lower() == recording_title:
@@ -562,7 +593,7 @@ class VideoProcessor:
             confidence += 0.2
         elif self._fuzzy_match(target_song.lower(), recording_title):
             confidence += 0.1
-        
+
         # Bonus for rich metadata
         if metadata.get("estimated_release_year"):
             confidence += 0.05
@@ -572,7 +603,7 @@ class VideoProcessor:
             confidence += 0.05
         if recording.get("releases") and len(recording["releases"]) > 1:
             confidence += 0.05
-        
+
         return min(confidence, 1.0)
 
     def _extract_karaoke_features(self, video_data: Dict) -> Dict:
@@ -673,37 +704,76 @@ class VideoProcessor:
     def _detect_genre(self, title: str, description: str, tags: str) -> Optional[str]:
         """Detect music genre based on title, description and tags."""
         combined_text = f"{title} {description} {tags}".lower()
-        
+
         # Christmas/Holiday genre detection
         christmas_keywords = {
             # Traditional Christmas songs
-            "silent night", "jingle bells", "white christmas", "let it snow",
-            "winter wonderland", "silver bells", "deck the halls", "rudolph",
-            "santa claus", "sleigh ride", "mary had a baby", "o holy night",
-            "the first noel", "hark the herald", "joy to the world", "o come all ye faithful",
-            "away in a manger", "what child is this", "auld lang syne",
-            "feliz navidad", "mary's boy child", "little drummer boy",
-            "blue christmas", "chestnuts roasting", "rockin around the christmas tree",
-            "have yourself a merry little christmas", "i'll be home for christmas",
-            "its beginning to look a lot like christmas", "walking in a winter wonderland",
-            
+            "silent night",
+            "jingle bells",
+            "white christmas",
+            "let it snow",
+            "winter wonderland",
+            "silver bells",
+            "deck the halls",
+            "rudolph",
+            "santa claus",
+            "sleigh ride",
+            "mary had a baby",
+            "o holy night",
+            "the first noel",
+            "hark the herald",
+            "joy to the world",
+            "o come all ye faithful",
+            "away in a manger",
+            "what child is this",
+            "auld lang syne",
+            "feliz navidad",
+            "mary's boy child",
+            "little drummer boy",
+            "blue christmas",
+            "chestnuts roasting",
+            "rockin around the christmas tree",
+            "have yourself a merry little christmas",
+            "i'll be home for christmas",
+            "its beginning to look a lot like christmas",
+            "walking in a winter wonderland",
             # General Christmas/Holiday terms
-            "christmas", "holiday", "xmas", "winter", "santa", "sleigh",
-            "carol", "noel", "nativity", "advent", "bethlehem", "star of bethlehem",
-            "christmas tree", "mistletoe", "holly", "ivy", "wreath",
-            "christmas morning", "christmas eve", "christmas day",
-            "holiday special", "christmas traditional", "winter song",
-            "holiday song", "christmas carol", "holiday classic"
+            "christmas",
+            "holiday",
+            "xmas",
+            "winter",
+            "santa",
+            "sleigh",
+            "carol",
+            "noel",
+            "nativity",
+            "advent",
+            "bethlehem",
+            "star of bethlehem",
+            "christmas tree",
+            "mistletoe",
+            "holly",
+            "ivy",
+            "wreath",
+            "christmas morning",
+            "christmas eve",
+            "christmas day",
+            "holiday special",
+            "christmas traditional",
+            "winter song",
+            "holiday song",
+            "christmas carol",
+            "holiday classic",
         }
-        
+
         # Check for Christmas/Holiday keywords
         for keyword in christmas_keywords:
             if keyword in combined_text:
                 return "Christmas/Holiday"
-        
+
         # Could extend this to detect other genres in the future
         # e.g., Rock, Pop, Jazz, Classical, etc.
-        
+
         return None
 
     def _extract_artist_song_info(self, title: str, description: str, tags: str = "") -> Dict:
@@ -718,7 +788,7 @@ class VideoProcessor:
             # Pattern: Karaoke "Title" - "Artist" "*"
             (r'^[Kk]araoke\s+"([^"]+)"\s*-\s*"([^"]+)"', 2, 1, 0.95),
             # Pattern: Karaoke - Song Title - Artist Name (common format)
-            (r'^[Kk]araoke\s*-\s*([^-]+?)\s*-\s*(.+)$', 2, 1, 0.95),
+            (r"^[Kk]araoke\s*-\s*([^-]+?)\s*-\s*(.+)$", 2, 1, 0.95),
             # Pattern: "Title" "(in the Style of "Artist")"
             (r'^"([^"]+)"\s*\([^)]*[Ss]tyle\s+of\s+"([^"]+)"[^)]*\)', 2, 1, 0.9),
             # Pattern: "Sing King Karaoke - "Title" "(in the Style of "Artist")"
