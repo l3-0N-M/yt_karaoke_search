@@ -59,6 +59,14 @@ class AdvancedTitleParser:
 
         # Core karaoke patterns (existing + new)
         self.core_patterns = [
+            # Specific karaoke format - Highest priority
+            (
+                r'^[Kk]araoke\s*[-–—]\s*([^-]+?)\s*[-–—]\s*(.+)$',
+                2,
+                1,
+                0.98,
+                "karaoke_song_artist",
+            ),
             # Quoted patterns - Highest priority
             (
                 r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*\([^)]*[Kk]araoke[^)]*\)',
@@ -126,7 +134,7 @@ class AdvancedTitleParser:
             (r"^([^(]+?)\s+by\s+([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)", 2, 1, 0.75, "by_pattern"),
             # Fallback patterns
             (
-                r"^([^-–—]+?)\s*[-–—]\s*([^([\]]+?)(?:\s*[\(\[][^)\]]*[Kk]araoke[^)\]]*[\)\]])?",
+                r"^([^-–—]+?)\s*[-–—]\s*([^([\]]+)(?:\s*[\(\[][^)\]]*[Kk]araoke[^)\]]*[\)\]])?",
                 1,
                 2,
                 0.6,

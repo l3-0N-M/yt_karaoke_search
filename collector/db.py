@@ -528,8 +528,8 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
                             view_count, like_count, comment_count, upload_date,
                             thumbnail_url, channel_name, channel_id, original_artist,
                             featured_artists, song_title, estimated_release_year,
-                            like_dislike_to_views_ratio
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            genre, like_dislike_to_views_ratio
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         (
                             video_data.get("video_id"),
@@ -548,6 +548,7 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
                             features.get("featured_artists"),
                             features.get("song_title"),
                             video_data.get("estimated_release_year"),
+                            features.get("genre"),
                             like_dislike_ratio,
                         ),
                     )

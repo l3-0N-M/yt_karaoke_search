@@ -398,6 +398,11 @@ class VideoProcessor:
         if featured_artists:
             features["featured_artists"] = featured_artists
 
+        # Detect genre
+        genre = self._detect_genre(title, description, tags)
+        if genre:
+            features["genre"] = genre
+
         return features
 
     def _extract_featured_artists(self, title: str, description: str, tags: str) -> Optional[str]:
@@ -433,6 +438,42 @@ class VideoProcessor:
 
         return ", ".join(unique_featured) if unique_featured else None
 
+    def _detect_genre(self, title: str, description: str, tags: str) -> Optional[str]:
+        """Detect music genre based on title, description and tags."""
+        combined_text = f"{title} {description} {tags}".lower()
+        
+        # Christmas/Holiday genre detection
+        christmas_keywords = {
+            # Traditional Christmas songs
+            "silent night", "jingle bells", "white christmas", "let it snow",
+            "winter wonderland", "silver bells", "deck the halls", "rudolph",
+            "santa claus", "sleigh ride", "mary had a baby", "o holy night",
+            "the first noel", "hark the herald", "joy to the world", "o come all ye faithful",
+            "away in a manger", "what child is this", "auld lang syne",
+            "feliz navidad", "mary's boy child", "little drummer boy",
+            "blue christmas", "chestnuts roasting", "rockin around the christmas tree",
+            "have yourself a merry little christmas", "i'll be home for christmas",
+            "its beginning to look a lot like christmas", "walking in a winter wonderland",
+            
+            # General Christmas/Holiday terms
+            "christmas", "holiday", "xmas", "winter", "santa", "sleigh",
+            "carol", "noel", "nativity", "advent", "bethlehem", "star of bethlehem",
+            "christmas tree", "mistletoe", "holly", "ivy", "wreath",
+            "christmas morning", "christmas eve", "christmas day",
+            "holiday special", "christmas traditional", "winter song",
+            "holiday song", "christmas carol", "holiday classic"
+        }
+        
+        # Check for Christmas/Holiday keywords
+        for keyword in christmas_keywords:
+            if keyword in combined_text:
+                return "Christmas/Holiday"
+        
+        # Could extend this to detect other genres in the future
+        # e.g., Rock, Pop, Jazz, Classical, etc.
+        
+        return None
+
     def _extract_artist_song_info(self, title: str, description: str, tags: str = "") -> Dict:
         """Extract artist and song information from title using comprehensive pattern matching."""
 
@@ -444,6 +485,8 @@ class VideoProcessor:
             (r'^"([^"]+)"\s*-\s*"([^"]+)"\s*\([^)]*[Kk]araoke[^)]*\)', 1, 2, 0.95),
             # Pattern: Karaoke "Title" - "Artist" "*"
             (r'^[Kk]araoke\s+"([^"]+)"\s*-\s*"([^"]+)"', 2, 1, 0.95),
+            # Pattern: Karaoke - Song Title - Artist Name (common format)
+            (r'^[Kk]araoke\s*-\s*([^-]+?)\s*-\s*(.+)$', 2, 1, 0.95),
             # Pattern: "Title" "(in the Style of "Artist")"
             (r'^"([^"]+)"\s*\([^)]*[Ss]tyle\s+of\s+"([^"]+)"[^)]*\)', 2, 1, 0.9),
             # Pattern: "Sing King Karaoke - "Title" "(in the Style of "Artist")"
