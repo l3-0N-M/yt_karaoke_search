@@ -12,7 +12,9 @@ A comprehensive tool for collecting karaoke video data from YouTube with confide
 - **Channel-based collection** - Systematic processing of entire YouTube channels
 - **Enterprise scalability** - Handles 2,000-10,000 videos per channel efficiently
 - **Return YouTube Dislike integration** - Get estimated dislike counts with confidence scoring
-- **Comprehensive metadata extraction** - Artist names, song titles, featured artists, release years
+- **Advanced title parsing** - Multi-strategy parsing with ML-inspired techniques and adaptive learning
+- **Comprehensive metadata extraction** - Artist names, song titles, featured artists, release years  
+- **Multi-language support** - Handles Korean, Japanese, Chinese, and other international formats
 - **Engagement analytics** - Like/dislike ratios and engagement scoring with penalties
 - **Karaoke feature detection** - Guide vocals, scrolling lyrics, instrumental-only detection
 - **External music data** - Release year lookup via MusicBrainz API
@@ -99,6 +101,46 @@ print(f"Total videos: {stats.get('total_videos', 0):,}")
 
 # Cleanup resources when done
 await collector.cleanup()
+```
+
+## Advanced Title Parsing
+
+The collector features a sophisticated multi-strategy parsing system that handles diverse karaoke video naming schemes:
+
+### Supported Formats
+- **Quoted formats**: `"Artist" - "Title" "(Karaoke Version)"`
+- **Style-based**: `"Title" "(in the Style of "Artist")"`  
+- **Channel-specific**: `Sing King Karaoke - "Title" "(in the Style of "Artist")"`
+- **Complex formats**: `"Artist"-"Title" "("Movie"OST)" "(MR/Inst.)" "(-1Key)" "(Karaoke Version)"`
+- **International**: `[짱가라오케/원키/노래방] Artist-Title [ZZang KARAOKE]`
+- **Movie soundtracks**: `"Frozen" - "Let It Go" ("Idina Menzel") (Disney Karaoke)`
+
+### Advanced Features
+- **Multi-pass parsing** - Uses 5 different parsing strategies with confidence weighting
+- **Language detection** - Automatically detects Korean, Japanese, Chinese, and other languages
+- **Channel-specific patterns** - Learns patterns from specific karaoke channels
+- **Fuzzy matching** - Matches against known artists/songs with spelling variations
+- **Adaptive learning** - Improves accuracy over time by learning from successful parses
+- **Featured artist extraction** - Identifies collaborations and featured artists
+- **Confidence scoring** - Each extraction includes accuracy confidence metrics
+
+### Parser Configuration
+```yaml
+search:
+  # Enable advanced multi-strategy parsing
+  use_advanced_parser: true
+  
+  # Enable fuzzy matching against known data  
+  enable_fuzzy_matching: true
+  
+  # Enable pattern learning for continuous improvement
+  enable_pattern_learning: true
+  
+  # Minimum confidence threshold for extractions
+  min_confidence_threshold: 0.5
+  
+  # Enable multi-language pattern detection
+  enable_multi_language: true
 ```
 
 ## Configuration

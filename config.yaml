@@ -19,6 +19,14 @@ scraping:
 search:
   primary_method: "yt_dlp"
   max_results_per_query: 100
+  
+  # Advanced parser settings
+  use_advanced_parser: true
+  enable_fuzzy_matching: true
+  enable_pattern_learning: true
+  min_confidence_threshold: 0.5
+  enable_multi_language: true
+  
   # Optional regex patterns for custom title parsing
   # Each pattern should have 2 capture groups: (artist, title) or (title, artist)
   # The enhanced parser will try these after built-in patterns

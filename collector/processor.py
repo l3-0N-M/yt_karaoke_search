@@ -60,6 +60,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 
 from .config import CollectorConfig
+from .advanced_parser import AdvancedTitleParser
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,12 @@ class VideoProcessor:
             ),
         )
         self._cleanup_completed = False
+        
+        # Initialize advanced parser if enabled
+        if config.search.use_advanced_parser:
+            self.advanced_parser = AdvancedTitleParser(config)
+        else:
+            self.advanced_parser = None
 
     def _setup_yt_dlp(self) -> Dict:
         """Configure yt-dlp for comprehensive metadata extraction."""
@@ -324,8 +331,30 @@ class VideoProcessor:
             features[feat] = bool(hits)
             features[f"{feat}_confidence"] = min(0.6 + 0.1 * (hits - 1), 1.0) if hits else 0.0
 
-        # Extract artist and song info
-        artist_info = self._extract_artist_song_info(title, description, tags)
+        # Extract artist and song info using advanced parser if available
+        if self.advanced_parser:
+            uploader = video_data.get("uploader", "")
+            parse_result = self.advanced_parser.parse_title(title, description, tags, uploader)
+            
+            artist_info = {
+                "original_artist": parse_result.original_artist,
+                "song_title": parse_result.song_title,
+                "artist_confidence": parse_result.confidence,
+                "parsing_method": parse_result.method,
+                "pattern_used": parse_result.pattern_used,
+            }
+            
+            # Add featured artists if found
+            if parse_result.featured_artists:
+                artist_info["featured_artists"] = parse_result.featured_artists
+            
+            # Add alternative results for debugging
+            if parse_result.alternative_results:
+                artist_info["alternative_extractions"] = parse_result.alternative_results
+        else:
+            # Fallback to original method
+            artist_info = self._extract_artist_song_info(title, description, tags)
+        
         features.update(artist_info)
 
         # Extract featured artists
