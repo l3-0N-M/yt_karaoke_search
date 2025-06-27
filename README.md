@@ -206,14 +206,14 @@ The collector creates a normalized SQLite database with the following tables:
 ## Development
 
 ```bash
-# Install development dependencies
+# Install development dependencies (includes pytest-cov for coverage)
 pip install -e ".[dev]"
 
 # Keep yt-dlp updated for YouTube API changes
 pip install --upgrade yt-dlp
 
 # Run tests with coverage
-pytest
+pytest --cov=collector
 
 # Run linting with auto-fix
 ruff check . --fix
@@ -232,8 +232,9 @@ pre-commit install
 
 The project uses several tools to maintain code quality:
 
-- **pytest** - Testing framework with coverage reporting
-- **ruff** - Fast Python linter with auto-fix capabilities  
+- **pytest** - Testing framework
+- **pytest-cov** - Coverage reporting plugin for pytest
+- **ruff** - Fast Python linter with auto-fix capabilities
 - **black** - Code formatting for consistent style
 - **Pylance/mypy** - Type checking for better code reliability
 
