@@ -285,9 +285,7 @@ def test_process_video_uses_multi_pass(monkeypatch):
     mpr = SimpleNamespace()
     mpr.parse_video = AsyncMock(
         return_value=SimpleNamespace(
-            final_result=ParseResult(
-                original_artist="A", song_title="S", confidence=0.9
-            )
+            final_result=ParseResult(original_artist="A", song_title="S", confidence=0.9)
         )
     )
 

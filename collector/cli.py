@@ -196,7 +196,9 @@ def collect(
     is_flag=True,
     help="Enable multi-pass parsing system",
 )
-def collect_channel(channel_url, config, max_videos, no_incremental, log_level, multi_strategy, multi_pass):
+def collect_channel(
+    channel_url, config, max_videos, no_incremental, log_level, multi_strategy, multi_pass
+):
     """Collect karaoke videos from a specific YouTube channel."""
 
     if config:
@@ -210,8 +212,10 @@ def collect_channel(channel_url, config, max_videos, no_incremental, log_level, 
         collector_config.search.multi_pass.enabled = True
 
     log_cfg = collector_config.logging
-    level = getattr(logging, log_level.upper()) if log_level else getattr(
-        logging, log_cfg.level.upper(), logging.INFO
+    level = (
+        getattr(logging, log_level.upper())
+        if log_level
+        else getattr(logging, log_cfg.level.upper(), logging.INFO)
     )
     setup_logging(
         level=level,
@@ -257,8 +261,10 @@ def collect_channels(channels_file, config, max_videos, log_level):
         collector_config = CollectorConfig()
 
     log_cfg = collector_config.logging
-    level = getattr(logging, log_level.upper()) if log_level else getattr(
-        logging, log_cfg.level.upper(), logging.INFO
+    level = (
+        getattr(logging, log_level.upper())
+        if log_level
+        else getattr(logging, log_cfg.level.upper(), logging.INFO)
     )
     setup_logging(
         level=level,
