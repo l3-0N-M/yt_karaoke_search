@@ -26,4 +26,3 @@ def test_save_config_template(tmp_path):
     assert output.exists()
     data = yaml.safe_load(output.read_text())
     assert "database" in data and "logging" in data
-
