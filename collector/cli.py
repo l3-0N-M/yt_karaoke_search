@@ -116,7 +116,12 @@ def cli():
 @click.option("--output-db", "-o", help="Output database path")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose logging")
 @click.option("--dry-run", is_flag=True, help="Dry run mode (no database writes)")
-def collect(config, queries, max_per_query, output_db, verbose, dry_run):
+@click.option(
+    "--multi-strategy",
+    is_flag=True,
+    help="Use multi-strategy search engine",
+)
+def collect(config, queries, max_per_query, output_db, verbose, dry_run, multi_strategy):
     """Collect karaoke videos from YouTube."""
 
     # Setup logging
@@ -134,6 +139,8 @@ def collect(config, queries, max_per_query, output_db, verbose, dry_run):
         collector_config.database.path = output_db
     if dry_run:
         collector_config.dry_run = True
+    if multi_strategy:
+        collector_config.search.use_multi_strategy = True
 
     # Default queries if none provided
     if not queries:
@@ -165,7 +172,12 @@ def collect(config, queries, max_per_query, output_db, verbose, dry_run):
 @click.option("--max-videos", "-m", type=int, help="Maximum videos to process from channel")
 @click.option("--no-incremental", is_flag=True, help="Process all videos, not just new ones")
 @click.option("--log-level", default="INFO", help="Logging level")
-def collect_channel(channel_url, config, max_videos, no_incremental, log_level):
+@click.option(
+    "--multi-strategy",
+    is_flag=True,
+    help="Use multi-strategy search engine",
+)
+def collect_channel(channel_url, config, max_videos, no_incremental, log_level, multi_strategy):
     """Collect karaoke videos from a specific YouTube channel."""
     setup_logging(getattr(logging, log_level.upper()))
 
@@ -173,6 +185,9 @@ def collect_channel(channel_url, config, max_videos, no_incremental, log_level):
         collector_config = load_config(config)
     else:
         collector_config = CollectorConfig()
+
+    if multi_strategy:
+        collector_config.search.use_multi_strategy = True
 
     collector = KaraokeCollector(collector_config)
 

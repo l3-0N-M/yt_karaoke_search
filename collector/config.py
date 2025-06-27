@@ -76,6 +76,7 @@ class SearchConfig:
 
     primary_method: str = "yt_dlp"
     max_results_per_query: int = 100
+    use_multi_strategy: bool = False
 
     search_categories: Dict[str, List[str]] = field(
         default_factory=lambda: {
