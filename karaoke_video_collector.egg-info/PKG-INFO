@@ -57,19 +57,24 @@ A comprehensive tool for collecting karaoke video data from YouTube with confide
 
 ## Installation
 
-Requires **Python 3.8–3.11**. Create a virtual environment and then install:
+
+Requires **Python 3.8–3.11**. Create and activate a virtual environment, then install:
 
 ```bash
 # Clone the repository
 git clone https://github.com/l3-0N-M/yt_karaoke_search.git
 cd yt_karaoke_search
+# Create a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
 
 # Install the package (dependencies are installed automatically)
-pip install -e .
+python -m pip install -e .
 
 # For development with additional tools
 pip install -e ".[dev]"
 ```
+**Troubleshooting:** If `pip install -e .` fails with a permission error even in a virtual environment, check for a `~/.pydistutils.cfg` or `/etc/distutils.cfg` file. These files can override the install prefix. Rename or remove them and retry.
 
 ## Usage
 

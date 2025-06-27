@@ -135,3 +135,14 @@
 2025-06-27 16:06:47,288 - collector.processor - ERROR - HTTP client cleanup error: Event loop is closed
 2025-06-27 16:06:47,312 - collector.main - INFO - Cleanup completed
 2025-06-27 16:06:47,322 - collector.db - INFO - Closed 1 pooled database connections
+2025-06-27 16:27:04,111 - collector.db - INFO - Database backed up to: backups/karaoke_videos_20250627_162704.db
+2025-06-27 16:27:04,113 - collector.db - INFO - Database initialized: karaoke_videos.db
+2025-06-27 16:27:04,167 - collector.main - INFO - Processing channel: https://www.youtube.com/@BandaisuanKaraoke001
+2025-06-27 16:27:05,883 - collector.search - INFO - Extracted channel info: BandaisuanKaraoke001 - Videos
+2025-06-27 16:27:08,873 - collector.search - INFO - Extracted 60 videos from channel: BandaisuanKaraoke001 - Videos
+2025-06-27 16:27:08,874 - collector.main - INFO - Found 60 videos in channel: BandaisuanKaraoke001 - Videos
+2025-06-27 16:27:08,875 - collector.main - INFO - Processing 60 new videos (after duration filter)
+2025-06-27 16:28:02,763 - collector.main - INFO - Channel collection completed: 60 videos in 58.6s
+2025-06-27 16:28:02,766 - collector.processor - ERROR - HTTP client cleanup error: Event loop is closed
+2025-06-27 16:28:02,797 - collector.main - INFO - Cleanup completed
+2025-06-27 16:28:02,812 - collector.db - INFO - Closed 1 pooled database connections
