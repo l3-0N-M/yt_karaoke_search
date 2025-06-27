@@ -19,6 +19,8 @@ scraping:
 search:
   primary_method: "yt_dlp"
   max_results_per_query: 100
+  # Optional regex patterns for custom title parsing
+  title_patterns: []
 
 data_sources:
   ryd_api_enabled: true

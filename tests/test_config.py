@@ -42,6 +42,20 @@ def test_load_config_ignores_extra_keys(tmp_path):
     assert cfg.database.path == "sample.db"
 
 
+def test_custom_title_patterns(tmp_path):
+    cfg_path = tmp_path / "pattern.yaml"
+    cfg_path.write_text(
+        """
+        search:
+          title_patterns:
+            - "(.+?) -- (.+)"
+        """
+    )
+
+    cfg = load_config(str(cfg_path))
+    assert cfg.search.title_patterns == ["(.+?) -- (.+)"]
+
+
 def test_validation_error(tmp_path):
     cfg_path = tmp_path / "invalid.yaml"
     cfg_path.write_text(

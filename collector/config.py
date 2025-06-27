@@ -87,6 +87,9 @@ class SearchConfig:
         }
     )
 
+    # Optional regex patterns for extracting artist and song from titles
+    title_patterns: List[str] = field(default_factory=list)
+
 
 @dataclass
 class LoggingConfig:

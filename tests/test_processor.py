@@ -53,6 +53,32 @@ def test_extract_featured_artists():
             assert result is None, f"Failed for '{title}': got '{result}', expected None"
 
 
+def test_extract_artist_song_info_patterns():
+    """Ensure default patterns extract artist and song correctly."""
+    cfg = CollectorConfig()
+    processor = VideoProcessor(cfg)
+
+    cases = [
+        ("Artist Name - Song Title", "Artist Name", "Song Title"),
+        ("Song Title (Karaoke) - Artist Name", "Artist Name", "Song Title"),
+    ]
+
+    for title, artist, song in cases:
+        result = processor._extract_artist_song_info(title, "", "")
+        assert result.get("original_artist") == artist
+        assert result.get("song_title") == song
+
+
+def test_artist_song_info_fallback_to_description_tags():
+    cfg = CollectorConfig()
+    processor = VideoProcessor(cfg)
+
+    result = processor._extract_artist_song_info(
+        "Random Title", "Artist: The Beatles", "classic, karaoke"
+    )
+    assert result.get("original_artist") == "The Beatles"
+
+
 def test_like_dislike_ratio_calculation():
     """Test like/dislike ratio calculation during save."""
     import tempfile
