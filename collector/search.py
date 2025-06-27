@@ -104,7 +104,9 @@ class SearchEngine:
             except Exception as e:
                 # Failure: increase backoff factor
                 self._backoff_factor = min(10.0, self._backoff_factor * 1.5)
-                logger.warning(f"Request failed, increasing backoff to {self._backoff_factor:.2f}x: {e}")
+                logger.warning(
+                    f"Request failed, increasing backoff to {self._backoff_factor:.2f}x: {e}"
+                )
                 raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))

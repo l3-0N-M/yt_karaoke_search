@@ -71,7 +71,7 @@ class KaraokeCollector:
                 return
 
             # Prevent concurrent cleanup operations
-            if hasattr(self, '_cleanup_in_progress') and self._cleanup_in_progress:
+            if hasattr(self, "_cleanup_in_progress") and self._cleanup_in_progress:
                 return
             self._cleanup_in_progress = True
 
@@ -86,7 +86,9 @@ class KaraokeCollector:
                     old_size = len(self.processed_video_ids)
                     self.processed_video_ids = recent_ids
                     self._last_cache_cleanup = current_time
-                    logger.info(f"Memory cache cleaned: {old_size} -> {len(self.processed_video_ids)} video IDs")
+                    logger.info(
+                        f"Memory cache cleaned: {old_size} -> {len(self.processed_video_ids)} video IDs"
+                    )
             else:
                 # Just update timestamp
                 with self._processed_ids_lock:

@@ -374,24 +374,19 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
             "CREATE INDEX IF NOT EXISTS idx_videos_scraped_updated ON videos(scraped_at, updated_at)",
             "CREATE INDEX IF NOT EXISTS idx_videos_duration_views ON videos(duration_seconds, view_count)",
             "CREATE INDEX IF NOT EXISTS idx_videos_channel_scraped ON videos(channel_id, scraped_at)",
-
             # Video features performance indexes
             "CREATE INDEX IF NOT EXISTS idx_features_karaoke_confidence ON video_features(has_guide_vocals, is_instrumental_only, confidence_score)",
             "CREATE INDEX IF NOT EXISTS idx_features_video_style ON video_features(video_style, difficulty_level)",
-
             # Quality and engagement indexes
             "CREATE INDEX IF NOT EXISTS idx_quality_overall_technical ON quality_scores(overall_score, technical_score)",
             "CREATE INDEX IF NOT EXISTS idx_quality_engagement ON quality_scores(engagement_score, calculated_at)",
-
             # Channel processing indexes
             "CREATE INDEX IF NOT EXISTS idx_channels_processed_karaoke ON channels(last_processed_at, is_karaoke_focused)",
             "CREATE INDEX IF NOT EXISTS idx_channels_subscriber_count ON channels(subscriber_count, video_count)",
-
             # Search and error tracking indexes
             "CREATE INDEX IF NOT EXISTS idx_search_history_date_method ON search_history(search_date, search_method)",
             "CREATE INDEX IF NOT EXISTS idx_error_log_timestamp_resolved ON error_log(timestamp, resolved)",
             "CREATE INDEX IF NOT EXISTS idx_error_log_video_type ON error_log(video_id, error_type)",
-
             # Composite indexes for common query patterns
             "CREATE INDEX IF NOT EXISTS idx_videos_artist_views_date ON videos(original_artist, view_count, upload_date)",
             "CREATE INDEX IF NOT EXISTS idx_videos_channel_artist_title ON videos(channel_id, original_artist, song_title)",
@@ -476,7 +471,9 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT video_id FROM videos WHERE scraped_at >= date('now', '-{} days')".format(days)
+                    "SELECT video_id FROM videos WHERE scraped_at >= date('now', '-{} days')".format(
+                        days
+                    )
                 )
                 return {row[0] for row in cursor.fetchall()}
         except Exception as e:

@@ -87,12 +87,12 @@ class VideoProcessor:
                 connect=10.0,  # Connection timeout
                 read=config.scraping.timeout_seconds,  # Read timeout
                 write=10.0,  # Write timeout
-                pool=5.0   # Pool timeout
+                pool=5.0,  # Pool timeout
             ),
             limits=httpx.Limits(
                 max_connections=10,
                 max_keepalive_connections=5,
-                keepalive_expiry=30.0  # Close idle connections
+                keepalive_expiry=30.0,  # Close idle connections
             ),
         )
         self._cleanup_completed = False
@@ -512,7 +512,7 @@ class VideoProcessor:
 
         try:
             # Close HTTP client with timeout
-            if hasattr(self, 'http_client') and self.http_client:
+            if hasattr(self, "http_client") and self.http_client:
                 await asyncio.wait_for(self.http_client.aclose(), timeout=5.0)
                 logger.debug("HTTP client closed successfully")
         except asyncio.TimeoutError:
@@ -524,4 +524,5 @@ class VideoProcessor:
 
         # Force garbage collection to clean up any remaining resources
         import gc
+
         gc.collect()
