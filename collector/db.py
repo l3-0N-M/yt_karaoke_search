@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """Enhanced database management with migrations and backups."""
 
-    SCHEMA_VERSION = 4  # Schema version expected by tests
+    SCHEMA_VERSION = 7  # Schema version expected by tests
 
     def __init__(self, config: DatabaseConfig):
         self.config = config
@@ -182,6 +182,36 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
 """
             with open(migration_004_path, "w") as f:
                 f.write(migration_004_content)
+
+        migration_005_path = self.migrations_dir / "005_add_foreign_keys.sql"
+        if not migration_005_path.exists():
+            migration_005_content = """-- Migration 005: Add foreign key constraints
+PRAGMA foreign_keys = ON;
+INSERT OR REPLACE INTO schema_info(version) VALUES (5);
+"""
+            with open(migration_005_path, "w") as f:
+                f.write(migration_005_content)
+
+        migration_006_path = self.migrations_dir / "006_enhanced_musicbrainz.sql"
+        if not migration_006_path.exists():
+            migration_006_content = """-- Enhanced MusicBrainz metadata support
+-- Migration 006: Add comprehensive MusicBrainz fields to videos table
+ALTER TABLE videos ADD COLUMN musicbrainz_recording_id TEXT;
+ALTER TABLE videos ADD COLUMN musicbrainz_artist_id TEXT;
+ALTER TABLE videos ADD COLUMN musicbrainz_genre TEXT;
+ALTER TABLE videos ADD COLUMN musicbrainz_tags TEXT;
+ALTER TABLE videos ADD COLUMN musicbrainz_confidence REAL;
+ALTER TABLE videos ADD COLUMN record_label TEXT;
+ALTER TABLE videos ADD COLUMN recording_length_ms INTEGER;
+
+CREATE INDEX IF NOT EXISTS idx_videos_musicbrainz_recording_id ON videos(musicbrainz_recording_id);
+CREATE INDEX IF NOT EXISTS idx_videos_musicbrainz_artist_id ON videos(musicbrainz_artist_id);
+CREATE INDEX IF NOT EXISTS idx_videos_musicbrainz_genre ON videos(musicbrainz_genre);
+CREATE INDEX IF NOT EXISTS idx_videos_record_label ON videos(record_label);
+INSERT OR REPLACE INTO schema_info(version) VALUES (6);
+"""
+            with open(migration_006_path, "w") as f:
+                f.write(migration_006_content)
 
         # Create migration 007 for cache tables
         migration_007_path = self.migrations_dir / "007_cache_tables.sql"
