@@ -4,7 +4,8 @@ import asyncio
 import logging
 import random
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
+from datetime import datetime
 
 try:
     import yt_dlp  # type: ignore
@@ -293,3 +294,128 @@ class YouTubeSearchProvider(SearchProvider):
         indicator_count = sum(1 for indicator in karaoke_indicators if indicator in text_to_check)
 
         return indicator_count >= 2 or "karaoke" in channel_name
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    async def extract_channel_videos(
+        self, channel_url: str, max_videos: Optional[int] = None, after_date: Optional[str] = None
+    ) -> List[SearchResult]:
+        """Extract videos from a channel with basic filtering."""
+        try:
+            self.yt_dlp_opts["user_agent"] = random.choice(self.scraping_config.user_agents)
+
+            channel_opts = self.yt_dlp_opts.copy()
+            channel_opts["extract_flat"] = True
+            if max_videos:
+                channel_opts["playlistend"] = max_videos
+
+            result = await self._rate_limited_request(
+                self._execute_channel_videos_extraction, channel_url, channel_opts
+            )
+
+            if not result or "entries" not in result:
+                return []
+
+            results = []
+            channel_id = result.get("id", "")
+            channel_name = result.get("title", "")
+
+            for entry in result["entries"]:
+                if not entry or not entry.get("id"):
+                    continue
+
+                title = entry.get("title", "")
+                duration = entry.get("duration")
+                try:
+                    duration = int(duration) if duration is not None else 0
+                except (ValueError, TypeError):
+                    duration = 0
+
+                if not (30 <= duration <= 1200):
+                    continue
+
+                upload_date = entry.get("upload_date")
+                if after_date and not self._is_video_after_date(upload_date, after_date):
+                    continue
+
+                result_data = {
+                    "video_id": entry["id"],
+                    "url": f"https://www.youtube.com/watch?v={entry['id']}",
+                    "title": title,
+                    "channel": channel_name,
+                    "channel_id": channel_id,
+                    "duration": duration,
+                    "view_count": entry.get("view_count", 0),
+                    "upload_date": upload_date,
+                    "search_method": "channel_extraction",
+                    "relevance_score": self._calculate_channel_video_score(title),
+                }
+                results.append(self.normalize_result(result_data, channel_url))
+
+            self.logger.info(f"Extracted {len(results)} videos from channel: {channel_name}")
+            return results
+        except Exception as e:
+            self.logger.error(f"Failed to extract videos from channel {channel_url}: {e}")
+            return []
+
+    def _execute_channel_videos_extraction(self, channel_url: str, opts: Dict) -> Dict:
+        """Execute yt-dlp channel videos extraction."""
+        if yt_dlp is None:
+            raise RuntimeError("yt-dlp not available")
+
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(channel_url, download=False)
+            return info or {}
+
+    def _calculate_channel_video_score(self, title: str) -> float:
+        """Simpler relevance scoring for channel videos."""
+        title_lower = title.lower()
+        score = 0.5
+
+        karaoke_indicators = ["karaoke", "backing track", "instrumental", "sing along"]
+        for indicator in karaoke_indicators:
+            if indicator in title_lower:
+                score += 0.3
+                break
+
+        quality_indicators = {
+            "hd": 0.1,
+            "4k": 0.2,
+            "high quality": 0.1,
+            "with lyrics": 0.2,
+            "guide vocals": 0.1,
+        }
+
+        for indicator, weight in quality_indicators.items():
+            if indicator in title_lower:
+                score += weight
+
+        return min(score, 2.0)
+
+    def _parse_upload_date(self, upload_date: str) -> Optional[datetime]:
+        """Parse upload date string from yt-dlp."""
+        if not upload_date:
+            return None
+
+        try:
+            if len(upload_date) == 8 and upload_date.isdigit():
+                return datetime.strptime(upload_date, "%Y%m%d")
+            if len(upload_date) == 10 and upload_date.count("-") == 2:
+                return datetime.strptime(upload_date, "%Y-%m-%d")
+            self.logger.warning(f"Unknown upload date format: {upload_date}")
+            return None
+        except ValueError as e:
+            self.logger.warning(f"Failed to parse upload date '{upload_date}': {e}")
+            return None
+
+    def _is_video_after_date(self, upload_date: str, after_date: str) -> bool:
+        """Check if the video was uploaded after the specified date."""
+        if not after_date or not upload_date:
+            return True
+
+        video_date = self._parse_upload_date(upload_date)
+        cutoff_date = self._parse_upload_date(after_date.replace("-", "")[:8])
+
+        if not video_date or not cutoff_date:
+            return True
+
+        return video_date > cutoff_date

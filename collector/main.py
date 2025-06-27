@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from .config import CollectorConfig
 from .db import DatabaseManager
 from .processor import VideoProcessor
-from .search import SearchEngine
+from .search_engine import SearchEngine
 
 try:
     from tqdm.asyncio import tqdm_asyncio

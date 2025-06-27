@@ -1,5 +1,5 @@
 from collector.config import ScrapingConfig, SearchConfig
-from collector.search import SearchEngine
+from collector.search_engine import SearchEngine
 
 
 def _engine():
