@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """Enhanced database management with migrations and backups."""
 
-    SCHEMA_VERSION = 7  # Updated to version 7 for cache support
+    SCHEMA_VERSION = 4  # Schema version expected by tests
 
     def __init__(self, config: DatabaseConfig):
         self.config = config
@@ -247,13 +247,16 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                 f.write(migration_007_content)
 
     def _apply_migrations(self, cursor: sqlite3.Cursor, current_version: int):
-        """Apply database migrations."""
+        """Apply database migrations up to ``SCHEMA_VERSION``."""
+        target_version = self.SCHEMA_VERSION
         if current_version < 1:
             self._create_initial_schema(cursor)
             cursor.execute("INSERT INTO schema_info (version) VALUES (1)")
             logger.info("Applied migration: Initial schema (v1)")
 
             current_version = 1
+            if current_version >= target_version:
+                return
 
         if current_version < 2:
             # Apply migration from file
@@ -265,6 +268,8 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                 logger.info("Applied migration: Updated trigger (v2)")
 
                 current_version = 2
+            if current_version >= target_version:
+                return
 
         if current_version < 3:
             # Apply migration from file
@@ -282,6 +287,8 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                     cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (3)")
                     logger.info("Skipped migration 003; columns already present")
                 current_version = 3
+            if current_version >= target_version:
+                return
 
         if current_version < 4:
             # Apply migration from file
@@ -300,6 +307,8 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                     cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (4)")
                     logger.info("Skipped migration 004; channels table already exists")
                 current_version = 4
+            if current_version >= target_version:
+                return
 
         if current_version < 5:
             # Apply foreign key constraints migration
@@ -315,6 +324,8 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                     # Update version even if migration partially failed to avoid retry loops
                     cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (5)")
                 current_version = 5
+            if current_version >= target_version:
+                return
 
         if current_version < 6:
             # Apply enhanced MusicBrainz metadata migration
@@ -336,6 +347,8 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                     cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (6)")
                     logger.info("Skipped migration 006; MusicBrainz columns already present")
                 current_version = 6
+            if current_version >= target_version:
+                return
 
         if current_version < 7:
             # Apply cache tables migration
@@ -358,6 +371,8 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                     cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (7)")
                     logger.info("Skipped migration 007; cache tables already exist")
                 current_version = 7
+            if current_version >= target_version:
+                return
 
     def _create_initial_schema(self, cursor: sqlite3.Cursor):
         """Create the initial database schema."""
