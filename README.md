@@ -1,7 +1,7 @@
 # Karaoke Video Collector
 
 [![CI](https://github.com/l3-0N-M/yt_karaoke_search/workflows/CI/badge.svg)](https://github.com/l3-0N-M/yt_karaoke_search/actions)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.8–3.11](https://img.shields.io/badge/python-3.8--3.11-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A comprehensive tool for collecting karaoke video data from YouTube with confidence scoring and Return YouTube Dislike integration.
@@ -28,15 +28,14 @@ A comprehensive tool for collecting karaoke video data from YouTube with confide
 
 ## Installation
 
+Requires **Python 3.8–3.11**. Create a virtual environment and then install:
+
 ```bash
 # Clone the repository
 git clone https://github.com/l3-0N-M/yt_karaoke_search.git
 cd yt_karaoke_search
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Install as editable package
+# Install the package (dependencies are installed automatically)
 pip install -e .
 
 # For development with additional tools
@@ -242,10 +241,10 @@ The project uses several tools to maintain code quality:
 
 ### 🔄 **Staying Current with YouTube Changes**
 
-YouTube frequently updates their internal APIs. Keep your collector robust:
+YouTube often changes its internal APIs. Keep your collector working by upgrading yt-dlp:
 
 ```bash
-# Update to latest yt-dlp (includes recent innertube 'sts'-token patches)
+# Update to the latest yt-dlp
 pip install --upgrade yt-dlp
 
 # Check for breaking changes
@@ -310,4 +309,4 @@ Tests are configured with:
 
 ## License
 
-This project is for educational purposes only. Users are responsible for ensuring compliance with applicable laws and terms of service.
+This project is licensed under the MIT License. Users remain responsible for ensuring compliance with applicable laws and terms of service.
