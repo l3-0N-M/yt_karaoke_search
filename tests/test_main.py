@@ -1,4 +1,6 @@
 import asyncio
+from typing import cast
+
 from collector.config import CollectorConfig
 import collector.main as main
 from collector.processor import ProcessingResult
@@ -42,10 +44,10 @@ def test_collect_videos(monkeypatch):
     config = CollectorConfig()
     monkeypatch.setattr(main, "DatabaseManager", lambda cfg: DummyDB())
     collector = main.KaraokeCollector(config)
-    collector.search_engine = DummySearch()
-    collector.video_processor = DummyProcessor()
+    collector.search_engine = cast(main.SearchEngine, DummySearch())
+    collector.video_processor = cast(main.VideoProcessor, DummyProcessor())
 
     count = asyncio.run(collector.collect_videos(["test"], 2))
     assert count == 2
-    assert collector.db_manager.saved == ["1", "2"]
+    assert cast(DummyDB, collector.db_manager).saved == ["1", "2"]
 
