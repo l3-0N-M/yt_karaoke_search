@@ -28,6 +28,78 @@ from collector.main import KaraokeCollector
 from collector.utils import setup_logging
 
 
+async def _collect_async(collector: KaraokeCollector, queries, max_per_query: int) -> None:
+    """Helper to run video collection and print statistics."""
+    try:
+        total_processed = await collector.collect_videos(list(queries), max_per_query)
+        stats = await collector.get_statistics()
+
+        print("\n" + "=" * 50)
+        print("COLLECTION RESULTS")
+        print("=" * 50)
+        print(f"Total videos processed: {total_processed}")
+        print(f"Total videos in database: {stats.get('total_videos', 0):,}")
+        print(f"Videos with artist info: {stats.get('videos_with_artist', 0):,}")
+        print(f"Average confidence score: {stats.get('avg_confidence', 0):.2f}")
+
+        if top_artists := stats.get("top_artists", []):
+            print("\nTop 10 Artists:")
+            for artist, count, avg_views in top_artists[:10]:
+                print(f"  {artist}: {count} videos (avg {avg_views:,.0f} views)")
+    finally:
+        await collector.cleanup()
+
+
+async def _collect_channel_async(
+    collector: KaraokeCollector, channel_url: str, max_videos, incremental: bool
+) -> None:
+    """Helper to collect from a single channel and print statistics."""
+    try:
+        total_processed = await collector.collect_from_channel(channel_url, max_videos, incremental)
+        stats = await collector.get_channel_statistics()
+
+        print("\n" + "=" * 50)
+        print("CHANNEL COLLECTION RESULTS")
+        print("=" * 50)
+        print(f"Videos processed: {total_processed}")
+        print(f"Total channels in database: {stats.get('total_channels', 0)}")
+        print(f"Total videos from channels: {stats.get('total_videos_from_channels', 0):,}")
+
+        for channel in stats.get("channels", []):
+            if channel_url in channel.get("channel_url", ""):
+                print(f"\nChannel: {channel['channel_name']}")
+                print(f"  Videos collected: {channel['collected_videos']}")
+                print(f"  Karaoke focused: {'Yes' if channel['is_karaoke_focused'] else 'No'}")
+                if channel["last_processed_at"]:
+                    print(f"  Last processed: {channel['last_processed_at']}")
+                break
+    finally:
+        await collector.cleanup()
+
+
+async def _collect_channels_async(
+    collector: KaraokeCollector, channel_urls, max_videos_per_channel
+) -> None:
+    """Helper to collect from multiple channels and print statistics."""
+    try:
+        total_processed = await collector.collect_from_channels(channel_urls, max_videos_per_channel)
+        stats = await collector.get_channel_statistics()
+
+        print("\n" + "=" * 50)
+        print("MULTI-CHANNEL COLLECTION RESULTS")
+        print("=" * 50)
+        print(f"Total videos processed: {total_processed}")
+        print(f"Channels processed: {len(channel_urls)}")
+        print(f"Total channels in database: {stats.get('total_channels', 0)}")
+        print(f"Total videos from channels: {stats.get('total_videos_from_channels', 0):,}")
+
+        print("\nChannels breakdown:")
+        for channel in stats.get("channels", [])[:10]:
+            print(f"  {channel['channel_name']}: {channel['collected_videos']} videos")
+    finally:
+        await collector.cleanup()
+
+
 @click.group()
 @click.version_option("2.0.0")
 def cli():
@@ -76,30 +148,13 @@ def collect(config, queries, max_per_query, output_db, verbose, dry_run):
     collector = KaraokeCollector(collector_config)
 
     try:
-        total_processed = asyncio.run(collector.collect_videos(list(queries), max_per_query))
-
-        # Show results
-        stats = asyncio.run(collector.get_statistics())
-        print("\n" + "=" * 50)
-        print("COLLECTION RESULTS")
-        print("=" * 50)
-        print(f"Total videos processed: {total_processed}")
-        print(f"Total videos in database: {stats.get('total_videos', 0):,}")
-        print(f"Videos with artist info: {stats.get('videos_with_artist', 0):,}")
-        print(f"Average confidence score: {stats.get('avg_confidence', 0):.2f}")
-
-        if top_artists := stats.get("top_artists", []):
-            print("\nTop 10 Artists:")
-            for artist, count, avg_views in top_artists[:10]:
-                print(f"  {artist}: {count} videos (avg {avg_views:,.0f} views)")
+        asyncio.run(_collect_async(collector, queries, max_per_query))
 
     except KeyboardInterrupt:
         logging.info("Collection interrupted by user")
     except Exception as e:
         logging.error(f"Collection failed: {e}")
         sys.exit(1)
-    finally:
-        asyncio.run(collector.cleanup())
 
 
 @cli.command()
@@ -130,36 +185,13 @@ def collect_channel(channel_url, config, max_videos, no_incremental, log_level):
         else:
             print("Processing all videos in channel")
 
-        total_processed = asyncio.run(
-            collector.collect_from_channel(channel_url, max_videos, incremental)
-        )
-
-        # Show results
-        stats = asyncio.run(collector.get_channel_statistics())
-        print("\n" + "=" * 50)
-        print("CHANNEL COLLECTION RESULTS")
-        print("=" * 50)
-        print(f"Videos processed: {total_processed}")
-        print(f"Total channels in database: {stats.get('total_channels', 0)}")
-        print(f"Total videos from channels: {stats.get('total_videos_from_channels', 0):,}")
-
-        # Show channel details
-        for channel in stats.get("channels", []):
-            if channel_url in channel.get("channel_url", ""):
-                print(f"\nChannel: {channel['channel_name']}")
-                print(f"  Videos collected: {channel['collected_videos']}")
-                print(f"  Karaoke focused: {'Yes' if channel['is_karaoke_focused'] else 'No'}")
-                if channel["last_processed_at"]:
-                    print(f"  Last processed: {channel['last_processed_at']}")
-                break
+        asyncio.run(_collect_channel_async(collector, channel_url, max_videos, incremental))
 
     except KeyboardInterrupt:
         logging.info("Channel collection interrupted by user")
     except Exception as e:
         logging.error(f"Channel collection failed: {e}")
         sys.exit(1)
-    finally:
-        asyncio.run(collector.cleanup())
 
 
 @cli.command()
@@ -195,29 +227,13 @@ def collect_channels(channels_file, config, max_videos, log_level):
         if max_videos:
             print(f"Maximum videos per channel: {max_videos}")
 
-        total_processed = asyncio.run(collector.collect_from_channels(channel_urls, max_videos))
-
-        # Show results
-        stats = asyncio.run(collector.get_channel_statistics())
-        print("\n" + "=" * 50)
-        print("MULTI-CHANNEL COLLECTION RESULTS")
-        print("=" * 50)
-        print(f"Total videos processed: {total_processed}")
-        print(f"Channels processed: {len(channel_urls)}")
-        print(f"Total channels in database: {stats.get('total_channels', 0)}")
-        print(f"Total videos from channels: {stats.get('total_videos_from_channels', 0):,}")
-
-        print("\nChannels breakdown:")
-        for channel in stats.get("channels", [])[:10]:  # Show top 10
-            print(f"  {channel['channel_name']}: {channel['collected_videos']} videos")
+        asyncio.run(_collect_channels_async(collector, channel_urls, max_videos))
 
     except KeyboardInterrupt:
         logging.info("Multi-channel collection interrupted by user")
     except Exception as e:
         logging.error(f"Multi-channel collection failed: {e}")
         sys.exit(1)
-    finally:
-        asyncio.run(collector.cleanup())
 
 
 @cli.command()
