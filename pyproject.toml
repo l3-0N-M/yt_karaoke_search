@@ -58,6 +58,9 @@ target-version = ["py38"]
 [tool.setuptools.package-data]
 collector = ["py.typed"]
 
+[tool.setuptools.packages.find]
+include = ["collector", "collector.*", "karaoke_video_collector"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
