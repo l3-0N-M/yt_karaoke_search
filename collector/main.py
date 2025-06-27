@@ -98,7 +98,7 @@ class KaraokeCollector:
             with self._processed_ids_lock:
                 self._cleanup_in_progress = False
 
-    def _is_video_processed(self, video_id: str, worker_id: str = None) -> bool:
+    def _is_video_processed(self, video_id: str, worker_id: Optional[str] = None) -> bool:
         """Check if video is processed using worker-local cache + global cache + database fallback."""
         # Use worker-local cache to reduce lock contention
         if worker_id:
@@ -178,7 +178,11 @@ class KaraokeCollector:
             nonlocal processed
             vid = vrow["video_id"]
             video_title = vrow.get("title", "Unknown")
-            worker_id = f"{asyncio.current_task().get_name()}_{id(asyncio.current_task())}"
+            current_task = asyncio.current_task()
+            if current_task is not None:
+                worker_id = f"{current_task.get_name()}_{id(current_task)}"
+            else:
+                worker_id = "unknown"
 
             # Use optimized video processed check with worker-local cache
             if self._is_video_processed(vid, worker_id):
