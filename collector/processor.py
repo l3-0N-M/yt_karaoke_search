@@ -449,9 +449,11 @@ class VideoProcessor:
             (r"^([^(]+?)\s+by\s+([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)", 2, 1, 0.8),
             # Pattern: Artist - Title [Karaoke]
             (r"^([^-\[]+?)\s*-\s*([^\[]+?)\s*\[[^\]]*[Kk]araoke[^\]]*\]", 1, 2, 0.8),
+            # Pattern: Artist - Title (no karaoke indicators)
+            (r"^([^-–—(\[]+?)\s*[-–—]\s*([^(\[]+?)$", 1, 2, 0.8),
             # Pattern: Title - Artist (with various separators and optional karaoke indicator)
             (
-                r"^([^-–—]+?)\s*[-–—]\s*([^(\[]+?)(?:\s*[\(\[][^)\]]*[Kk]araoke[^)\]]*[\)\]])?",
+                r"^([^-–—]+?)\s*[-–—]\s*([^(\[]+)(?:\s*[\(\[][^)\]]*[Kk]araoke[^)\]]*[\)\]])?",
                 2,
                 1,
                 0.7,
