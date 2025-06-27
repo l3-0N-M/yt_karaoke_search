@@ -236,6 +236,10 @@ class KaraokeCollector:
                 try:
                     result = await self.video_processor.process_video(vrow["url"])
                     if result.is_success:
+                        # Ensure channel ID is present for foreign key
+                        if not result.video_data.get("uploader_id") and vrow.get("channel_id"):
+                            result.video_data["uploader_id"] = vrow.get("channel_id")
+
                         if self.db_manager.save_video_data(result):
                             # Thread-safe updates to shared state (minimized lock time)
                             async with self._processed_ids_lock:

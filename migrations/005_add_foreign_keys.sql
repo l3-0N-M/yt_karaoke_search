@@ -119,7 +119,6 @@ CREATE INDEX IF NOT EXISTS idx_videos_video_id ON videos(video_id);
 CREATE INDEX IF NOT EXISTS idx_videos_channel_id ON videos(channel_id);
 CREATE INDEX IF NOT EXISTS idx_videos_upload_date ON videos(upload_date);
 CREATE INDEX IF NOT EXISTS idx_videos_view_count ON videos(view_count);
-CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at);
 CREATE INDEX IF NOT EXISTS idx_videos_artist_song ON videos(original_artist, song_title);
 
 -- Recreate the trigger for the new table
