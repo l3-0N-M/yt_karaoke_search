@@ -42,7 +42,7 @@ class AdvancedTitleParser:
 
     def __init__(self, config=None):
         self.config = config
-        self.pattern_stats = defaultdict(PatternStats)
+        self.pattern_stats = defaultdict(lambda: PatternStats(""))
         self.known_artists = set()
         self.known_songs = set()
         self.channel_patterns = {}
