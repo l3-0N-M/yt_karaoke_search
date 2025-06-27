@@ -8,7 +8,7 @@ version = "2.1.0"
 description = "Comprehensive tool for collecting karaoke video data from YouTube"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Karaoke Collector Team"},
 ]
