@@ -60,57 +60,154 @@ class AdvancedTitleParser:
         # Core karaoke patterns (existing + new)
         self.core_patterns = [
             # Quoted patterns - Highest priority
-            (r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*\([^)]*[Kk]araoke[^)]*\)', 1, 2, 0.95, "quoted_artist_title"),
+            (
+                r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*\([^)]*[Kk]araoke[^)]*\)',
+                1,
+                2,
+                0.95,
+                "quoted_artist_title",
+            ),
             (r'^[Kk]araoke\s*:?\s*"([^"]+)"\s*[-–—]\s*"([^"]+)"', 2, 1, 0.95, "karaoke_quoted"),
             (r'^"([^"]+)"\s*\([^)]*[Ss]tyle\s+of\s+"([^"]+)"[^)]*\)', 2, 1, 0.9, "style_of_quoted"),
-
             # Channel-specific patterns
-            (r'^([^-]+)\s*[-–—]\s*"([^"]+)"\s*\([^)]*[Ss]tyle\s+of\s+"([^"]+)"[^)]*\)', 3, 2, 0.9, "channel_style_of"),
-            (r'^([^-]+)\s*[-–—]\s*"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*\([^)]*[Kk]araoke[^)]*\)', 2, 3, 0.85, "channel_artist_title"),
-
+            (
+                r'^([^-]+)\s*[-–—]\s*"([^"]+)"\s*\([^)]*[Ss]tyle\s+of\s+"([^"]+)"[^)]*\)',
+                3,
+                2,
+                0.9,
+                "channel_style_of",
+            ),
+            (
+                r'^([^-]+)\s*[-–—]\s*"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*\([^)]*[Kk]araoke[^)]*\)',
+                2,
+                3,
+                0.85,
+                "channel_artist_title",
+            ),
             # Complex multi-part patterns
-            (r'^"([^"]+)"-"([^"]+)"\s*(?:"[^"]*")*\s*\([^)]*[Kk]araoke[^)]*\)', 1, 2, 0.85, "complex_quoted"),
-            (r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*[-–—]\s*"[^"]*[Kk]araoke[^"]*"', 1, 2, 0.9, "triple_quoted"),
-
+            (
+                r'^"([^"]+)"-"([^"]+)"\s*(?:"[^"]*")*\s*\([^)]*[Kk]araoke[^)]*\)',
+                1,
+                2,
+                0.85,
+                "complex_quoted",
+            ),
+            (
+                r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*[-–—]\s*"[^"]*[Kk]araoke[^"]*"',
+                1,
+                2,
+                0.9,
+                "triple_quoted",
+            ),
             # Bracket patterns
-            (r'^\[[^\]]*[Kk]araoke[^\]]*\]\s*([^-–—]+)[-–—]([^[\]]+)\s*\[[^\]]*\]', 1, 2, 0.9, "bracket_karaoke"),
-            (r'^\[[^\]]*\]\s*([^-–—]+)[-–—]([^[\]]+)\s*\[[^\]]*[Kk]araoke[^\]]*\]', 1, 2, 0.85, "bracket_suffix"),
-
+            (
+                r"^\[[^\]]*[Kk]araoke[^\]]*\]\s*([^-–—]+)[-–—]([^[\]]+)\s*\[[^\]]*\]",
+                1,
+                2,
+                0.9,
+                "bracket_karaoke",
+            ),
+            (
+                r"^\[[^\]]*\]\s*([^-–—]+)[-–—]([^[\]]+)\s*\[[^\]]*[Kk]araoke[^\]]*\]",
+                1,
+                2,
+                0.85,
+                "bracket_suffix",
+            ),
             # Standard patterns
-            (r'^([^-–—]+?)\s*[-–—]\s*([^([\]]+?)\s*\([^)]*[Kk]araoke[^)]*\)', 1, 2, 0.8, "standard_artist_title"),
-            (r'^([^(]+?)\s*\([^)]*[Ss]tyle\s+of\s+([^)]+?)\)', 2, 1, 0.75, "style_of_standard"),
-            (r'^([^(]+?)\s+by\s+([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)', 2, 1, 0.75, "by_pattern"),
-
+            (
+                r"^([^-–—]+?)\s*[-–—]\s*([^([\]]+?)\s*\([^)]*[Kk]araoke[^)]*\)",
+                1,
+                2,
+                0.8,
+                "standard_artist_title",
+            ),
+            (r"^([^(]+?)\s*\([^)]*[Ss]tyle\s+of\s+([^)]+?)\)", 2, 1, 0.75, "style_of_standard"),
+            (r"^([^(]+?)\s+by\s+([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)", 2, 1, 0.75, "by_pattern"),
             # Fallback patterns
-            (r'^([^-–—]+?)\s*[-–—]\s*([^([\]]+?)(?:\s*[\(\[][^)\]]*[Kk]araoke[^)\]]*[\)\]])?', 1, 2, 0.6, "basic_dash"),
-            (r'^([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)', None, 1, 0.5, "title_only"),
+            (
+                r"^([^-–—]+?)\s*[-–—]\s*([^([\]]+?)(?:\s*[\(\[][^)\]]*[Kk]araoke[^)\]]*[\)\]])?",
+                1,
+                2,
+                0.6,
+                "basic_dash",
+            ),
+            (r"^([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)", None, 1, 0.5, "title_only"),
         ]
 
         # Language-specific patterns
         self.language_patterns = {
-            'korean': [
-                (r'^\[[^\]]*가라오케[^\]]*\]\s*([^-–—]+)[-–—]([^[\]]+)', 1, 2, 0.9, "korean_bracket"),
-                (r'^([^-–—]+)[-–—]([^(]+)\s*\([^)]*가라오케[^)]*\)', 1, 2, 0.85, "korean_standard"),
+            "korean": [
+                (
+                    r"^\[[^\]]*가라오케[^\]]*\]\s*([^-–—]+)[-–—]([^[\]]+)",
+                    1,
+                    2,
+                    0.9,
+                    "korean_bracket",
+                ),
+                (r"^([^-–—]+)[-–—]([^(]+)\s*\([^)]*가라오케[^)]*\)", 1, 2, 0.85, "korean_standard"),
             ],
-            'japanese': [
-                (r'^\[[^\]]*カラオケ[^\]]*\]\s*([^-–—]+)[-–—]([^[\]]+)', 1, 2, 0.9, "japanese_bracket"),
-                (r'^([^-–—]+)[-–—]([^(]+)\s*\([^)]*カラオケ[^)]*\)', 1, 2, 0.85, "japanese_standard"),
+            "japanese": [
+                (
+                    r"^\[[^\]]*カラオケ[^\]]*\]\s*([^-–—]+)[-–—]([^[\]]+)",
+                    1,
+                    2,
+                    0.9,
+                    "japanese_bracket",
+                ),
+                (
+                    r"^([^-–—]+)[-–—]([^(]+)\s*\([^)]*カラオケ[^)]*\)",
+                    1,
+                    2,
+                    0.85,
+                    "japanese_standard",
+                ),
             ],
-            'chinese': [
-                (r'^\[[^\]]*卡拉OK[^\]]*\]\s*([^-–—]+)[-–—]([^[\]]+)', 1, 2, 0.9, "chinese_bracket"),
-                (r'^([^-–—]+)[-–—]([^(]+)\s*\([^)]*卡拉OK[^)]*\)', 1, 2, 0.85, "chinese_standard"),
+            "chinese": [
+                (
+                    r"^\[[^\]]*卡拉OK[^\]]*\]\s*([^-–—]+)[-–—]([^[\]]+)",
+                    1,
+                    2,
+                    0.9,
+                    "chinese_bracket",
+                ),
+                (r"^([^-–—]+)[-–—]([^(]+)\s*\([^)]*卡拉OK[^)]*\)", 1, 2, 0.85, "chinese_standard"),
             ],
         }
 
         # Channel-specific patterns (can be learned)
         self.channel_patterns = {
-            'sing_king': [
-                (r'^Sing King Karaoke\s*[-–—]\s*"([^"]+)"\s*\([^)]*[Ss]tyle\s+of\s+"([^"]+)"[^)]*\)', 2, 1, 0.95, "sing_king_style"),
-                (r'^Sing King.*?[-–—]\s*([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)', None, 1, 0.8, "sing_king_basic"),
+            "sing_king": [
+                (
+                    r'^Sing King Karaoke\s*[-–—]\s*"([^"]+)"\s*\([^)]*[Ss]tyle\s+of\s+"([^"]+)"[^)]*\)',
+                    2,
+                    1,
+                    0.95,
+                    "sing_king_style",
+                ),
+                (
+                    r"^Sing King.*?[-–—]\s*([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)",
+                    None,
+                    1,
+                    0.8,
+                    "sing_king_basic",
+                ),
             ],
-            'zoom_karaoke': [
-                (r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*[-–—]\s*"[^"]*Zoom\s*Karaoke[^"]*"', 1, 2, 0.9, "zoom_triple"),
-                (r'^([^-–—]+)\s*[-–—]\s*([^-–—]+)\s*[-–—]\s*.*?Zoom\s*Karaoke', 1, 2, 0.8, "zoom_basic"),
+            "zoom_karaoke": [
+                (
+                    r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*[-–—]\s*"[^"]*Zoom\s*Karaoke[^"]*"',
+                    1,
+                    2,
+                    0.9,
+                    "zoom_triple",
+                ),
+                (
+                    r"^([^-–—]+)\s*[-–—]\s*([^-–—]+)\s*[-–—]\s*.*?Zoom\s*Karaoke",
+                    1,
+                    2,
+                    0.8,
+                    "zoom_basic",
+                ),
             ],
         }
 
@@ -119,25 +216,34 @@ class AdvancedTitleParser:
 
         # Common artist indicators
         self.artist_indicators = {
-            'prefixes': {'the', 'a', 'an', 'los', 'las', 'le', 'la', 'les', 'der', 'die', 'das'},
-            'suffixes': {'band', 'group', 'orchestra', 'choir', 'ensemble', 'quartet', 'trio'},
-            'conjunctions': {'and', '&', 'feat', 'ft', 'featuring', 'with', 'vs', 'versus'},
+            "prefixes": {"the", "a", "an", "los", "las", "le", "la", "les", "der", "die", "das"},
+            "suffixes": {"band", "group", "orchestra", "choir", "ensemble", "quartet", "trio"},
+            "conjunctions": {"and", "&", "feat", "ft", "featuring", "with", "vs", "versus"},
         }
 
         # Common song title indicators
         self.song_indicators = {
-            'parentheticals': {'remix', 'extended', 'radio edit', 'album version', 'single', 'live'},
-            'numbering': re.compile(r'\b(part|pt\.?)\s*\d+\b|\b\d+\.\s*|\(\d+\)'),
+            "parentheticals": {
+                "remix",
+                "extended",
+                "radio edit",
+                "album version",
+                "single",
+                "live",
+            },
+            "numbering": re.compile(r"\b(part|pt\.?)\s*\d+\b|\b\d+\.\s*|\(\d+\)"),
         }
 
         # Invalid terms that definitely aren't artists/songs
         self.definitely_invalid = {
-            'technical': {'mp3', 'mp4', 'wav', 'flac', 'audio', 'video', 'hd', '4k', '1080p'},
-            'karaoke_terms': {'karaoke', 'instrumental', 'backing track', 'minus one', 'playback'},
-            'generic': {'music', 'song', 'track', 'number', 'piece', 'composition'},
+            "technical": {"mp3", "mp4", "wav", "flac", "audio", "video", "hd", "4k", "1080p"},
+            "karaoke_terms": {"karaoke", "instrumental", "backing track", "minus one", "playback"},
+            "generic": {"music", "song", "track", "number", "piece", "composition"},
         }
 
-    def parse_title(self, title: str, description: str = "", tags: str = "", channel_name: str = "") -> ParseResult:
+    def parse_title(
+        self, title: str, description: str = "", tags: str = "", channel_name: str = ""
+    ) -> ParseResult:
         """Main parsing method with multi-strategy approach."""
 
         # Clean and normalize input
@@ -155,7 +261,7 @@ class AdvancedTitleParser:
 
         # Pass 2: Language-specific patterns
         detected_language = self._detect_language(clean_title)
-        if detected_language != 'english':
+        if detected_language != "english":
             lang_result = self._parse_with_language_patterns(clean_title, detected_language)
             if lang_result.confidence > 0.8:
                 return lang_result
@@ -189,24 +295,24 @@ class AdvancedTitleParser:
         """Advanced title cleaning with Unicode normalization."""
 
         # Unicode normalization
-        cleaned = unicodedata.normalize('NFKC', title)
+        cleaned = unicodedata.normalize("NFKC", title)
 
         # Remove common prefixes/suffixes
         prefixes = [
-            r'^\[[^\]]*\]\s*',  # [Any brackets]
-            r'^【[^】]*】\s*',    # 【CJK brackets】
-            r'^.*?[Kk]araoke[^:]*:\s*',  # "Channel Karaoke:"
-            r'^.*?presents\s*:?\s*',  # "Channel presents:"
-            r'^Official\s+',  # "Official "
-            r'^HD\s+',  # "HD "
+            r"^\[[^\]]*\]\s*",  # [Any brackets]
+            r"^【[^】]*】\s*",  # 【CJK brackets】
+            r"^.*?[Kk]araoke[^:]*:\s*",  # "Channel Karaoke:"
+            r"^.*?presents\s*:?\s*",  # "Channel presents:"
+            r"^Official\s+",  # "Official "
+            r"^HD\s+",  # "HD "
         ]
 
         for prefix in prefixes:
-            cleaned = re.sub(prefix, '', cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(prefix, "", cleaned, flags=re.IGNORECASE)
 
         # Normalize separators
-        cleaned = re.sub(r'[-–—]', '-', cleaned)  # Normalize dashes
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()  # Normalize whitespace
+        cleaned = re.sub(r"[-–—]", "-", cleaned)  # Normalize dashes
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()  # Normalize whitespace
 
         return cleaned
 
@@ -214,16 +320,16 @@ class AdvancedTitleParser:
         """Detect the primary language of the title."""
 
         # Simple heuristic based on character sets
-        if re.search(r'[\u4e00-\u9fff]', title):  # Chinese characters
-            return 'chinese'
-        elif re.search(r'[\u3040-\u309f\u30a0-\u30ff]', title):  # Japanese hiragana/katakana
-            return 'japanese'
-        elif re.search(r'[\uac00-\ud7af]', title):  # Korean hangul
-            return 'korean'
-        elif re.search(r'[\u0400-\u04ff]', title):  # Cyrillic
-            return 'russian'
+        if re.search(r"[\u4e00-\u9fff]", title):  # Chinese characters
+            return "chinese"
+        elif re.search(r"[\u3040-\u309f\u30a0-\u30ff]", title):  # Japanese hiragana/katakana
+            return "japanese"
+        elif re.search(r"[\uac00-\ud7af]", title):  # Korean hangul
+            return "korean"
+        elif re.search(r"[\u0400-\u04ff]", title):  # Cyrillic
+            return "russian"
         else:
-            return 'english'
+            return "english"
 
     def _parse_with_channel_patterns(self, title: str, channel_name: str) -> ParseResult:
         """Parse using channel-specific patterns."""
@@ -232,18 +338,28 @@ class AdvancedTitleParser:
         channel_lower = channel_name.lower()
         channel_type = None
 
-        if 'sing king' in channel_lower:
-            channel_type = 'sing_king'
-        elif 'zoom' in channel_lower and 'karaoke' in channel_lower:
-            channel_type = 'zoom_karaoke'
+        if "sing king" in channel_lower:
+            channel_type = "sing_king"
+        elif "zoom" in channel_lower and "karaoke" in channel_lower:
+            channel_type = "zoom_karaoke"
 
         if channel_type and channel_type in self.channel_patterns:
-            for pattern, artist_group, title_group, confidence, pattern_name in self.channel_patterns[channel_type]:
+            for (
+                pattern,
+                artist_group,
+                title_group,
+                confidence,
+                pattern_name,
+            ) in self.channel_patterns[channel_type]:
                 match = re.search(pattern, title, re.IGNORECASE | re.UNICODE)
                 if match:
                     return self._create_result_from_match(
-                        match, artist_group, title_group, confidence,
-                        f"channel_{channel_type}", pattern
+                        match,
+                        artist_group,
+                        title_group,
+                        confidence,
+                        f"channel_{channel_type}",
+                        pattern,
                     )
 
         return ParseResult(method="channel_specific")
@@ -252,12 +368,22 @@ class AdvancedTitleParser:
         """Parse using language-specific patterns."""
 
         if language in self.language_patterns:
-            for pattern, artist_group, title_group, confidence, pattern_name in self.language_patterns[language]:
+            for (
+                pattern,
+                artist_group,
+                title_group,
+                confidence,
+                pattern_name,
+            ) in self.language_patterns[language]:
                 match = re.search(pattern, title, re.IGNORECASE | re.UNICODE)
                 if match:
                     return self._create_result_from_match(
-                        match, artist_group, title_group, confidence,
-                        f"language_{language}", pattern
+                        match,
+                        artist_group,
+                        title_group,
+                        confidence,
+                        f"language_{language}",
+                        pattern,
                     )
 
         return ParseResult(method=f"language_{language}")
@@ -269,8 +395,7 @@ class AdvancedTitleParser:
             match = re.search(pattern, title, re.IGNORECASE | re.UNICODE)
             if match:
                 result = self._create_result_from_match(
-                    match, artist_group, title_group, confidence,
-                    "core_patterns", pattern
+                    match, artist_group, title_group, confidence, "core_patterns", pattern
                 )
                 if result.confidence > 0:
                     return result
@@ -281,14 +406,16 @@ class AdvancedTitleParser:
         """ML-inspired heuristic parsing using statistical analysis."""
 
         # Analyze word frequencies and positions
-        words = re.findall(r'\b\w+\b', title.lower())
+        words = re.findall(r"\b\w+\b", title.lower())
 
         # Look for artist/title separation indicators
-        separators = ['-', '–', '—', 'by', 'from', 'feat', 'ft', 'featuring']
+        separators = ["-", "–", "—", "by", "from", "feat", "ft", "featuring"]
         separator_positions = []
 
         for i, word in enumerate(words):
-            if word in separators or re.match(r'^[-–—]$', title[title.find(word):title.find(word)+1]):
+            if word in separators or re.match(
+                r"^[-–—]$", title[title.find(word) : title.find(word) + 1]
+            ):
                 separator_positions.append(i)
 
         if separator_positions:
@@ -296,11 +423,13 @@ class AdvancedTitleParser:
             sep_pos = separator_positions[0]
 
             # Heuristic: shorter part is usually artist, longer is title
-            before_sep = ' '.join(words[:sep_pos])
-            after_sep = ' '.join(words[sep_pos+1:])
+            before_sep = " ".join(words[:sep_pos])
+            after_sep = " ".join(words[sep_pos + 1 :])
 
             # Remove karaoke indicators
-            after_sep_clean = re.sub(r'\b(karaoke|instrumental|backing|track)\b.*', '', after_sep).strip()
+            after_sep_clean = re.sub(
+                r"\b(karaoke|instrumental|backing|track)\b.*", "", after_sep
+            ).strip()
 
             if len(before_sep) < len(after_sep_clean) and len(before_sep) > 0:
                 return ParseResult(
@@ -308,7 +437,7 @@ class AdvancedTitleParser:
                     song_title=after_sep_clean.title(),
                     confidence=0.6,
                     method="heuristic_length",
-                    pattern_used="length_based_separation"
+                    pattern_used="length_based_separation",
                 )
             elif len(after_sep_clean) > 0:
                 return ParseResult(
@@ -316,14 +445,14 @@ class AdvancedTitleParser:
                     song_title=before_sep.title(),
                     confidence=0.5,
                     method="heuristic_length",
-                    pattern_used="reverse_length_based"
+                    pattern_used="reverse_length_based",
                 )
 
         # Look in description for artist info
         desc_patterns = [
-            r'(?:by|artist|performed by|original artist):\s*([^\n\r]+)',
-            r'Artist:\s*([^\n\r]+)',
-            r'Song:\s*([^\n\r]+)',
+            r"(?:by|artist|performed by|original artist):\s*([^\n\r]+)",
+            r"Artist:\s*([^\n\r]+)",
+            r"Song:\s*([^\n\r]+)",
         ]
 
         for pattern in desc_patterns:
@@ -335,7 +464,7 @@ class AdvancedTitleParser:
                         original_artist=artist,
                         confidence=0.7,
                         method="description_extraction",
-                        pattern_used=pattern
+                        pattern_used=pattern,
                     )
 
         return ParseResult(method="heuristics")
@@ -344,7 +473,7 @@ class AdvancedTitleParser:
         """Parse using fuzzy matching against known artists/songs."""
 
         # Extract potential artist/song candidates
-        candidates = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', title)
+        candidates = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b", title)
 
         best_artist_match = None
         best_song_match = None
@@ -370,14 +499,17 @@ class AdvancedTitleParser:
             return ParseResult(
                 original_artist=best_artist_match,
                 song_title=best_song_match,
-                confidence=max(best_artist_score, best_song_score) * 0.9,  # Slight penalty for fuzzy
+                confidence=max(best_artist_score, best_song_score)
+                * 0.9,  # Slight penalty for fuzzy
                 method="fuzzy_matching",
-                pattern_used=f"fuzzy_artist:{best_artist_score:.2f}_song:{best_song_score:.2f}"
+                pattern_used=f"fuzzy_artist:{best_artist_score:.2f}_song:{best_song_score:.2f}",
             )
 
         return ParseResult(method="fuzzy_matching")
 
-    def _create_result_from_match(self, match, artist_group, title_group, confidence, method, pattern) -> ParseResult:
+    def _create_result_from_match(
+        self, match, artist_group, title_group, confidence, method, pattern
+    ) -> ParseResult:
         """Create ParseResult from regex match."""
 
         result = ParseResult(method=method, pattern_used=pattern)
@@ -421,7 +553,7 @@ class AdvancedTitleParser:
                 score *= 1.2
 
             # Bonus for high-confidence methods
-            if result.method in ['channel_specific', 'language_specific']:
+            if result.method in ["channel_specific", "language_specific"]:
                 score *= 1.1
 
             # Penalty for very short extractions
@@ -438,7 +570,12 @@ class AdvancedTitleParser:
 
         # Store alternatives
         best_result.alternative_results = [
-            {"method": r.method, "confidence": r.confidence, "artist": r.original_artist, "title": r.song_title}
+            {
+                "method": r.method,
+                "confidence": r.confidence,
+                "artist": r.original_artist,
+                "title": r.song_title,
+            }
             for _, r in sorted(scored_results, key=lambda x: x[0], reverse=True)[1:3]
         ]
 
@@ -452,13 +589,13 @@ class AdvancedTitleParser:
             # Check if artist appears in description
             if result.original_artist.lower() in description.lower():
                 result.confidence *= 1.1
-                result.metadata['description_validation'] = True
+                result.metadata["description_validation"] = True
 
         if result.song_title:
             # Check if song title appears in description
             if result.song_title.lower() in description.lower():
                 result.confidence *= 1.1
-                result.metadata['description_validation'] = True
+                result.metadata["description_validation"] = True
 
         # Extract featured artists
         if result.original_artist or result.song_title:
@@ -474,22 +611,22 @@ class AdvancedTitleParser:
         combined_text = f"{title} {description}".lower()
 
         patterns = [
-            r'feat\.?\s+([^(\[,]+)',
-            r'featuring\s+([^(\[,]+)',
-            r'ft\.?\s+([^(\[,]+)',
-            r'with\s+([^(\[,]+)',
-            r'&\s+([^(\[,]+)',
-            r'\+\s+([^(\[,]+)',
-            r'vs\.?\s+([^(\[,]+)',
-            r'x\s+([^(\[,]+)',
+            r"feat\.?\s+([^(\[,]+)",
+            r"featuring\s+([^(\[,]+)",
+            r"ft\.?\s+([^(\[,]+)",
+            r"with\s+([^(\[,]+)",
+            r"&\s+([^(\[,]+)",
+            r"\+\s+([^(\[,]+)",
+            r"vs\.?\s+([^(\[,]+)",
+            r"x\s+([^(\[,]+)",
         ]
 
         featured = set()
         for pattern in patterns:
             matches = re.findall(pattern, combined_text, re.IGNORECASE)
             for match in matches:
-                cleaned = re.sub(r'[^\w\s,&]', '', match.strip())
-                parts = re.split(r'\s*[,&]\s*|\s+and\s+', cleaned)
+                cleaned = re.sub(r"[^\w\s,&]", "", match.strip())
+                parts = re.split(r"\s*[,&]\s*|\s+and\s+", cleaned)
                 for part in parts:
                     artist = part.strip()
                     if self._is_valid_artist_name(artist) and len(artist) > 2:
@@ -509,7 +646,9 @@ class AdvancedTitleParser:
             stats.total_attempts += 1
             if result.confidence > 0.7:
                 stats.success_count += 1
-            stats.avg_confidence = (stats.avg_confidence * (stats.total_attempts - 1) + result.confidence) / stats.total_attempts
+            stats.avg_confidence = (
+                stats.avg_confidence * (stats.total_attempts - 1) + result.confidence
+            ) / stats.total_attempts
 
         # Add to known artists/songs if high confidence
         if result.confidence > 0.8:
@@ -525,30 +664,30 @@ class AdvancedTitleParser:
             return ""
 
         # Remove quotes and brackets
-        cleaned = re.sub(r'^["\'`]+|["\'`]+$', '', text.strip())
-        cleaned = re.sub(r'^\([^)]*\)|^\[[^\]]*\]', '', cleaned).strip()
+        cleaned = re.sub(r'^["\'`]+|["\'`]+$', "", text.strip())
+        cleaned = re.sub(r"^\([^)]*\)|^\[[^\]]*\]", "", cleaned).strip()
 
         # Remove trailing noise
         noise_patterns = [
-            r'\s*\([^)]*(?:[Kk]araoke|[Ii]nstrumental|[Mm]inus|[Mm][Rr])[^)]*\)$',
-            r'\s*\[[^\]]*(?:[Kk]araoke|[Ii]nstrumental|[Mm]inus|[Mm][Rr])[^\]]*\]$',
-            r'\s*-\s*[Kk]araoke.*$',
-            r'\s*[Mm][Rr]$',
-            r'\s*[Ii]nst\.?$',
-            r'\s*\([^)]*[Kk]ey\)$',
-            r'\s*\([^)]*\d+[Kk]ey\)$',
-            r'\s*\(.*?[Bb]acking.*?\)$',
+            r"\s*\([^)]*(?:[Kk]araoke|[Ii]nstrumental|[Mm]inus|[Mm][Rr])[^)]*\)$",
+            r"\s*\[[^\]]*(?:[Kk]araoke|[Ii]nstrumental|[Mm]inus|[Mm][Rr])[^\]]*\]$",
+            r"\s*-\s*[Kk]araoke.*$",
+            r"\s*[Mm][Rr]$",
+            r"\s*[Ii]nst\.?$",
+            r"\s*\([^)]*[Kk]ey\)$",
+            r"\s*\([^)]*\d+[Kk]ey\)$",
+            r"\s*\(.*?[Bb]acking.*?\)$",
         ]
 
         for pattern in noise_patterns:
-            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE).strip()
+            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
 
         # Normalize capitalization
         if cleaned.isupper() or cleaned.islower():
             cleaned = cleaned.title()
 
         # Clean up whitespace
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
         return cleaned
 
@@ -566,7 +705,7 @@ class AdvancedTitleParser:
                 return False
 
         # Check for reasonable character composition
-        word_chars = len(re.findall(r'\w', artist))
+        word_chars = len(re.findall(r"\w", artist))
         if word_chars < len(artist) * 0.3:
             return False
 
@@ -575,7 +714,7 @@ class AdvancedTitleParser:
             return False
 
         # Allow known artist patterns
-        if any(indicator in artist_lower for indicator in self.artist_indicators['conjunctions']):
+        if any(indicator in artist_lower for indicator in self.artist_indicators["conjunctions"]):
             return True
 
         return True
@@ -589,7 +728,7 @@ class AdvancedTitleParser:
         title_lower = title.lower().strip()
 
         # Check against karaoke-specific invalid terms
-        if title_lower in {'karaoke', 'instrumental', 'backing track', 'minus one', 'mr', 'inst'}:
+        if title_lower in {"karaoke", "instrumental", "backing track", "minus one", "mr", "inst"}:
             return False
 
         # Allow reasonable length
@@ -602,17 +741,20 @@ class AdvancedTitleParser:
         total_successes = sum(stats.success_count for stats in self.pattern_stats.values())
 
         return {
-            'total_parses': total_attempts,
-            'success_rate': total_successes / total_attempts if total_attempts > 0 else 0,
-            'known_artists': len(self.known_artists),
-            'known_songs': len(self.known_songs),
-            'pattern_performance': {
+            "total_parses": total_attempts,
+            "success_rate": total_successes / total_attempts if total_attempts > 0 else 0,
+            "known_artists": len(self.known_artists),
+            "known_songs": len(self.known_songs),
+            "pattern_performance": {
                 pattern: {
-                    'success_rate': stats.success_count / stats.total_attempts if stats.total_attempts > 0 else 0,
-                    'avg_confidence': stats.avg_confidence,
-                    'total_uses': stats.total_attempts
+                    "success_rate": (
+                        stats.success_count / stats.total_attempts
+                        if stats.total_attempts > 0
+                        else 0
+                    ),
+                    "avg_confidence": stats.avg_confidence,
+                    "total_uses": stats.total_attempts,
                 }
                 for pattern, stats in self.pattern_stats.items()
-            }
+            },
         }
-
