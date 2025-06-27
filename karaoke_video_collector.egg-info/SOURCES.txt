@@ -6,6 +6,7 @@ collector/advanced_parser.py
 collector/cli.py
 collector/config.py
 collector/db.py
+collector/enhanced_search.py
 collector/main.py
 collector/processor.py
 collector/py.typed

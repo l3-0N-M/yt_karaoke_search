@@ -1,62 +1,17 @@
-2025-06-27 17:47:20,680 - collector.db - WARNING - Failed to create performance index: no such table: main.channels
-2025-06-27 17:47:20,680 - collector.db - WARNING - Failed to create performance index: no such table: main.channels
-2025-06-27 17:47:20,706 - collector.db - INFO - Applied migration: Initial schema (v1)
-2025-06-27 17:47:20,721 - collector.db - INFO - Applied migration: Updated trigger (v2)
-2025-06-27 17:47:20,721 - collector.db - INFO - Skipped migration 003; columns already present
-2025-06-27 17:47:20,748 - collector.db - INFO - Applied migration: Channels support (v4)
-2025-06-27 17:47:20,759 - collector.db - WARNING - Failed to apply migration 005: table videos_new has 18 columns but 22 values were supplied
-2025-06-27 17:47:20,764 - collector.db - INFO - Database initialized: karaoke_videos.db
-2025-06-27 17:47:20,809 - collector.main - INFO - Processing channel: https://www.youtube.com/@BandaisuanKaraoke001
-2025-06-27 17:47:21,441 - collector.search - INFO - Extracted channel info: BandaisuanKaraoke001 - Videos
-2025-06-27 17:47:24,171 - collector.search - INFO - Extracted 60 videos from channel: BandaisuanKaraoke001 - Videos
-2025-06-27 17:47:24,172 - collector.main - INFO - Found 60 videos in channel: BandaisuanKaraoke001 - Videos
-2025-06-27 17:47:24,172 - collector.main - INFO - Processing 60 new videos (after duration filter)
-2025-06-27 17:48:18,747 - collector.main - INFO - Channel collection completed: 60 videos in 57.9s
-2025-06-27 17:48:18,750 - collector.processor - ERROR - HTTP client cleanup error: Event loop is closed
-2025-06-27 17:48:18,780 - collector.main - INFO - Cleanup completed
-2025-06-27 17:48:18,788 - collector.db - INFO - Closed 1 pooled database connections
-2025-06-27 18:06:33,186 - collector.db - INFO - Applied migration: Enhanced MusicBrainz metadata (v6)
-2025-06-27 18:06:33,187 - collector.db - INFO - Database initialized: karaoke_videos.db
-2025-06-27 18:06:33,276 - collector.main - INFO - Processing channel: https://www.youtube.com/@BandaisuanKaraoke001
-2025-06-27 18:06:34,135 - collector.search - INFO - Extracted channel info: BandaisuanKaraoke001 - Videos
-2025-06-27 18:06:36,471 - collector.search - INFO - Extracted 3 videos from channel: BandaisuanKaraoke001 - Videos
-2025-06-27 18:06:36,472 - collector.main - INFO - Found 3 videos in channel: BandaisuanKaraoke001 - Videos
-2025-06-27 18:06:36,472 - collector.main - INFO - Processing 3 new videos (after duration filter)
-2025-06-27 18:06:40,335 - collector.db - ERROR - Database transaction failed, rolled back: 24 values for 25 columns
-2025-06-27 18:06:40,335 - collector.db - ERROR - Database error: 24 values for 25 columns
-2025-06-27 18:06:40,335 - collector.db - ERROR - Database save failed: 24 values for 25 columns
-2025-06-27 18:06:40,336 - collector.main - WARNING - Failed to save video data: Karaoke - Bridges - Sitti Navarro (7Vjt385o_Ak)
-2025-06-27 18:06:41,321 - collector.db - ERROR - Database transaction failed, rolled back: 24 values for 25 columns
-2025-06-27 18:06:41,322 - collector.db - ERROR - Database error: 24 values for 25 columns
-2025-06-27 18:06:41,322 - collector.db - ERROR - Database save failed: 24 values for 25 columns
-2025-06-27 18:06:41,322 - collector.main - WARNING - Failed to save video data: Karaoke - Birth Of The Blues - Sammy Davis Jr (zgXWkAjdaJI)
-2025-06-27 18:06:41,364 - collector.db - ERROR - Database transaction failed, rolled back: 24 values for 25 columns
-2025-06-27 18:06:41,364 - collector.db - ERROR - Database error: 24 values for 25 columns
-2025-06-27 18:06:41,364 - collector.db - ERROR - Database save failed: 24 values for 25 columns
-2025-06-27 18:06:41,364 - collector.main - WARNING - Failed to save video data: Karaoke - Fly Me To The Moon - Sitti Navarro (e_c-g7TpwKs)
-2025-06-27 18:06:41,370 - collector.main - INFO - Channel collection completed: 0 videos in 8.1s
-2025-06-27 18:06:41,372 - collector.processor - ERROR - HTTP client cleanup error: Event loop is closed
-2025-06-27 18:06:41,388 - collector.main - INFO - Cleanup completed
-2025-06-27 18:06:41,392 - collector.db - INFO - Closed 1 pooled database connections
-2025-06-27 18:07:18,979 - collector.db - INFO - Skipped migration 006; MusicBrainz columns already present
-2025-06-27 18:07:18,995 - collector.db - INFO - Database initialized: karaoke_videos.db
-2025-06-27 18:07:19,043 - collector.main - INFO - Processing channel: https://www.youtube.com/@BandaisuanKaraoke001
-2025-06-27 18:07:20,054 - collector.search - INFO - Extracted channel info: BandaisuanKaraoke001 - Videos
-2025-06-27 18:07:22,463 - collector.search - INFO - Extracted 3 videos from channel: BandaisuanKaraoke001 - Videos
-2025-06-27 18:07:22,463 - collector.main - INFO - Found 3 videos in channel: BandaisuanKaraoke001 - Videos
-2025-06-27 18:07:22,463 - collector.main - INFO - Processing 3 new videos (after duration filter)
-2025-06-27 18:07:27,415 - collector.main - INFO - Channel collection completed: 3 videos in 8.4s
-2025-06-27 18:07:27,417 - collector.processor - ERROR - HTTP client cleanup error: Event loop is closed
-2025-06-27 18:07:27,444 - collector.main - INFO - Cleanup completed
-2025-06-27 18:07:27,453 - collector.db - INFO - Closed 1 pooled database connections
-2025-06-27 18:07:55,556 - collector.db - INFO - Database initialized: karaoke_videos.db
-2025-06-27 18:07:55,600 - collector.main - INFO - Processing channel: https://www.youtube.com/@BandaisuanKaraoke001
-2025-06-27 18:07:56,453 - collector.search - INFO - Extracted channel info: BandaisuanKaraoke001 - Videos
-2025-06-27 18:07:58,875 - collector.search - INFO - Extracted 10 videos from channel: BandaisuanKaraoke001 - Videos
-2025-06-27 18:07:58,875 - collector.main - INFO - Found 10 videos in channel: BandaisuanKaraoke001 - Videos
-2025-06-27 18:07:58,876 - collector.main - INFO - Skipped 3 videos already in database
-2025-06-27 18:07:58,876 - collector.main - INFO - Processing 7 new videos (after duration filter)
-2025-06-27 18:08:07,521 - collector.main - INFO - Channel collection completed: 7 videos in 11.9s
-2025-06-27 18:08:07,524 - collector.processor - ERROR - HTTP client cleanup error: Event loop is closed
-2025-06-27 18:08:07,541 - collector.main - INFO - Cleanup completed
-2025-06-27 18:08:07,548 - collector.db - INFO - Closed 1 pooled database connections
+2025-06-27 18:31:35,421 - collector.db - WARNING - Failed to create performance index: no such table: main.channels
+2025-06-27 18:31:35,422 - collector.db - WARNING - Failed to create performance index: no such table: main.channels
+2025-06-27 18:31:35,453 - collector.db - INFO - Applied migration: Initial schema (v1)
+2025-06-27 18:31:35,469 - collector.db - INFO - Applied migration: Updated trigger (v2)
+2025-06-27 18:31:35,469 - collector.db - INFO - Skipped migration 003; columns already present
+2025-06-27 18:31:35,496 - collector.db - INFO - Applied migration: Channels support (v4)
+2025-06-27 18:31:35,507 - collector.db - WARNING - Failed to apply migration 005: table videos_new has 18 columns but 29 values were supplied
+2025-06-27 18:31:35,507 - collector.db - INFO - Skipped migration 006; MusicBrainz columns already present
+2025-06-27 18:31:35,593 - collector.db - INFO - Applied migration: Cache tables (v7)
+2025-06-27 18:31:35,593 - collector.db - INFO - Database initialized: karaoke_videos.db
+2025-06-27 18:31:35,612 - collector.db - INFO - Closed 1 pooled database connections
+2025-06-27 18:33:32,422 - collector.db - INFO - Database initialized: karaoke_videos.db
+2025-06-27 18:33:32,487 - collector.main - INFO - Processing channel: https://www.youtube.com/@BandaisuanKaraoke001
+2025-06-27 18:33:33,152 - collector.search.providers.base.youtube - INFO - Extracted channel info: BandaisuanKaraoke001 - Videos
+2025-06-27 18:33:33,171 - collector.main - ERROR - Error processing channel 'https://www.youtube.com/@BandaisuanKaraoke001': 'YouTubeSearchProvider' object has no attribute 'extract_channel_videos'
+2025-06-27 18:33:33,191 - collector.main - INFO - Cleanup completed
+2025-06-27 18:33:33,195 - collector.db - INFO - Closed 1 pooled database connections

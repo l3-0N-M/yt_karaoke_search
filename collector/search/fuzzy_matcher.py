@@ -36,10 +36,25 @@ class FuzzyMatcher:
     def __init__(self, config=None):
         self.config = config or {}
         
+        # Handle different config types
+        if hasattr(config, 'fuzzy_matching'):
+            # Handle structured config object
+            fuzzy_config = getattr(config, 'fuzzy_matching', {})
+            if hasattr(fuzzy_config, '__dict__'):
+                fuzzy_config = fuzzy_config.__dict__
+        elif hasattr(config, '__dict__'):
+            # Handle other config objects 
+            fuzzy_config = getattr(config.__dict__, 'fuzzy_matching', {})
+        elif isinstance(config, dict):
+            # Handle dict config
+            fuzzy_config = config.get('fuzzy_matching', {})
+        else:
+            fuzzy_config = {}
+        
         # Matching thresholds
-        self.min_similarity_threshold = self.config.get("min_similarity", 0.7)
-        self.min_phonetic_threshold = self.config.get("min_phonetic", 0.8)
-        self.max_edit_distance = self.config.get("max_edit_distance", 3)
+        self.min_similarity_threshold = fuzzy_config.get("min_similarity", 0.7)
+        self.min_phonetic_threshold = fuzzy_config.get("min_phonetic", 0.8)
+        self.max_edit_distance = fuzzy_config.get("max_edit_distance", 3)
         
         # Known normalization patterns
         self._load_normalization_patterns()
