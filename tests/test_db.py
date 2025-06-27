@@ -199,5 +199,7 @@ def test_migrations_applied(tmp_path):
         assert "recording_length_ms" in columns
 
         # Migration 7 introduces search cache table
-        tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        tables = {
+            row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
         assert "search_cache" in tables

@@ -46,9 +46,13 @@ class KaraokeCollector:
             from .multi_pass_controller import MultiPassParsingController
 
             search_engine_for_mp = (
-                self.search_engine if isinstance(self.search_engine, MultiStrategySearchEngine) else None
+                self.search_engine
+                if isinstance(self.search_engine, MultiStrategySearchEngine)
+                else None
             )
-            advanced_parser = self.video_processor.advanced_parser or AdvancedTitleParser(config.search)
+            advanced_parser = self.video_processor.advanced_parser or AdvancedTitleParser(
+                config.search
+            )
             self.multi_pass_controller = MultiPassParsingController(
                 config.search.multi_pass,
                 advanced_parser,
@@ -119,9 +123,7 @@ class KaraokeCollector:
                 async with self._processed_ids_lock:
                     old_size = len(self.processed_video_ids)
                     # Keep recent database IDs and retain any previously processed IDs
-                    self.processed_video_ids = recent_ids.union(
-                        self.processed_video_ids
-                    )
+                    self.processed_video_ids = recent_ids.union(self.processed_video_ids)
                     # Enforce hard limit
                     if len(self.processed_video_ids) > self._memory_cache_limit:
                         self.processed_video_ids = set(

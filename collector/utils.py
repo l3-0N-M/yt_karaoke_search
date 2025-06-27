@@ -28,17 +28,13 @@ def setup_logging(
         Whether to also log to the console.
     """
 
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     root_logger.setLevel(level)
 
-    file_handler = RotatingFileHandler(
-        log_file, maxBytes=max_bytes, backupCount=backup_count
-    )
+    file_handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
