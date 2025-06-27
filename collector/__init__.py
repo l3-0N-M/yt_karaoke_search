@@ -9,7 +9,7 @@ __version__ = "2.0.0"
 __author__ = "Karaoke Collector Team"
 
 from .config import CollectorConfig
-from .main import KaraokeCollector
 from .db import DatabaseManager
+from .main import KaraokeCollector
 
 __all__ = ["CollectorConfig", "KaraokeCollector", "DatabaseManager"]
