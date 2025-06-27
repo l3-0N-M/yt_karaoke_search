@@ -2,7 +2,7 @@
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type
 
 try:
     import yaml  # type: ignore
@@ -125,23 +125,71 @@ class CollectorConfig:
     dry_run: bool = False
 
 
+def _filter_fields(data: Dict[str, Any], cls: Type[Any]) -> Dict[str, Any]:
+    """Return only keys present on the dataclass to avoid TypeErrors."""
+    valid_fields = cls.__dataclass_fields__.keys()
+    return {k: v for k, v in data.items() if k in valid_fields}
+
+
+def validate_config(cfg: CollectorConfig) -> None:
+    """Basic sanity checks for loaded configuration values."""
+    if cfg.database.backup_interval_hours <= 0:
+        raise ValueError("backup_interval_hours must be positive")
+    if cfg.database.backup_retention_days < 0:
+        raise ValueError("backup_retention_days cannot be negative")
+    if cfg.database.vacuum_threshold_mb <= 0:
+        raise ValueError("vacuum_threshold_mb must be positive")
+
+    if cfg.scraping.max_concurrent_workers <= 0:
+        raise ValueError("max_concurrent_workers must be positive")
+    if cfg.scraping.max_retries < 0:
+        raise ValueError("max_retries cannot be negative")
+    if cfg.scraping.timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be positive")
+
+    if not 0 <= cfg.data_sources.ryd_confidence_threshold <= 1:
+        raise ValueError("ryd_confidence_threshold must be between 0 and 1")
+
+    if cfg.search.max_results_per_query <= 0:
+        raise ValueError("max_results_per_query must be positive")
+
+    if cfg.logging.max_file_size_mb <= 0:
+        raise ValueError("max_file_size_mb must be positive")
+    if cfg.logging.backup_count < 0:
+        raise ValueError("backup_count cannot be negative")
+
+    if cfg.ui.progress_update_interval <= 0:
+        raise ValueError("progress_update_interval must be positive")
+
+
 def load_config(config_path: Optional[str] = None) -> CollectorConfig:
     """Load configuration from YAML file or return defaults."""
     if config_path and Path(config_path).exists():
         with open(config_path, "r", encoding="utf-8") as f:
             config_data = yaml.safe_load(f)
-        return CollectorConfig(
-            database=DatabaseConfig(**config_data.get("database", {})),
-            scraping=ScrapingConfig(**config_data.get("scraping", {})),
-            data_sources=DataSourceConfig(**config_data.get("data_sources", {})),
-            search=SearchConfig(**config_data.get("search", {})),
-            logging=LoggingConfig(**config_data.get("logging", {})),
-            ui=UIConfig(**config_data.get("ui", {})),
+
+        cfg = CollectorConfig(
+            database=DatabaseConfig(
+                **_filter_fields(config_data.get("database", {}), DatabaseConfig)
+            ),
+            scraping=ScrapingConfig(
+                **_filter_fields(config_data.get("scraping", {}), ScrapingConfig)
+            ),
+            data_sources=DataSourceConfig(
+                **_filter_fields(config_data.get("data_sources", {}), DataSourceConfig)
+            ),
+            search=SearchConfig(**_filter_fields(config_data.get("search", {}), SearchConfig)),
+            logging=LoggingConfig(**_filter_fields(config_data.get("logging", {}), LoggingConfig)),
+            ui=UIConfig(**_filter_fields(config_data.get("ui", {}), UIConfig)),
             incremental_mode=config_data.get("incremental_mode", True),
             skip_existing=config_data.get("skip_existing", True),
             dry_run=config_data.get("dry_run", False),
         )
-    return CollectorConfig()
+        validate_config(cfg)
+        return cfg
+    cfg = CollectorConfig()
+    validate_config(cfg)
+    return cfg
 
 
 def save_config_template(output_path: str = "config_template.yaml"):
