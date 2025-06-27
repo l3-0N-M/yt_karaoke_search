@@ -7,6 +7,7 @@ from typing import Dict, List
 
 try:
     import requests
+
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
@@ -70,7 +71,9 @@ class DuckDuckGoSearchProvider(SearchProvider):
             response_time = time.time() - start_time
             self.update_statistics(True, len(filtered_results), response_time)
 
-            self.logger.info(f"Found {len(filtered_results)} karaoke videos via DuckDuckGo for query: '{query}'")
+            self.logger.info(
+                f"Found {len(filtered_results)} karaoke videos via DuckDuckGo for query: '{query}'"
+            )
             return filtered_results
 
         except Exception as e:
@@ -86,6 +89,7 @@ class DuckDuckGoSearchProvider(SearchProvider):
 
         if elapsed < self._min_request_interval:
             import asyncio
+
             sleep_time = self._min_request_interval - elapsed
             await asyncio.sleep(sleep_time)
 
@@ -118,8 +122,7 @@ class DuckDuckGoSearchProvider(SearchProvider):
 
             # Get initial page to extract tokens
             initial_response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: session.get(self.search_url, timeout=10)
+                None, lambda: session.get(self.search_url, timeout=10)
             )
 
             # Extract vqd token (needed for video search)
@@ -141,8 +144,7 @@ class DuckDuckGoSearchProvider(SearchProvider):
             }
 
             video_response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: session.get(self.video_search_url, params=params, timeout=15)
+                None, lambda: session.get(self.video_search_url, params=params, timeout=15)
             )
 
             video_response.raise_for_status()
@@ -192,7 +194,9 @@ class DuckDuckGoSearchProvider(SearchProvider):
 
         return results
 
-    def _process_ddg_results(self, raw_results: List[Dict], original_query: str) -> List[SearchResult]:
+    def _process_ddg_results(
+        self, raw_results: List[Dict], original_query: str
+    ) -> List[SearchResult]:
         """Process and normalize DuckDuckGo search results."""
         results = []
 
@@ -218,7 +222,9 @@ class DuckDuckGoSearchProvider(SearchProvider):
                         "view_count": 0,
                         "upload_date": None,
                         "search_method": "ddg_search",
-                        "relevance_score": self._calculate_ddg_relevance_score(title, original_query),
+                        "relevance_score": self._calculate_ddg_relevance_score(
+                            title, original_query
+                        ),
                     }
 
                     result = self.normalize_result(processed_result, original_query)

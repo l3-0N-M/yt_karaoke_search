@@ -92,7 +92,7 @@ class LRUCache:
                 created_at=datetime.now(),
                 last_accessed=datetime.now(),
                 ttl_seconds=ttl,
-                size_bytes=size_bytes
+                size_bytes=size_bytes,
             )
 
             # Remove existing entry if present
@@ -161,7 +161,8 @@ class DatabaseCache:
     def _init_database(self):
         """Initialize cache database schema."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute(f"""
+            conn.execute(
+                f"""
                 CREATE TABLE IF NOT EXISTS {self.table_name} (
                     key TEXT PRIMARY KEY,
                     value BLOB NOT NULL,
@@ -172,42 +173,56 @@ class DatabaseCache:
                     size_bytes INTEGER DEFAULT 0,
                     metadata TEXT
                 )
-            """)
+            """
+            )
 
             # Create indexes for performance
-            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_created ON {self.table_name}(created_at)")
-            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_accessed ON {self.table_name}(last_accessed)")
+            conn.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_created ON {self.table_name}(created_at)"
+            )
+            conn.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_accessed ON {self.table_name}(last_accessed)"
+            )
 
     async def get(self, key: str) -> Optional[Any]:
         """Get value from database cache."""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
-                cursor = conn.execute(f"""
+                cursor = conn.execute(
+                    f"""
                     SELECT value, created_at, ttl_seconds, access_count
                     FROM {self.table_name}
                     WHERE key = ?
-                """, (key,))
+                """,
+                    (key,),
+                )
 
                 row = cursor.fetchone()
                 if not row:
                     return None
 
                 # Check expiration
-                created_at = datetime.fromisoformat(row['created_at'])
-                if row['ttl_seconds'] and (datetime.now() - created_at).total_seconds() > row['ttl_seconds']:
+                created_at = datetime.fromisoformat(row["created_at"])
+                if (
+                    row["ttl_seconds"]
+                    and (datetime.now() - created_at).total_seconds() > row["ttl_seconds"]
+                ):
                     await self.delete(key)
                     return None
 
                 # Update access statistics
-                conn.execute(f"""
+                conn.execute(
+                    f"""
                     UPDATE {self.table_name}
                     SET last_accessed = ?, access_count = access_count + 1
                     WHERE key = ?
-                """, (datetime.now().isoformat(), key))
+                """,
+                    (datetime.now().isoformat(), key),
+                )
 
                 # Deserialize value
-                value = pickle.loads(row['value'])
+                value = pickle.loads(row["value"])
                 return value
 
         except Exception as e:
@@ -223,11 +238,14 @@ class DatabaseCache:
 
             with sqlite3.connect(self.db_path) as conn:
                 now = datetime.now().isoformat()
-                conn.execute(f"""
+                conn.execute(
+                    f"""
                     INSERT OR REPLACE INTO {self.table_name}
                     (key, value, created_at, last_accessed, ttl_seconds, size_bytes)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (key, serialized_value, now, now, ttl, size_bytes))
+                """,
+                    (key, serialized_value, now, now, ttl, size_bytes),
+                )
 
             return True
 
@@ -251,11 +269,14 @@ class DatabaseCache:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 now = datetime.now()
-                cursor = conn.execute(f"""
+                cursor = conn.execute(
+                    f"""
                     DELETE FROM {self.table_name}
                     WHERE ttl_seconds IS NOT NULL
                     AND (julianday(?) - julianday(created_at)) * 86400 > ttl_seconds
-                """, (now.isoformat(),))
+                """,
+                    (now.isoformat(),),
+                )
 
                 return cursor.rowcount
 
@@ -269,7 +290,8 @@ class DatabaseCache:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
 
-                cursor = conn.execute(f"""
+                cursor = conn.execute(
+                    f"""
                     SELECT
                         COUNT(*) as total_entries,
                         SUM(size_bytes) as total_bytes,
@@ -277,20 +299,24 @@ class DatabaseCache:
                         MAX(created_at) as newest_entry,
                         MIN(created_at) as oldest_entry
                     FROM {self.table_name}
-                """)
+                """
+                )
 
                 stats = dict(cursor.fetchone())
 
                 # Count expired entries
                 now = datetime.now()
-                cursor = conn.execute(f"""
+                cursor = conn.execute(
+                    f"""
                     SELECT COUNT(*) as expired_count
                     FROM {self.table_name}
                     WHERE ttl_seconds IS NOT NULL
                     AND (julianday(?) - julianday(created_at)) * 86400 > ttl_seconds
-                """, (now.isoformat(),))
+                """,
+                    (now.isoformat(),),
+                )
 
-                stats['expired_entries'] = cursor.fetchone()[0]
+                stats["expired_entries"] = cursor.fetchone()[0]
 
                 return stats
 
@@ -321,9 +347,12 @@ class CacheManager:
 
         # Statistics
         self.stats = {
-            "l1_hits": 0, "l1_misses": 0,
-            "l2_hits": 0, "l2_misses": 0,
-            "total_gets": 0, "total_puts": 0,
+            "l1_hits": 0,
+            "l1_misses": 0,
+            "l2_hits": 0,
+            "l2_misses": 0,
+            "total_gets": 0,
+            "total_puts": 0,
         }
 
     def _generate_cache_key(self, namespace: str, *args, **kwargs) -> str:
@@ -338,17 +367,11 @@ class CacheManager:
         return hashlib.sha256(key_str.encode()).hexdigest()[:32]
 
     async def get_search_results(
-        self,
-        query: str,
-        provider: str = "",
-        max_results: int = 100
+        self, query: str, provider: str = "", max_results: int = 100
     ) -> Optional[List[SearchResult]]:
         """Get cached search results."""
         key = self._generate_cache_key(
-            "search_results",
-            query=query,
-            provider=provider,
-            max_results=max_results
+            "search_results", query=query, provider=provider, max_results=max_results
         )
 
         return await self._get_with_fallback(key)
@@ -359,14 +382,11 @@ class CacheManager:
         results: List[SearchResult],
         provider: str = "",
         max_results: int = 100,
-        ttl: Optional[int] = None
+        ttl: Optional[int] = None,
     ) -> bool:
         """Cache search results."""
         key = self._generate_cache_key(
-            "search_results",
-            query=query,
-            provider=provider,
-            max_results=max_results
+            "search_results", query=query, provider=provider, max_results=max_results
         )
 
         # Convert SearchResult objects to dicts for serialization
@@ -380,10 +400,7 @@ class CacheManager:
         return await self._get_with_fallback(key)
 
     async def cache_parsed_metadata(
-        self,
-        video_id: str,
-        metadata: Dict,
-        ttl: Optional[int] = None
+        self, video_id: str, metadata: Dict, ttl: Optional[int] = None
     ) -> bool:
         """Cache parsed metadata."""
         key = self._generate_cache_key("parsed_metadata", video_id=video_id)
@@ -395,10 +412,7 @@ class CacheManager:
         return await self._get_with_fallback(key)
 
     async def cache_channel_info(
-        self,
-        channel_id: str,
-        info: Dict,
-        ttl: Optional[int] = None
+        self, channel_id: str, info: Dict, ttl: Optional[int] = None
     ) -> bool:
         """Cache channel information."""
         key = self._generate_cache_key("channel_info", channel_id=channel_id)
@@ -427,12 +441,7 @@ class CacheManager:
         self.stats["l2_misses"] += 1
         return None
 
-    async def _put_with_promotion(
-        self,
-        key: str,
-        value: Any,
-        ttl: Optional[int] = None
-    ) -> bool:
+    async def _put_with_promotion(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
         """Put value in both cache layers."""
         self.stats["total_puts"] += 1
 
@@ -453,6 +462,7 @@ class CacheManager:
 
         # For L2, we'd need to track keys or implement pattern matching
         logger.info(f"Cache invalidation requested for query: {query}")
+
     async def warm_cache(self, popular_queries: List[str]):
         """Pre-warm cache with popular queries."""
         logger.info(f"Warming cache for {len(popular_queries)} popular queries")
@@ -482,8 +492,9 @@ class CacheManager:
         l2_hit_rate = self.stats["l2_hits"] / total_l2_requests if total_l2_requests > 0 else 0
 
         overall_hit_rate = (
-            (self.stats["l1_hits"] + self.stats["l2_hits"]) /
-            self.stats["total_gets"] if self.stats["total_gets"] > 0 else 0
+            (self.stats["l1_hits"] + self.stats["l2_hits"]) / self.stats["total_gets"]
+            if self.stats["total_gets"] > 0
+            else 0
         )
 
         return {
@@ -509,7 +520,7 @@ class CacheManager:
                 "l1_ttl_seconds": self.l1_ttl,
                 "l2_ttl_seconds": self.l2_ttl,
                 "l3_ttl_seconds": self.l3_ttl,
-            }
+            },
         }
 
     async def clear_all_caches(self):

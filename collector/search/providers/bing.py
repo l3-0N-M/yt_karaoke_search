@@ -7,6 +7,7 @@ from typing import Dict, List
 
 try:
     import requests
+
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
@@ -69,7 +70,9 @@ class BingSearchProvider(SearchProvider):
             response_time = time.time() - start_time
             self.update_statistics(True, len(filtered_results), response_time)
 
-            self.logger.info(f"Found {len(filtered_results)} karaoke videos via Bing for query: '{query}'")
+            self.logger.info(
+                f"Found {len(filtered_results)} karaoke videos via Bing for query: '{query}'"
+            )
             return filtered_results
 
         except Exception as e:
@@ -85,6 +88,7 @@ class BingSearchProvider(SearchProvider):
 
         if elapsed < self._min_request_interval:
             import asyncio
+
             sleep_time = self._min_request_interval - elapsed
             await asyncio.sleep(sleep_time)
 
@@ -123,11 +127,8 @@ class BingSearchProvider(SearchProvider):
             response = await loop.run_in_executor(
                 None,
                 lambda: requests.get(
-                    self.search_url,
-                    params=params,
-                    headers=self.headers,
-                    timeout=30
-                )
+                    self.search_url, params=params, headers=self.headers, timeout=30
+                ),
             )
 
             response.raise_for_status()
@@ -158,9 +159,7 @@ class BingSearchProvider(SearchProvider):
 
                 # Extract additional information if available
                 duration_match = re.search(
-                    rf'{re.escape(video_id)}.*?(\d+:\d+)',
-                    html_content,
-                    re.IGNORECASE
+                    rf"{re.escape(video_id)}.*?(\d+:\d+)", html_content, re.IGNORECASE
                 )
                 duration_str = duration_match.group(1) if duration_match else None
 
@@ -190,7 +189,7 @@ class BingSearchProvider(SearchProvider):
         """Extract channel name from HTML content."""
         try:
             # Look for channel information near the video
-            channel_pattern = rf'{re.escape(video_id)}.*?YouTube.*?by\s+([^<\n]+)'
+            channel_pattern = rf"{re.escape(video_id)}.*?YouTube.*?by\s+([^<\n]+)"
             match = re.search(channel_pattern, html_content, re.IGNORECASE | re.DOTALL)
 
             if match:
@@ -216,7 +215,9 @@ class BingSearchProvider(SearchProvider):
 
         return None
 
-    def _process_bing_results(self, raw_results: List[Dict], original_query: str) -> List[SearchResult]:
+    def _process_bing_results(
+        self, raw_results: List[Dict], original_query: str
+    ) -> List[SearchResult]:
         """Process and normalize Bing search results."""
         results = []
 

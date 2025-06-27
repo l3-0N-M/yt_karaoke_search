@@ -6,6 +6,7 @@ from .youtube import YouTubeSearchProvider
 # Optional providers that may not be available
 try:
     from .bing import BingSearchProvider
+
     HAS_BING = True
 except ImportError:
     BingSearchProvider = None
@@ -13,6 +14,7 @@ except ImportError:
 
 try:
     from .duckduckgo import DuckDuckGoSearchProvider
+
     HAS_DUCKDUCKGO = True
 except ImportError:
     DuckDuckGoSearchProvider = None

@@ -18,6 +18,7 @@ except ImportError:
     def retry(*dargs, **dkwargs):
         def _decorator(fn):
             return fn
+
         return _decorator
 
     def stop_after_attempt(*args, **kwargs):
@@ -28,6 +29,7 @@ except ImportError:
 
     def wait_random(*args, **kwargs):
         return None
+
 
 from ...config import ScrapingConfig
 from .base import SearchProvider, SearchResult
@@ -160,7 +162,9 @@ class YouTubeSearchProvider(SearchProvider):
             info = ydl.extract_info(search_query, download=False)
             return info or {}
 
-    def _process_search_results(self, search_results: Dict, original_query: str) -> List[SearchResult]:
+    def _process_search_results(
+        self, search_results: Dict, original_query: str
+    ) -> List[SearchResult]:
         """Process and normalize search results."""
         results = []
 
@@ -271,8 +275,14 @@ class YouTubeSearchProvider(SearchProvider):
         description = channel_data.get("description", "").lower()
 
         karaoke_indicators = [
-            "karaoke", "backing track", "instrumental", "sing along",
-            "minus one", "playback", "accompaniment", "lyrics",
+            "karaoke",
+            "backing track",
+            "instrumental",
+            "sing along",
+            "minus one",
+            "playback",
+            "accompaniment",
+            "lyrics",
         ]
 
         text_to_check = f"{channel_name} {description}"

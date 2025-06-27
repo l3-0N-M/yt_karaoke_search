@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 
 try:
     from .search.fuzzy_matcher import FuzzyMatcher
+
     HAS_FUZZY_MATCHER = True
 except ImportError:
     HAS_FUZZY_MATCHER = False
@@ -74,7 +75,7 @@ class AdvancedTitleParser:
         self.core_patterns = [
             # Specific karaoke format - Highest priority
             (
-                r'^[Kk]araoke\s*[-–—]\s*([^-]+?)\s*[-–—]\s*(.+)$',
+                r"^[Kk]araoke\s*[-–—]\s*([^-]+?)\s*[-–—]\s*(.+)$",
                 2,
                 1,
                 0.98,
@@ -589,8 +590,8 @@ class AdvancedTitleParser:
                 metadata={
                     "artist_match": asdict(best_artist_match) if best_artist_match else None,
                     "song_match": asdict(best_song_match) if best_song_match else None,
-                    "fuzzy_method": "advanced_with_phonetic"
-                }
+                    "fuzzy_method": "advanced_with_phonetic",
+                },
             )
 
         return ParseResult(method="advanced_fuzzy_matching")

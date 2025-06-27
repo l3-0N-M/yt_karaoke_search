@@ -18,7 +18,7 @@ parts = [
     ("Part 1: ^([^-–—]+?)", r"^([^-–—]+?)"),
     ("Part 2: \\s*[-–—]\\s*", r"\s*[-–—]\s*"),
     ("Part 3: ([^(\\[]+)", r"([^(\[]+)"),
-    ("Part 4: optional karaoke", r"(?:\s*[\(\[][^)\]]*[Kk]araoke[^)\]]*[\)\]])?")
+    ("Part 4: optional karaoke", r"(?:\s*[\(\[][^)\]]*[Kk]araoke[^)\]]*[\)\]])?"),
 ]
 
 print("Testing each part separately:")
@@ -51,6 +51,7 @@ if match:
 # Now let's test what happens when we process this through the validation
 print("\nWhat happens after _clean_extracted_text:")
 
+
 def _clean_extracted_text(text):
     """Simulated version of the cleaning function."""
     if not text:
@@ -77,6 +78,7 @@ def _clean_extracted_text(text):
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
     return cleaned
+
 
 if match:
     print(f"Raw group 1: '{match.group(1)}'")

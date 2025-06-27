@@ -14,12 +14,14 @@ from .search.result_ranker import ResultRanker
 
 try:
     from .search.providers.bing import BingSearchProvider
+
     HAS_BING = True
 except ImportError:
     HAS_BING = False
 
 try:
     from .search.providers.duckduckgo import DuckDuckGoSearchProvider
+
     HAS_DUCKDUCKGO = True
 except ImportError:
     HAS_DUCKDUCKGO = False
@@ -30,24 +32,32 @@ logger = logging.getLogger(__name__)
 class MultiStrategySearchEngine:
     """Enhanced search engine with multiple strategies and intelligent optimization."""
 
-    def __init__(self, search_config: SearchConfig, scraping_config: ScrapingConfig, db_manager=None):
+    def __init__(
+        self, search_config: SearchConfig, scraping_config: ScrapingConfig, db_manager=None
+    ):
         self.search_config = search_config
         self.scraping_config = scraping_config
         self.db_manager = db_manager
 
         # Initialize core components
-        self.cache_manager = CacheManager(search_config.dict() if hasattr(search_config, 'dict') else {})
-        self.result_ranker = ResultRanker(search_config.dict() if hasattr(search_config, 'dict') else {})
-        self.fuzzy_matcher = FuzzyMatcher(search_config.dict() if hasattr(search_config, 'dict') else {})
+        self.cache_manager = CacheManager(
+            search_config.dict() if hasattr(search_config, "dict") else {}
+        )
+        self.result_ranker = ResultRanker(
+            search_config.dict() if hasattr(search_config, "dict") else {}
+        )
+        self.fuzzy_matcher = FuzzyMatcher(
+            search_config.dict() if hasattr(search_config, "dict") else {}
+        )
 
         # Initialize search providers
         self.providers = {}
         self._initialize_providers()
 
         # Search strategy configuration
-        self.fallback_threshold = getattr(search_config, 'fallback_threshold', 10)
-        self.max_fallback_providers = getattr(search_config, 'max_fallback_providers', 2)
-        self.enable_parallel_search = getattr(search_config, 'enable_parallel_search', False)
+        self.fallback_threshold = getattr(search_config, "fallback_threshold", 10)
+        self.max_fallback_providers = getattr(search_config, "max_fallback_providers", 2)
+        self.enable_parallel_search = getattr(search_config, "enable_parallel_search", False)
 
         # Statistics and monitoring
         self.search_stats = {
@@ -74,14 +84,16 @@ class MultiStrategySearchEngine:
         else:
             logger.info("DuckDuckGo search provider not available")
 
-        logger.info(f"Initialized {len(self.providers)} search providers: {list(self.providers.keys())}")
+        logger.info(
+            f"Initialized {len(self.providers)} search providers: {list(self.providers.keys())}"
+        )
 
     async def search_videos(
         self,
         query: str,
         max_results: int = 100,
         use_cache: bool = True,
-        enable_fallback: bool = True
+        enable_fallback: bool = True,
     ) -> List[SearchResult]:
         """Enhanced search with multi-strategy approach."""
         start_time = time.time()
@@ -114,7 +126,7 @@ class MultiStrategySearchEngine:
             )
 
             # Step 5: Enhance with fuzzy matching if enabled
-            if getattr(self.search_config, 'enable_fuzzy_matching', True):
+            if getattr(self.search_config, "enable_fuzzy_matching", True):
                 all_results = await self._enhance_with_fuzzy_matching(all_results, query)
 
             # Step 6: Cache results for future use
@@ -128,14 +140,18 @@ class MultiStrategySearchEngine:
             response_time = time.time() - start_time
             self._update_search_statistics(response_time)
 
-            logger.info(f"Search completed for '{query}': {len(final_results)} results in {response_time:.2f}s")
+            logger.info(
+                f"Search completed for '{query}': {len(final_results)} results in {response_time:.2f}s"
+            )
             return final_results
 
         except Exception as e:
             logger.error(f"Search failed for '{query}': {e}")
             return []
 
-    async def _get_cached_results(self, query: str, max_results: int) -> Optional[List[SearchResult]]:
+    async def _get_cached_results(
+        self, query: str, max_results: int
+    ) -> Optional[List[SearchResult]]:
         """Get cached search results."""
         try:
             cached_data = await self.cache_manager.get_search_results(
@@ -152,10 +168,7 @@ class MultiStrategySearchEngine:
         return None
 
     async def _search_with_provider(
-        self,
-        provider_name: str,
-        query: str,
-        max_results: int
+        self, provider_name: str, query: str, max_results: int
     ) -> List[SearchResult]:
         """Search with a specific provider."""
         if provider_name not in self.providers:
@@ -186,36 +199,31 @@ class MultiStrategySearchEngine:
             return []
 
     async def _search_with_fallback_providers(
-        self,
-        query: str,
-        max_results: int,
-        exclude: List[str] = None
+        self, query: str, max_results: int, exclude: List[str] = None
     ) -> List[SearchResult]:
         """Search with fallback providers."""
         exclude = exclude or []
-        fallback_providers = [
-            name for name in self.providers.keys()
-            if name not in exclude
-        ]
+        fallback_providers = [name for name in self.providers.keys() if name not in exclude]
 
         if not fallback_providers:
             return []
 
         # Sort providers by weight (descending)
         fallback_providers.sort(
-            key=lambda name: self.providers[name].get_provider_weight(),
-            reverse=True
+            key=lambda name: self.providers[name].get_provider_weight(), reverse=True
         )
 
         # Limit number of fallback providers
-        fallback_providers = fallback_providers[:self.max_fallback_providers]
+        fallback_providers = fallback_providers[: self.max_fallback_providers]
 
         all_fallback_results = []
 
         if self.enable_parallel_search:
             # Parallel search with all fallback providers
             tasks = [
-                self._search_with_provider(provider_name, query, max_results // len(fallback_providers))
+                self._search_with_provider(
+                    provider_name, query, max_results // len(fallback_providers)
+                )
                 for provider_name in fallback_providers
             ]
 
@@ -240,9 +248,7 @@ class MultiStrategySearchEngine:
         return all_fallback_results
 
     async def _combine_and_deduplicate_results(
-        self,
-        primary_results: List[SearchResult],
-        fallback_results: List[SearchResult]
+        self, primary_results: List[SearchResult], fallback_results: List[SearchResult]
     ) -> List[SearchResult]:
         """Combine results from multiple providers and remove duplicates."""
         # Use video_id as the deduplication key
@@ -261,13 +267,13 @@ class MultiStrategySearchEngine:
                 seen_video_ids.add(result.video_id)
                 combined_results.append(result)
 
-        logger.info(f"Combined results: {len(primary_results)} primary + {len(fallback_results)} fallback = {len(combined_results)} unique")
+        logger.info(
+            f"Combined results: {len(primary_results)} primary + {len(fallback_results)} fallback = {len(combined_results)} unique"
+        )
         return combined_results
 
     async def _enhance_with_fuzzy_matching(
-        self,
-        results: List[SearchResult],
-        query: str
+        self, results: List[SearchResult], query: str
     ) -> List[SearchResult]:
         """Enhance results using fuzzy matching for better artist/song identification."""
         if not self.fuzzy_matcher:
@@ -292,10 +298,7 @@ class MultiStrategySearchEngine:
         return enhanced_results
 
     async def _cache_search_results(
-        self,
-        query: str,
-        results: List[SearchResult],
-        max_results: int
+        self, query: str, results: List[SearchResult], max_results: int
     ):
         """Cache search results for future use."""
         try:
@@ -308,9 +311,7 @@ class MultiStrategySearchEngine:
             logger.warning(f"Failed to cache results: {e}")
 
     async def _rank_and_return_results(
-        self,
-        results: List[SearchResult],
-        query: str
+        self, results: List[SearchResult], query: str
     ) -> List[SearchResult]:
         """Rank results and return the final list."""
         if not results:
@@ -346,8 +347,7 @@ class MultiStrategySearchEngine:
         else:
             alpha = 0.1  # Smoothing factor
             self.search_stats["average_response_time"] = (
-                alpha * response_time +
-                (1 - alpha) * self.search_stats["average_response_time"]
+                alpha * response_time + (1 - alpha) * self.search_stats["average_response_time"]
             )
 
     async def get_comprehensive_statistics(self) -> Dict:
@@ -402,21 +402,16 @@ class MultiStrategySearchEngine:
             return {"error": str(e)}
 
     async def search_with_fallback_strategies(
-        self,
-        query: str,
-        max_results: int = 100
+        self, query: str, max_results: int = 100
     ) -> List[SearchResult]:
         """Search with multiple fallback strategies for difficult queries."""
         strategies = [
             # Strategy 1: Original query
             query,
-
             # Strategy 2: Add "karaoke" if not present
             f"{query} karaoke" if "karaoke" not in query.lower() else None,
-
             # Strategy 3: Add "instrumental" as alternative
             f"{query} instrumental" if "instrumental" not in query.lower() else None,
-
             # Strategy 4: Remove artist if query seems to contain both artist and song
             self._extract_song_only(query) if " - " in query or " by " in query else None,
         ]
