@@ -1,36 +1,38 @@
 """Unit tests for video processing functionality."""
 
-from pathlib import Path
 import asyncio
 import sqlite3
-from collector.processor import VideoProcessor, ProcessingResult
+from pathlib import Path
+
 from collector.config import CollectorConfig
-from collector.db import DatabaseManager, DatabaseConfig
+from collector.db import DatabaseConfig, DatabaseManager
+from collector.processor import ProcessingResult, VideoProcessor
+
 
 def test_extract_karaoke_features():
     """Test karaoke feature extraction with confidence scoring."""
     config = CollectorConfig()
     processor = VideoProcessor(config)
-    
+
     video_data = {
         'title': 'Amazing Song - Artist Name (Karaoke with Guide Vocals and Scrolling Lyrics)',
         'description': 'Piano only acoustic version with backing vocals',
         'tags': ['karaoke', 'instrumental', 'piano']
     }
-    
+
     features = processor._extract_karaoke_features(video_data)
-    
+
     # Check that features are detected
     assert features['has_guide_vocals']
     assert features['has_scrolling_lyrics']
     assert features['is_piano_only']
     assert features['is_acoustic']
-    
+
 def test_extract_featured_artists():
     """Test featured artists extraction."""
     config = CollectorConfig()
     processor = VideoProcessor(config)
-    
+
     # Test various patterns
     test_cases = [
         ("Song Title feat. Artist Name (Karaoke)", "Artist Name"),
@@ -39,7 +41,7 @@ def test_extract_featured_artists():
         ("Song with Collaboration", "Collaboration"),
         ("Normal Song (Karaoke)", None),
     ]
-    
+
     for title, expected in test_cases:
         result = processor._extract_featured_artists(title, "", "")
         if expected:
@@ -50,15 +52,15 @@ def test_extract_featured_artists():
 def test_like_dislike_ratio_calculation():
     """Test like/dislike ratio calculation during save."""
     import tempfile
-    
+
     db_path = Path(tempfile.gettempdir()) / "test_ratio.db"
-    
+
     try:
         db_manager = DatabaseManager(DatabaseConfig(
             path=str(db_path),
             backup_enabled=False
         ))
-        
+
         # Mock result with engagement data
         mock_result = ProcessingResult(
             video_data={
@@ -75,9 +77,9 @@ def test_like_dislike_ratio_calculation():
             errors=[],
             warnings=[]
         )
-        
+
         db_manager.save_video_data(mock_result)
-        
+
         # Check that the video record was created correctly and the ratio calculated
         with sqlite3.connect(db_path) as con:
             cursor = con.cursor()
@@ -100,7 +102,7 @@ def test_like_dislike_ratio_calculation():
             assert title == 'Test Video'
             assert views == 1000
             assert likes == 800
-            
+
             expected_ratio = (800 - 50) / 1000  # 0.75
             assert abs(ratio - expected_ratio) < 0.001, (
                 f"Ratio calculation error: {ratio} vs {expected_ratio}"
@@ -111,7 +113,7 @@ def test_like_dislike_ratio_calculation():
                 "SELECT estimated_dislikes FROM ryd_data WHERE video_id='test123'"
             ).fetchone()
             assert ryd is not None and ryd[0] == 50
-    
+
     finally:
         if db_path.exists():
             db_path.unlink()
@@ -120,7 +122,7 @@ def test_calculate_quality_scores():
     """Test quality score calculation including dislike penalty."""
     config = CollectorConfig()
     processor = VideoProcessor(config)
-    
+
     # Test video with high dislike ratio
     video_data = {
         'duration_seconds': 240,  # Good duration
@@ -134,9 +136,9 @@ def test_calculate_quality_scores():
         'tags': ['test'],
         'features': {'original_artist': 'Test Artist'}
     }
-    
+
     scores = processor._calculate_quality_scores(video_data)
-    
+
     # Should have technical score but reduced engagement due to dislike penalty
     assert scores['technical_score'] > 0
     assert scores['engagement_score'] < scores['technical_score']  # Penalty applied

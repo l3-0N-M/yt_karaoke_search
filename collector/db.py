@@ -106,12 +106,12 @@ ALTER TABLE videos ADD COLUMN featured_artists TEXT;
 ALTER TABLE videos ADD COLUMN like_dislike_to_views_ratio REAL;
 
 -- Update existing records with computed ratios
-UPDATE videos 
-SET like_dislike_to_views_ratio = 
-  CASE 
+UPDATE videos
+SET like_dislike_to_views_ratio =
+  CASE
     WHEN view_count > 0 THEN
       (like_count - COALESCE((SELECT estimated_dislikes FROM ryd_data WHERE ryd_data.video_id = videos.video_id), 0)) * 1.0 / view_count
-    ELSE NULL 
+    ELSE NULL
   END
 WHERE view_count > 0;
 
@@ -385,7 +385,7 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (3);
                     INSERT OR REPLACE INTO videos (
                         video_id, url, title, description, duration_seconds,
                         view_count, like_count, comment_count, upload_date,
-                        thumbnail_url, channel_name, channel_id, original_artist, 
+                        thumbnail_url, channel_name, channel_id, original_artist,
                         featured_artists, song_title, estimated_release_year,
                         like_dislike_to_views_ratio
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -506,10 +506,10 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (3);
                 cursor.execute(
                     """
                     SELECT original_artist, COUNT(*) as count, AVG(view_count) as avg_views
-                    FROM videos 
-                    WHERE original_artist IS NOT NULL 
-                    GROUP BY original_artist 
-                    ORDER BY count DESC 
+                    FROM videos
+                    WHERE original_artist IS NOT NULL
+                    GROUP BY original_artist
+                    ORDER BY count DESC
                     LIMIT 10
                 """
                 )
