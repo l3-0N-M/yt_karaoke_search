@@ -71,9 +71,14 @@ except ImportError:  # pragma: no cover - optional dependency
         return None
 
 
-from .advanced_parser import AdvancedTitleParser
+from .advanced_parser import AdvancedTitleParser, ParseResult
 from .config import CollectorConfig
 from .validation_corrector import ValidationCorrector
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - type checking only
+    from .multi_pass_controller import MultiPassParsingController
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +101,11 @@ class ProcessingResult:
 class VideoProcessor:
     """Advanced video processor with confidence scoring."""
 
-    def __init__(self, config: CollectorConfig):
+    def __init__(
+        self,
+        config: CollectorConfig,
+        multi_pass_controller: Optional["MultiPassParsingController"] = None,
+    ):
         self.config = config
         self.yt_dlp_opts = self._setup_yt_dlp()
 
@@ -121,10 +130,13 @@ class VideoProcessor:
         self._musicbrainz_min_interval = 1.0  # MusicBrainz requires 1 req/sec limit
 
         # Initialize advanced parser if enabled
-        if config.search.use_advanced_parser:
+        if config.search.use_advanced_parser or config.search.multi_pass.enabled:
             self.advanced_parser = AdvancedTitleParser(config)
         else:
             self.advanced_parser = None
+
+        # Multi-pass parsing controller (optional)
+        self.multi_pass_controller = multi_pass_controller
 
         # Validator for post-processing metadata checks
         self.validator = ValidationCorrector()
@@ -165,8 +177,24 @@ class VideoProcessor:
                     {}, 0.0, time.time() - start_time, ["Failed to extract basic metadata"], []
                 )
 
+            # Extract artist/song using multi-pass controller if enabled
+            parse_result = None
+            if self.multi_pass_controller and self.config.search.multi_pass.enabled:
+                try:
+                    mp_res = await self.multi_pass_controller.parse_video(
+                        video_id=video_data.get("video_id", ""),
+                        title=video_data.get("title", ""),
+                        description=video_data.get("description", ""),
+                        tags=" ".join(video_data.get("tags", [])),
+                        channel_name=video_data.get("uploader", ""),
+                        channel_id=video_data.get("uploader_id", ""),
+                    )
+                    parse_result = mp_res.final_result
+                except Exception as e:
+                    warnings.append(f"Multi-pass parsing failed: {e}")
+
             # Extract karaoke features first so external lookups have artist info
-            features = self._extract_karaoke_features(video_data)
+            features = self._extract_karaoke_features(video_data, parse_result)
             video_data["features"] = features
 
             # Enhance with external data (uses extracted features)
@@ -630,7 +658,9 @@ class VideoProcessor:
 
         return min(confidence, 1.0)
 
-    def _extract_karaoke_features(self, video_data: Dict) -> Dict:
+    def _extract_karaoke_features(
+        self, video_data: Dict, parse_result: Optional[ParseResult] = None
+    ) -> Dict:
         """Extract karaoke-specific features with confidence scoring."""
         title = video_data.get("title", "").lower()
         description = video_data.get("description", "").lower()
@@ -654,11 +684,12 @@ class VideoProcessor:
             features[feat] = bool(hits)
             features[f"{feat}_confidence"] = min(0.6 + 0.1 * (hits - 1), 1.0) if hits else 0.0
 
-        # Extract artist and song info using advanced parser if available
-        if self.advanced_parser:
+        # Extract artist and song info
+        if parse_result is None and self.advanced_parser:
             uploader = video_data.get("uploader", "")
             parse_result = self.advanced_parser.parse_title(title, description, tags, uploader)
 
+        if parse_result is not None:
             artist_info = {
                 "original_artist": parse_result.original_artist,
                 "song_title": parse_result.song_title,
@@ -667,15 +698,11 @@ class VideoProcessor:
                 "pattern_used": parse_result.pattern_used,
             }
 
-            # Add featured artists if found
             if parse_result.featured_artists:
                 artist_info["featured_artists"] = parse_result.featured_artists
-
-            # Add alternative results for debugging
             if parse_result.alternative_results:
                 artist_info["alternative_extractions"] = parse_result.alternative_results
         else:
-            # Fallback to original method
             artist_info = self._extract_artist_song_info(title, description, tags)
 
         features.update(artist_info)

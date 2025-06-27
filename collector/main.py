@@ -36,6 +36,24 @@ class KaraokeCollector:
         else:
             self.search_engine = SearchEngine(config.search, config.scraping)
         self.video_processor = VideoProcessor(config)
+
+        # Initialize multi-pass controller if enabled
+        self.multi_pass_controller = None
+        if config.search.multi_pass.enabled:
+            from .advanced_parser import AdvancedTitleParser
+            from .multi_pass_controller import MultiPassParsingController
+
+            search_engine_for_mp = (
+                self.search_engine if isinstance(self.search_engine, MultiStrategySearchEngine) else None
+            )
+            advanced_parser = self.video_processor.advanced_parser or AdvancedTitleParser(config.search)
+            self.multi_pass_controller = MultiPassParsingController(
+                config.search.multi_pass,
+                advanced_parser,
+                search_engine_for_mp,
+                self.db_manager,
+            )
+            self.video_processor.multi_pass_controller = self.multi_pass_controller
         self.shutdown_requested = False
         self._memory_cache_limit = 50000  # Limit in-memory cache size
         self._memory_cache_cleanup_threshold = 60000  # Clean when this size reached
