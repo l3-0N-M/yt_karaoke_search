@@ -6,7 +6,11 @@ from pathlib import Path
 
 from collector.config import CollectorConfig
 from collector.db import DatabaseConfig, DatabaseManager
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 from collector.processor import ProcessingResult, VideoProcessor
+from collector.advanced_parser import ParseResult
 
 
 def test_extract_karaoke_features():
@@ -263,3 +267,48 @@ def test_processor_validation_integration(monkeypatch):
     result = asyncio.run(run())
     assert result.video_data["validation"]["artist_valid"]
     assert result.video_data["validation"]["song_valid"]
+
+
+def test_process_video_uses_multi_pass(monkeypatch):
+    config = CollectorConfig()
+    config.search.multi_pass.enabled = True
+
+    async def dummy_extract(url):
+        return {
+            "video_id": "v1",
+            "title": "t",
+            "description": "",
+            "tags": [],
+            "uploader": "u",
+            "uploader_id": "uid",
+        }
+
+    mpr = SimpleNamespace()
+    mpr.parse_video = AsyncMock(
+        return_value=SimpleNamespace(
+            final_result=ParseResult(
+                original_artist="A", song_title="S", confidence=0.9
+            )
+        )
+    )
+
+    processor = VideoProcessor(config, multi_pass_controller=mpr)
+    monkeypatch.setattr(processor, "_extract_basic_metadata", dummy_extract)
+
+    async def dummy_ryd(video_id):
+        return {}
+
+    async def dummy_music(a, s):
+        return ({}, None)
+
+    monkeypatch.setattr(processor, "_get_ryd_data", dummy_ryd)
+    monkeypatch.setattr(processor, "_get_music_metadata", dummy_music)
+
+    async def run():
+        res = await processor.process_video("http://x")
+        await processor.cleanup()
+        return res
+
+    result = asyncio.run(run())
+    assert result.video_data["features"]["original_artist"] == "A"
+    assert mpr.parse_video.await_count == 1

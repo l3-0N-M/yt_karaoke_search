@@ -89,6 +89,25 @@ def test_collect_channel_multi_strategy(monkeypatch):
     assert captured.get("flag") is True
 
 
+def test_collect_channel_multi_pass(monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    def _collector(cfg):
+        captured["flag"] = cfg.search.multi_pass.enabled
+        return DummyCollector()
+
+    monkeypatch.setattr(cli, "KaraokeCollector", _collector)
+    monkeypatch.setattr(cli, "setup_logging", lambda *a, **k: None)
+
+    result = runner.invoke(
+        cli.cli,
+        ["collect-channel", "http://example.com", "--multi-pass"],
+    )
+    assert result.exit_code == 0
+    assert captured.get("flag") is True
+
+
 def test_collect_channels_command_event_loop(tmp_path, monkeypatch):
     path = tmp_path / "channels.txt"
     path.write_text("http://a\nhttp://b\n")

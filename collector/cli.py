@@ -121,7 +121,14 @@ def cli():
     is_flag=True,
     help="Use multi-strategy search engine",
 )
-def collect(config, queries, max_per_query, output_db, verbose, dry_run, multi_strategy):
+@click.option(
+    "--multi-pass",
+    is_flag=True,
+    help="Enable multi-pass parsing system",
+)
+def collect(
+    config, queries, max_per_query, output_db, verbose, dry_run, multi_strategy, multi_pass
+):
     """Collect karaoke videos from YouTube."""
 
     # Setup logging
@@ -141,6 +148,8 @@ def collect(config, queries, max_per_query, output_db, verbose, dry_run, multi_s
         collector_config.dry_run = True
     if multi_strategy:
         collector_config.search.use_multi_strategy = True
+    if multi_pass:
+        collector_config.search.multi_pass.enabled = True
 
     # Default queries if none provided
     if not queries:
@@ -177,7 +186,12 @@ def collect(config, queries, max_per_query, output_db, verbose, dry_run, multi_s
     is_flag=True,
     help="Use multi-strategy search engine",
 )
-def collect_channel(channel_url, config, max_videos, no_incremental, log_level, multi_strategy):
+@click.option(
+    "--multi-pass",
+    is_flag=True,
+    help="Enable multi-pass parsing system",
+)
+def collect_channel(channel_url, config, max_videos, no_incremental, log_level, multi_strategy, multi_pass):
     """Collect karaoke videos from a specific YouTube channel."""
     setup_logging(getattr(logging, log_level.upper()))
 
@@ -188,6 +202,8 @@ def collect_channel(channel_url, config, max_videos, no_incremental, log_level, 
 
     if multi_strategy:
         collector_config.search.use_multi_strategy = True
+    if multi_pass:
+        collector_config.search.multi_pass.enabled = True
 
     collector = KaraokeCollector(collector_config)
 
