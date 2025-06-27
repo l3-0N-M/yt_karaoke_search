@@ -1,7 +1,6 @@
 # Core dependencies
 yt-dlp>=2024.6.27   # Latest nightly with innertube 'sts'-token patch
 httpx>=0.25.0
-pydantic>=2.0.0
 click>=8.1.0
 PyYAML>=6.0
 tenacity>=8.2.0

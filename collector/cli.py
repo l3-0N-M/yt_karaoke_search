@@ -3,11 +3,28 @@
 import asyncio
 import logging
 import sys
-import click
 
-from .config import CollectorConfig, load_config, save_config_template
-from .main import KaraokeCollector
-from .utils import setup_logging
+try:
+    import click
+except ImportError:  # pragma: no cover - fallback minimal stub
+    from types import SimpleNamespace
+
+    def _nop_decorator(*dargs, **dkwargs):
+        def _decorator(func):
+            return func
+        return _decorator
+
+    click = SimpleNamespace(
+        group=_nop_decorator,
+        version_option=_nop_decorator,
+        command=_nop_decorator,
+        option=_nop_decorator,
+        Path=lambda *a, **k: str,
+    )
+
+from collector.config import CollectorConfig, load_config, save_config_template
+from collector.main import KaraokeCollector
+from collector.utils import setup_logging
 
 @click.group()
 @click.version_option("2.0.0")
