@@ -4,8 +4,8 @@ import asyncio
 import logging
 import random
 import time
-from typing import Dict, List, Optional
 from datetime import datetime
+from typing import Dict, List, Optional
 
 try:
     import yt_dlp  # type: ignore
