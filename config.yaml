@@ -4,12 +4,17 @@ database:
   path: "karaoke_videos.db"
   backup_enabled: true
   backup_retention_days: 7
+  backup_interval_hours: 24
   vacuum_threshold_mb: 100
+  connection_pool_size: 10  # For high-concurrency operations
+  connection_timeout: 30.0
 
 scraping:
-  max_concurrent_workers: 5
+  max_concurrent_workers: 3  # Reduced for better API compliance
   max_retries: 3
   timeout_seconds: 60  # Increased for large playlists/4K results
+  rate_limit_per_hour: 3600  # Conservative rate limiting
+  min_request_interval: 1.0  # Seconds between requests
 
 search:
   primary_method: "yt_dlp"

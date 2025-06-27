@@ -9,15 +9,20 @@ A comprehensive tool for collecting karaoke video data from YouTube with confide
 ## Features
 
 - **Fast yt-dlp-based search** - No browser automation needed for most searches
+- **Channel-based collection** - Systematic processing of entire YouTube channels
+- **Enterprise scalability** - Handles 2,000-10,000 videos per channel efficiently
 - **Return YouTube Dislike integration** - Get estimated dislike counts with confidence scoring
 - **Comprehensive metadata extraction** - Artist names, song titles, featured artists, release years
 - **Engagement analytics** - Like/dislike ratios and engagement scoring with penalties
 - **Karaoke feature detection** - Guide vocals, scrolling lyrics, instrumental-only detection
 - **External music data** - Release year lookup via MusicBrainz API
 - **Quality scoring** - Technical, engagement, and metadata completeness scores
+- **Incremental updates** - Smart date filtering for efficient re-processing
+- **Rate limiting protection** - Prevents YouTube API blocking with intelligent backoff
+- **Memory management** - Bounded caches and automatic cleanup for long-running operations
+- **Database optimization** - Connection pooling, performance indexes, and migrations
 - **Modular architecture** - Clean, maintainable codebase with proper separation of concerns
 - **Robust error handling** - Retry logic, graceful shutdown, and comprehensive logging
-- **Database management** - SQLite with migrations, backups, and performance optimization
 
 ## Installation
 
@@ -47,6 +52,12 @@ karaoke-collector collect
 # Custom queries
 karaoke-collector collect -q "piano karaoke" -q "acoustic karaoke" -m 100
 
+# Channel-based collection (single channel)
+karaoke-collector collect-channel "https://www.youtube.com/@KaraokeChannel" --max-videos 5000
+
+# Multiple channels from file
+karaoke-collector collect-channels channels.txt --max-videos 10000
+
 # With custom configuration
 karaoke-collector collect --config config.yaml --verbose
 
@@ -70,13 +81,24 @@ config.database.path = "my_karaoke_db.db"
 # Initialize collector
 collector = KaraokeCollector(config)
 
-# Collect videos
+# Collect videos from search queries
 queries = ["piano karaoke", "guitar karaoke"]
 total_processed = await collector.collect_videos(queries, max_videos_per_query=50)
 
+# Collect from specific channel
+channel_url = "https://www.youtube.com/@KaraokeChannel"
+processed = await collector.collect_from_channel(channel_url, max_videos=5000)
+
+# Collect from multiple channels
+channel_urls = ["https://www.youtube.com/@Channel1", "https://www.youtube.com/@Channel2"]
+total = await collector.collect_from_channels(channel_urls, max_videos_per_channel=10000)
+
 # Get statistics
 stats = await collector.get_statistics()
-print(f"Total videos: {stats['total_videos']}")
+print(f"Total videos: {stats['total_videos']:,}")
+
+# Cleanup resources when done
+await collector.cleanup()
 ```
 
 ## Configuration
@@ -108,11 +130,19 @@ The collector creates a normalized SQLite database with the following tables:
   - Basic info (title, URL, duration, views, likes)
   - Artist data (original_artist, featured_artists, song_title, estimated_release_year)
   - Engagement metrics (like_dislike_to_views_ratio)
+- `channels` - YouTube channel information and processing state
 - `video_features` - Karaoke-specific features with confidence scores
 - `quality_scores` - Technical, engagement, and metadata quality metrics
 - `ryd_data` - Return YouTube Dislike data with confidence scoring
 - `search_history` - Track search performance over time
 - `error_log` - Debugging and monitoring
+
+### Performance Optimizations:
+✅ **15+ database indexes** - Optimized for large-scale queries  
+✅ **Connection pooling** - Handles high-concurrency operations  
+✅ **Memory management** - Bounded caches prevent memory exhaustion  
+✅ **Rate limiting** - Prevents API blocking with smart backoff  
+✅ **Incremental processing** - Only processes new videos on subsequent runs
 
 ### Key Fields Collected:
 ✅ **YouTube URL** - Direct video links  

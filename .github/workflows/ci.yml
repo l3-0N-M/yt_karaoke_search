@@ -21,11 +21,19 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest ruff black
+        pip install pytest ruff black pytest-cov
     
     - name: Lint with ruff
       run: ruff check .
@@ -34,7 +42,13 @@ jobs:
       run: black --check .
     
     - name: Test with pytest
-      run: pytest tests/ -v
+      run: pytest tests/ -v --cov=collector --cov-report=xml --cov-report=term-missing
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
 
   package:
     runs-on: ubuntu-latest
