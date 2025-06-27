@@ -54,7 +54,7 @@ def test_database_schema_version():
             version = con.execute(
                 "SELECT version FROM schema_info ORDER BY version DESC LIMIT 1"
             ).fetchone()[0]
-            assert version == 3, f"Expected schema version 3, got {version}"
+            assert version == 4, f"Expected schema version 4, got {version}"
     finally:
         if db_path.exists():
             db_path.unlink()
