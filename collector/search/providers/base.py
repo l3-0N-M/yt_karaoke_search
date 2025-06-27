@@ -73,13 +73,11 @@ class SearchProvider(ABC):
     def get_statistics(self) -> Dict:
         """Get provider performance statistics."""
         success_rate = (
-            self.successful_searches / self.total_searches
-            if self.total_searches > 0 else 0.0
+            self.successful_searches / self.total_searches if self.total_searches > 0 else 0.0
         )
 
         avg_results = (
-            self.total_results / self.successful_searches
-            if self.successful_searches > 0 else 0.0
+            self.total_results / self.successful_searches if self.successful_searches > 0 else 0.0
         )
 
         return {
@@ -146,15 +144,32 @@ class SearchProvider(ABC):
         text = f"{title} {description}".lower()
 
         karaoke_indicators = [
-            "karaoke", "backing track", "instrumental", "sing along",
-            "minus one", "playback", "accompaniment", "with lyrics",
-            "guide vocals", "piano version", "acoustic version"
+            "karaoke",
+            "backing track",
+            "instrumental",
+            "sing along",
+            "minus one",
+            "playback",
+            "accompaniment",
+            "with lyrics",
+            "guide vocals",
+            "piano version",
+            "acoustic version",
         ]
 
         exclusions = [
-            "reaction", "review", "tutorial", "lesson", "how to",
-            "analysis", "behind the scenes", "interview", "documentary",
-            "live performance", "concert", "official video"
+            "reaction",
+            "review",
+            "tutorial",
+            "lesson",
+            "how to",
+            "analysis",
+            "behind the scenes",
+            "interview",
+            "documentary",
+            "live performance",
+            "concert",
+            "official video",
         ]
 
         has_indicator = any(indicator in text for indicator in karaoke_indicators)

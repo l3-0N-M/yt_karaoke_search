@@ -15,8 +15,7 @@ from collector.enhanced_search import MultiStrategySearchEngine
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -35,11 +34,7 @@ async def demonstrate_enhanced_search():
         db_manager = DatabaseManager(config.database)
 
         # Initialize enhanced search engine
-        search_engine = MultiStrategySearchEngine(
-            config.search,
-            config.scraping,
-            db_manager
-        )
+        search_engine = MultiStrategySearchEngine(config.search, config.scraping, db_manager)
 
         print(f"✅ Initialized search engine with {len(search_engine.providers)} providers")
 
@@ -49,7 +44,7 @@ async def demonstrate_enhanced_search():
             "Hotel California Eagles",
             "Sweet Caroline Neil Diamond",
             "Don't Stop Believin Journey",
-            "Billie Jean Michael Jackson"
+            "Billie Jean Michael Jackson",
         ]
 
         print("\n🔍 Testing Multi-Strategy Search")
@@ -61,10 +56,7 @@ async def demonstrate_enhanced_search():
             try:
                 # Perform enhanced search
                 results = await search_engine.search_videos(
-                    query,
-                    max_results=10,
-                    use_cache=True,
-                    enable_fallback=True
+                    query, max_results=10, use_cache=True, enable_fallback=True
                 )
 
                 print(f"  📊 Found {len(results)} results")
@@ -73,8 +65,10 @@ async def demonstrate_enhanced_search():
                 for i, result in enumerate(results[:3], 1):
                     print(f"  {i}. {result.title[:60]}...")
                     print(f"     Channel: {result.channel}")
-                    print(f"     Scores: Relevance={result.relevance_score:.2f}, "
-                          f"Final={getattr(result, 'final_score', 0.0):.2f}")
+                    print(
+                        f"     Scores: Relevance={result.relevance_score:.2f}, "
+                        f"Final={getattr(result, 'final_score', 0.0):.2f}"
+                    )
 
             except Exception as e:
                 print(f"  ❌ Search failed: {e}")
@@ -134,7 +128,7 @@ async def demonstrate_enhanced_search():
         popular_queries = [
             "Yesterday Beatles karaoke",
             "Sweet Child O Mine Guns N Roses",
-            "Wonderwall Oasis"
+            "Wonderwall Oasis",
         ]
 
         try:
@@ -218,7 +212,7 @@ async def test_individual_components():
                 channel="KaraokeChannel",
                 channel_id="karaoke123",
                 view_count=1000000,
-                provider="youtube"
+                provider="youtube",
             ),
             SearchResult(
                 video_id="test2",
@@ -227,8 +221,8 @@ async def test_individual_components():
                 channel="InstrumentalMusic",
                 channel_id="instr456",
                 view_count=500000,
-                provider="youtube"
-            )
+                provider="youtube",
+            ),
         ]
 
         # Rank results

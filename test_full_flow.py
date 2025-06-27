@@ -31,18 +31,15 @@ def test_full_flow():
     print("\nStep 2: Karaoke features extraction")
 
     # Simulate video_data
-    video_data = {
-        "title": test_title,
-        "description": "",
-        "tags": [],
-        "uploader": "Test Channel"
-    }
+    video_data = {"title": test_title, "description": "", "tags": [], "uploader": "Test Channel"}
 
     features = processor._extract_karaoke_features(video_data)
     print("  Features extracted:")
     for key, value in features.items():
-        if 'artist' in key or 'song' in key or 'title' in key:
-            print(f"    {key}: '{value}' (length: {len(str(value)) if value is not None else 'None'})")
+        if "artist" in key or "song" in key or "title" in key:
+            print(
+                f"    {key}: '{value}' (length: {len(str(value)) if value is not None else 'None'})"
+            )
 
     # Step 3: Test what would be saved to database
     print("\nStep 3: Database save simulation")
@@ -63,7 +60,7 @@ def test_full_flow():
                 "uploader": "Test Channel",
                 "uploader_id": "testchannel123",
                 "features": features,
-                "quality_scores": {"overall_score": 0.8}
+                "quality_scores": {"overall_score": 0.8},
             }
             self.confidence_score = 0.9
 
@@ -71,8 +68,12 @@ def test_full_flow():
 
     # Check what would be inserted
     features_for_db = mock_result.video_data.get("features", {})
-    print(f"  artist for DB: '{features_for_db.get('original_artist')}' (length: {len(str(features_for_db.get('original_artist', '')))}) ")
-    print(f"  song_title for DB: '{features_for_db.get('song_title')}' (length: {len(str(features_for_db.get('song_title', '')))})")
+    print(
+        f"  artist for DB: '{features_for_db.get('original_artist')}' (length: {len(str(features_for_db.get('original_artist', '')))}) "
+    )
+    print(
+        f"  song_title for DB: '{features_for_db.get('song_title')}' (length: {len(str(features_for_db.get('song_title', '')))})"
+    )
 
     # Let's also check if there are any other places where song_title might get modified
     print("\nStep 4: Check for any string modifications")
@@ -98,8 +99,12 @@ def test_full_flow():
         None,  # like_dislike_ratio
     )
 
-    print(f"  SQL value for original_artist: '{sql_values[12]}' (length: {len(str(sql_values[12])) if sql_values[12] else 'None'})")
-    print(f"  SQL value for song_title: '{sql_values[14]}' (length: {len(str(sql_values[14])) if sql_values[14] else 'None'})")
+    print(
+        f"  SQL value for original_artist: '{sql_values[12]}' (length: {len(str(sql_values[12])) if sql_values[12] else 'None'})"
+    )
+    print(
+        f"  SQL value for song_title: '{sql_values[14]}' (length: {len(str(sql_values[14])) if sql_values[14] else 'None'})"
+    )
 
     # Check if there's any modification happening in the database manager
     print("\nStep 5: Manual database insertion test")
@@ -108,11 +113,12 @@ def test_full_flow():
     import sqlite3
 
     try:
-        conn = sqlite3.connect(':memory:')  # Use in-memory database for testing
+        conn = sqlite3.connect(":memory:")  # Use in-memory database for testing
         cursor = conn.cursor()
 
         # Create table with same schema as real database
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE videos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 video_id TEXT UNIQUE NOT NULL,
@@ -135,10 +141,12 @@ def test_full_flow():
                 scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
 
         # Insert our test data
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO videos (
                 video_id, url, title, description, duration_seconds,
                 view_count, like_count, comment_count, upload_date,
@@ -146,20 +154,29 @@ def test_full_flow():
                 featured_artists, song_title, estimated_release_year,
                 like_dislike_to_views_ratio
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, sql_values)
+        """,
+            sql_values,
+        )
 
         # Read it back
-        cursor.execute("SELECT original_artist, song_title FROM videos WHERE video_id = ?", (sql_values[0],))
+        cursor.execute(
+            "SELECT original_artist, song_title FROM videos WHERE video_id = ?", (sql_values[0],)
+        )
         row = cursor.fetchone()
 
         if row:
-            print(f"  Retrieved from DB - artist: '{row[0]}' (length: {len(row[0]) if row[0] else 'None'})")
-            print(f"  Retrieved from DB - song_title: '{row[1]}' (length: {len(row[1]) if row[1] else 'None'})")
+            print(
+                f"  Retrieved from DB - artist: '{row[0]}' (length: {len(row[0]) if row[0] else 'None'})"
+            )
+            print(
+                f"  Retrieved from DB - song_title: '{row[1]}' (length: {len(row[1]) if row[1] else 'None'})"
+            )
 
         conn.close()
 
     except Exception as e:
         print(f"  Database test error: {e}")
+
 
 if __name__ == "__main__":
     test_full_flow()

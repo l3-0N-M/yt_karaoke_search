@@ -20,7 +20,7 @@ def test_real_extraction():
     test_titles = [
         "Karaoke - What Child Is This - Christmas Traditional",
         "Karaoke - Since I Fell For You - Charlie Rich",
-        "Karaoke - Amigos Para Siempre(Friends For Life) - Sarah Brightman & Jose Carreras"
+        "Karaoke - Amigos Para Siempre(Friends For Life) - Sarah Brightman & Jose Carreras",
     ]
 
     for title in test_titles:
@@ -53,6 +53,7 @@ def test_real_extraction():
 
         for pattern, artist_group, title_group, confidence in karaoke_patterns:
             import re
+
             match = re.search(pattern, clean_title, re.IGNORECASE | re.UNICODE)
             if match:
                 print("Pattern matched!")
@@ -63,13 +64,17 @@ def test_real_extraction():
                     raw_artist = match.group(artist_group)
                     cleaned_artist = processor._clean_extracted_text(raw_artist)
                     valid_artist = processor._is_valid_artist_name(cleaned_artist)
-                    print(f"  Artist: raw='{raw_artist}' -> cleaned='{cleaned_artist}' -> valid={valid_artist}")
+                    print(
+                        f"  Artist: raw='{raw_artist}' -> cleaned='{cleaned_artist}' -> valid={valid_artist}"
+                    )
 
                 if title_group and title_group <= len(match.groups()):
                     raw_title = match.group(title_group)
                     cleaned_title = processor._clean_extracted_text(raw_title)
                     valid_title = processor._is_valid_song_title(cleaned_title)
-                    print(f"  Title: raw='{raw_title}' -> cleaned='{cleaned_title}' -> valid={valid_title}")
+                    print(
+                        f"  Title: raw='{raw_title}' -> cleaned='{cleaned_title}' -> valid={valid_title}"
+                    )
 
                     # Check if _is_valid_song_title is rejecting it
                     if not valid_title:
@@ -78,7 +83,14 @@ def test_real_extraction():
                         if not cleaned_title or len(cleaned_title.strip()) < 2:
                             print(f"        Too short (len={len(cleaned_title.strip())})")
                         title_lower = cleaned_title.lower().strip()
-                        invalid_terms = {"karaoke", "instrumental", "backing track", "minus one", "mr", "inst"}
+                        invalid_terms = {
+                            "karaoke",
+                            "instrumental",
+                            "backing track",
+                            "minus one",
+                            "mr",
+                            "inst",
+                        }
                         if title_lower in invalid_terms:
                             print(f"        Contains invalid term: '{title_lower}'")
                         if len(cleaned_title.strip()) > 200:
@@ -86,6 +98,7 @@ def test_real_extraction():
                 break
 
         print("\n" + "=" * 80 + "\n")
+
 
 if __name__ == "__main__":
     test_real_extraction()

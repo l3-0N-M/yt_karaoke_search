@@ -10,7 +10,7 @@ pattern = r"^([^-–—]+?)\s*[-–—]\s*([^(\[]+)(?:\s*[\(\[][^)\]]*[Kk]araoke
 test_titles = [
     "Karaoke - What Child Is This - Christmas Traditional",
     "Karaoke - Since I Fell For You - Charlie Rich",
-    "Karaoke - Amigos Para Siempre(Friends For Life) - Sarah Brightman & Jose Carreras"
+    "Karaoke - Amigos Para Siempre(Friends For Life) - Sarah Brightman & Jose Carreras",
 ]
 
 print("Testing the problematic pattern:")

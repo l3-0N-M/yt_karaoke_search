@@ -67,42 +67,62 @@ class ResultRanker:
         # Quality indicators with weights
         self.quality_indicators = {
             "video_quality": {
-                "4k": 1.0, "2160p": 1.0,
-                "hd": 0.8, "1080p": 0.8, "720p": 0.6,
-                "high quality": 0.7, "studio": 0.8,
-                "professional": 0.7, "remastered": 0.6,
+                "4k": 1.0,
+                "2160p": 1.0,
+                "hd": 0.8,
+                "1080p": 0.8,
+                "720p": 0.6,
+                "high quality": 0.7,
+                "studio": 0.8,
+                "professional": 0.7,
+                "remastered": 0.6,
             },
             "audio_quality": {
-                "flac": 1.0, "lossless": 1.0,
-                "320kbps": 0.9, "high bitrate": 0.8,
-                "studio quality": 0.8, "cd quality": 0.7,
+                "flac": 1.0,
+                "lossless": 1.0,
+                "320kbps": 0.9,
+                "high bitrate": 0.8,
+                "studio quality": 0.8,
+                "cd quality": 0.7,
             },
             "karaoke_features": {
-                "with lyrics": 0.9, "lyrics on screen": 0.9,
-                "guide vocals": 0.7, "backing vocals": 0.6,
-                "instrumental": 0.8, "minus one": 0.8,
-                "key change": 0.5, "pitch control": 0.5,
+                "with lyrics": 0.9,
+                "lyrics on screen": 0.9,
+                "guide vocals": 0.7,
+                "backing vocals": 0.6,
+                "instrumental": 0.8,
+                "minus one": 0.8,
+                "key change": 0.5,
+                "pitch control": 0.5,
             },
             "negative_indicators": {
-                "low quality": -0.5, "poor audio": -0.6,
-                "out of sync": -0.8, "broken": -1.0,
-                "corrupted": -1.0, "incomplete": -0.7,
-            }
+                "low quality": -0.5,
+                "poor audio": -0.6,
+                "out of sync": -0.8,
+                "broken": -1.0,
+                "corrupted": -1.0,
+                "incomplete": -0.7,
+            },
         }
 
         # Channel reputation patterns
         self.channel_reputation = {
             "verified_channels": {
-                "sing king": 0.9, "karaoke mugen": 0.8,
-                "zoom karaoke": 0.7, "karafun": 0.8,
+                "sing king": 0.9,
+                "karaoke mugen": 0.8,
+                "zoom karaoke": 0.7,
+                "karafun": 0.8,
             },
             "professional_indicators": [
-                "official", "records", "music", "entertainment",
-                "studio", "productions", "media"
+                "official",
+                "records",
+                "music",
+                "entertainment",
+                "studio",
+                "productions",
+                "media",
             ],
-            "amateur_indicators": [
-                "home", "bedroom", "cover", "personal", "my"
-            ]
+            "amateur_indicators": ["home", "bedroom", "cover", "personal", "my"],
         }
 
         # Statistics for learning
@@ -113,10 +133,7 @@ class ResultRanker:
         }
 
     def rank_results(
-        self,
-        results: List[SearchResult],
-        query: str = "",
-        context: Dict = None
+        self, results: List[SearchResult], query: str = "", context: Dict = None
     ) -> List[RankingResult]:
         """Rank search results using multi-dimensional scoring."""
         if not results:
@@ -139,10 +156,7 @@ class ResultRanker:
         return ranked_results
 
     def _calculate_comprehensive_score(
-        self,
-        result: SearchResult,
-        query: str,
-        context: Dict
+        self, result: SearchResult, query: str, context: Dict
     ) -> RankingResult:
         """Calculate comprehensive score for a single result."""
 
@@ -154,10 +168,10 @@ class ResultRanker:
 
         # Weighted combination
         final_score = (
-            relevance_score * self.weights.relevance +
-            quality_score * self.weights.quality +
-            popularity_score * self.weights.popularity +
-            metadata_score * self.weights.metadata
+            relevance_score * self.weights.relevance
+            + quality_score * self.weights.quality
+            + popularity_score * self.weights.popularity
+            + metadata_score * self.weights.metadata
         )
 
         # Apply bonuses and penalties
@@ -178,15 +192,10 @@ class ResultRanker:
                 "quality_indicators": self._get_quality_details(result),
                 "popularity_metrics": self._get_popularity_details(result),
                 "metadata_completeness": self._get_metadata_details(result),
-            }
+            },
         )
 
-    def _calculate_relevance_score(
-        self,
-        result: SearchResult,
-        query: str,
-        context: Dict
-    ) -> float:
+    def _calculate_relevance_score(self, result: SearchResult, query: str, context: Dict) -> float:
         """Calculate relevance score based on query matching."""
         if not query:
             return 0.5  # Default score when no query
@@ -215,19 +224,13 @@ class ResultRanker:
             desc_ratio = desc_matches / len(query_terms)
 
             score += title_ratio * 0.3  # Title matches weighted higher
-            score += desc_ratio * 0.1   # Description matches weighted lower
+            score += desc_ratio * 0.1  # Description matches weighted lower
 
         # Bonus for exact artist/song matching if available
-        if hasattr(result, 'parsed_artist') and hasattr(result, 'parsed_song'):
+        if hasattr(result, "parsed_artist") and hasattr(result, "parsed_song"):
             if result.parsed_artist and result.parsed_song:
-                artist_in_query = any(
-                    result.parsed_artist.lower() in term
-                    for term in query_terms
-                )
-                song_in_query = any(
-                    result.parsed_song.lower() in term
-                    for term in query_terms
-                )
+                artist_in_query = any(result.parsed_artist.lower() in term for term in query_terms)
+                song_in_query = any(result.parsed_song.lower() in term for term in query_terms)
                 if artist_in_query and song_in_query:
                     score += 0.2
 
@@ -375,17 +378,14 @@ class ResultRanker:
             score = score / max_score
 
         # Bonus for having parsed artist/song information
-        if hasattr(result, 'parsed_artist') and hasattr(result, 'parsed_song'):
+        if hasattr(result, "parsed_artist") and hasattr(result, "parsed_song"):
             if result.parsed_artist and result.parsed_song:
                 score += 0.2
 
         return min(1.0, score)
 
     def _apply_contextual_adjustments(
-        self,
-        base_score: float,
-        result: SearchResult,
-        context: Dict
+        self, base_score: float, result: SearchResult, context: Dict
     ) -> float:
         """Apply contextual bonuses and penalties."""
         adjusted_score = base_score
@@ -431,8 +431,9 @@ class ResultRanker:
             "term_matches": sum(1 for term in query_terms if term in result.title.lower()),
             "total_query_terms": len(query_terms),
             "match_ratio": (
-                sum(1 for term in query_terms if term in result.title.lower()) /
-                len(query_terms) if query_terms else 0
+                sum(1 for term in query_terms if term in result.title.lower()) / len(query_terms)
+                if query_terms
+                else 0
             ),
         }
 
@@ -443,8 +444,7 @@ class ResultRanker:
         found_indicators = {}
         for category, indicators in self.quality_indicators.items():
             found_indicators[category] = [
-                indicator for indicator in indicators.keys()
-                if indicator in text
+                indicator for indicator in indicators.keys() if indicator in text
             ]
 
         return {
@@ -478,11 +478,17 @@ class ResultRanker:
         """Classify channel type based on name patterns."""
         channel_lower = channel_name.lower()
 
-        if any(verified in channel_lower for verified in self.channel_reputation["verified_channels"]):
+        if any(
+            verified in channel_lower for verified in self.channel_reputation["verified_channels"]
+        ):
             return "verified_karaoke"
-        elif any(prof in channel_lower for prof in self.channel_reputation["professional_indicators"]):
+        elif any(
+            prof in channel_lower for prof in self.channel_reputation["professional_indicators"]
+        ):
             return "professional"
-        elif any(amateur in channel_lower for amateur in self.channel_reputation["amateur_indicators"]):
+        elif any(
+            amateur in channel_lower for amateur in self.channel_reputation["amateur_indicators"]
+        ):
             return "amateur"
         else:
             return "unknown"
@@ -519,6 +525,8 @@ class ResultRanker:
                 "metadata": self.weights.metadata,
             },
             "statistics": self.ranking_stats,
-            "quality_indicators_count": sum(len(indicators) for indicators in self.quality_indicators.values()),
+            "quality_indicators_count": sum(
+                len(indicators) for indicators in self.quality_indicators.values()
+            ),
             "channel_reputation_entries": len(self.channel_reputation["verified_channels"]),
         }
