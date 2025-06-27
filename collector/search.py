@@ -4,8 +4,26 @@ import logging
 import random
 import asyncio
 from typing import List, Dict, Optional
-import yt_dlp
-from tenacity import retry, stop_after_attempt, wait_exponential
+
+try:
+    import yt_dlp  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    yt_dlp = None
+
+try:
+    from tenacity import retry, stop_after_attempt, wait_exponential  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    def retry(*dargs, **dkwargs):
+        def _decorator(fn):
+            return fn
+
+        return _decorator
+
+    def stop_after_attempt(*args, **kwargs):
+        return None
+
+    def wait_exponential(*args, **kwargs):
+        return None
 
 from .config import SearchConfig, ScrapingConfig
 

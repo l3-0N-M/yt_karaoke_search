@@ -123,6 +123,8 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (3);
             cursor.execute("INSERT INTO schema_info (version) VALUES (1)")
             logger.info("Applied migration: Initial schema (v1)")
         
+        current_version = 1
+
         if current_version < 2:
             # Apply migration from file
             migration_002_path = self.migrations_dir / "002_updated_at_trigger.sql"
@@ -131,15 +133,25 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (3);
                     migration_sql = f.read()
                 cursor.executescript(migration_sql)
                 logger.info("Applied migration: Updated trigger (v2)")
+
+                current_version = 2
         
         if current_version < 3:
             # Apply migration from file
             migration_003_path = self.migrations_dir / "003_featured_artists_and_ratios.sql"
             if migration_003_path.exists():
-                with open(migration_003_path, 'r') as f:
-                    migration_sql = f.read()
-                cursor.executescript(migration_sql)
-                logger.info("Applied migration: Featured artists and ratios (v3)")
+                # Skip if columns already exist
+                cursor.execute("PRAGMA table_info(videos)")
+                existing_cols = {row[1] for row in cursor.fetchall()}
+                if 'featured_artists' not in existing_cols:
+                    with open(migration_003_path, 'r') as f:
+                        migration_sql = f.read()
+                    cursor.executescript(migration_sql)
+                    logger.info("Applied migration: Featured artists and ratios (v3)")
+                else:
+                    cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (3)")
+                    logger.info("Skipped migration 003; columns already present")
+                current_version = 3
     
     def _create_initial_schema(self, cursor: sqlite3.Cursor):
         """Create the initial database schema."""

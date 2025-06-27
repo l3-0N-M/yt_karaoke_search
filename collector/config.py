@@ -3,7 +3,11 @@
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 from pydantic import BaseModel, Field, validator
-import yaml
+
+try:
+    import yaml  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    import json as yaml  # type: ignore
 
 class DatabaseConfig(BaseModel):
     """Database configuration with backup settings."""

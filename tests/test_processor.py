@@ -1,8 +1,11 @@
 """Unit tests for video processing functionality."""
 
 import pytest
-from collector.processor import VideoProcessor
+from pathlib import Path
+import sqlite3
+from collector.processor import VideoProcessor, ProcessingResult
 from collector.config import CollectorConfig
+from collector.db import DatabaseManager, DatabaseConfig
 
 def test_extract_karaoke_features():
     """Test karaoke feature extraction with confidence scoring."""
@@ -47,7 +50,6 @@ def test_extract_featured_artists():
 def test_like_dislike_ratio_calculation():
     """Test like/dislike ratio calculation during save."""
     import tempfile
-    from collector.processor import ProcessingResult
     
     db_path = Path(tempfile.gettempdir()) / "test_ratio.db"
     

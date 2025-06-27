@@ -7,9 +7,47 @@ import logging
 import asyncio
 from typing import Dict, List, Optional
 from dataclasses import dataclass
-import yt_dlp
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+
+try:
+    import yt_dlp  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    yt_dlp = None
+
+try:  # Optional dependency for tests without network modules
+    import httpx  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    class _DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def get(self, *args, **kwargs):  # pragma: no cover - network disabled
+            raise RuntimeError("httpx not available")
+
+        async def aclose(self):  # pragma: no cover - network disabled
+            pass
+
+    class _DummyLimits:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class httpx:
+        AsyncClient = _DummyAsyncClient
+        Limits = _DummyLimits
+
+try:
+    from tenacity import retry, stop_after_attempt, wait_exponential  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    def retry(*dargs, **dkwargs):
+        def _decorator(fn):
+            return fn
+
+        return _decorator
+
+    def stop_after_attempt(*args, **kwargs):
+        return None
+
+    def wait_exponential(*args, **kwargs):
+        return None
 
 from .config import CollectorConfig
 
@@ -285,10 +323,13 @@ class VideoProcessor:
         for pattern in patterns:
             matches = re.findall(pattern, combined_text, re.IGNORECASE)
             for match in matches:
-                # Clean up the match
-                artist = re.sub(r'[^\w\s]', '', match.strip()).strip()
-                if artist and len(artist) > 2 and len(artist) < 50:
-                    featured.append(artist.title())
+                # Clean up the match and handle multiple artists
+                cleaned = re.sub(r'[^\w\s,&]', '', match.strip())
+                parts = re.split(r'\s*&\s*|\s+and\s+|,\s*', cleaned)
+                for part in parts:
+                    artist = part.strip()
+                    if artist and 2 < len(artist) < 50:
+                        featured.append(artist.title())
         
         # Remove duplicates while preserving order
         unique_featured = []
