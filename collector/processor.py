@@ -297,10 +297,11 @@ class VideoProcessor:
         return min(sum(confidence_factors), 1.0)
 
     async def _get_music_metadata(self, artist: str, song: str) -> Dict:
-        """Get release year from MusicBrainz API with rate limiting."""
+        """Get comprehensive music metadata from MusicBrainz API with rate limiting."""
         try:
             if not self.http_client:
-                return {"release_year_confidence": 0.0}
+                return {"musicbrainz_confidence": 0.0}
+            
             # Enforce MusicBrainz rate limiting (1 request per second)
             current_time = time.time()
             time_since_last = current_time - self._musicbrainz_last_request
@@ -310,10 +311,11 @@ class VideoProcessor:
 
             self._musicbrainz_last_request = time.time()
 
-            # Simple MusicBrainz search
+            # Enhanced MusicBrainz search with comprehensive data inclusion
             raw_query = f"artist:{artist} AND recording:{song}"
             query = quote_plus(raw_query)
-            url = f"https://musicbrainz.org/ws/2/recording/?query={query}&limit=1&fmt=json"
+            # Include artist-credits, releases, tags, and genres
+            url = f"https://musicbrainz.org/ws/2/recording/?query={query}&limit=3&fmt=json&inc=artist-credits+releases+tags+genres"
 
             headers = {
                 "User-Agent": self.config.data_sources.musicbrainz_user_agent,
@@ -329,19 +331,249 @@ class VideoProcessor:
                 recordings = data.get("recordings", [])
 
                 if recordings:
-                    recording = recordings[0]
-                    releases = recording.get("releases", [])
-
-                    if releases:
-                        # Get earliest release date
-                        release_date = releases[0].get("date")
-                        if release_date and len(release_date) >= 4:
-                            year = int(release_date[:4])
-                            return {"estimated_release_year": year, "release_year_confidence": 0.8}
+                    # Process the best matching recording
+                    best_recording = self._select_best_recording(recordings, artist, song)
+                    if best_recording:
+                        return self._extract_recording_metadata(best_recording, artist, song)
+                        
         except Exception as e:
             logger.debug(f"MusicBrainz lookup failed for {artist} - {song}: {e}")
 
-        return {"release_year_confidence": 0.0}
+        return {"musicbrainz_confidence": 0.0}
+
+    def _select_best_recording(self, recordings: List[Dict], target_artist: str, target_song: str) -> Optional[Dict]:
+        """Select the best matching recording from MusicBrainz results."""
+        if not recordings:
+            return None
+            
+        best_recording = None
+        best_score = 0
+        
+        for recording in recordings:
+            score = 0
+            
+            # Score based on artist name similarity
+            artist_credits = recording.get("artist-credit", [])
+            if artist_credits:
+                recording_artist = artist_credits[0].get("name", "").lower()
+                if target_artist.lower() in recording_artist or recording_artist in target_artist.lower():
+                    score += 50
+                elif self._fuzzy_match(target_artist.lower(), recording_artist):
+                    score += 30
+            
+            # Score based on song title similarity
+            recording_title = recording.get("title", "").lower()
+            if target_song.lower() in recording_title or recording_title in target_song.lower():
+                score += 50
+            elif self._fuzzy_match(target_song.lower(), recording_title):
+                score += 30
+            
+            # Prefer recordings with more releases (indicates popularity)
+            releases = recording.get("releases", [])
+            score += min(len(releases), 10)  # Cap at 10 bonus points
+            
+            # Prefer recordings with tags/genres
+            if recording.get("tags") or recording.get("genres"):
+                score += 5
+                
+            if score > best_score:
+                best_score = score
+                best_recording = recording
+                
+        return best_recording if best_score > 30 else None  # Minimum threshold
+
+    def _fuzzy_match(self, str1: str, str2: str) -> bool:
+        """Simple fuzzy string matching."""
+        # Remove common words and punctuation
+        stop_words = {"the", "a", "an", "and", "or", "but", "feat", "ft"}
+        
+        def clean_string(s):
+            import re
+            s = re.sub(r'[^\w\s]', '', s.lower())
+            words = [w for w in s.split() if w not in stop_words]
+            return ' '.join(words)
+        
+        clean1 = clean_string(str1)
+        clean2 = clean_string(str2)
+        
+        # Check if 70% of words match
+        words1 = set(clean1.split())
+        words2 = set(clean2.split())
+        
+        if not words1 or not words2:
+            return False
+            
+        intersection = words1 & words2
+        union = words1 | words2
+        
+        return len(intersection) / len(union) >= 0.7
+
+    def _extract_recording_metadata(self, recording: Dict, target_artist: str, target_song: str) -> Dict:
+        """Extract comprehensive metadata from a MusicBrainz recording."""
+        metadata = {}
+        
+        # Extract MusicBrainz IDs
+        metadata["musicbrainz_recording_id"] = recording.get("id")
+        
+        # Extract artist information
+        artist_credits = recording.get("artist-credit", [])
+        if artist_credits:
+            metadata["musicbrainz_artist_id"] = artist_credits[0].get("artist", {}).get("id")
+        
+        # Extract release information and year
+        releases = recording.get("releases", [])
+        if releases:
+            # Find earliest release date
+            earliest_year = None
+            record_labels = set()
+            
+            for release in releases:
+                # Extract release date
+                date = release.get("date")
+                if date and len(date) >= 4:
+                    try:
+                        year = int(date[:4])
+                        if earliest_year is None or year < earliest_year:
+                            earliest_year = year
+                    except ValueError:
+                        pass
+                
+                # Extract record labels
+                label_info = release.get("label-info", [])
+                for label in label_info:
+                    label_name = label.get("label", {}).get("name")
+                    if label_name:
+                        record_labels.add(label_name)
+            
+            if earliest_year:
+                metadata["estimated_release_year"] = earliest_year
+            
+            if record_labels:
+                metadata["record_label"] = ", ".join(sorted(record_labels)[:3])  # Limit to top 3
+        
+        # Extract recording length
+        length_ms = recording.get("length")
+        if length_ms:
+            metadata["recording_length_ms"] = length_ms
+        
+        # Extract and classify genres/tags
+        genre_info = self._extract_and_classify_genres(recording)
+        metadata.update(genre_info)
+        
+        # Calculate confidence score
+        metadata["musicbrainz_confidence"] = self._calculate_musicbrainz_confidence(
+            recording, target_artist, target_song, metadata
+        )
+        
+        return metadata
+
+    def _extract_and_classify_genres(self, recording: Dict) -> Dict:
+        """Extract and classify genres from MusicBrainz tags and genres."""
+        all_tags = []
+        
+        # Extract genres (newer MusicBrainz field)
+        genres = recording.get("genres", [])
+        for genre in genres:
+            tag_name = genre.get("name", "").lower()
+            if tag_name:
+                all_tags.append(tag_name)
+        
+        # Extract tags (older but more comprehensive field)
+        tags = recording.get("tags", [])
+        for tag in tags:
+            tag_name = tag.get("name", "").lower()
+            count = tag.get("count", 0)
+            if tag_name and count > 0:  # Only include tags with positive count
+                all_tags.append(tag_name)
+        
+        # Classify into primary genre
+        primary_genre = self._classify_primary_genre(all_tags)
+        
+        # Store all tags as JSON string for future analysis
+        import json
+        tags_json = json.dumps(all_tags[:20])  # Limit to top 20 tags
+        
+        return {
+            "musicbrainz_genre": primary_genre,
+            "musicbrainz_tags": tags_json
+        }
+
+    def _classify_primary_genre(self, tags: List[str]) -> Optional[str]:
+        """Classify tags into primary genre categories."""
+        genre_mapping = {
+            # Rock and derivatives
+            "rock": ["rock", "hard rock", "soft rock", "classic rock", "alternative rock", "indie rock"],
+            "pop": ["pop", "pop rock", "dance-pop", "electropop", "teen pop", "synth-pop"],
+            "jazz": ["jazz", "smooth jazz", "bebop", "swing", "fusion", "big band"],
+            "classical": ["classical", "orchestral", "opera", "symphony", "chamber music", "baroque"],
+            "blues": ["blues", "electric blues", "chicago blues", "delta blues", "rhythm and blues"],
+            "country": ["country", "bluegrass", "americana", "folk country", "country rock"],
+            "folk": ["folk", "folk rock", "traditional folk", "contemporary folk", "acoustic"],
+            "electronic": ["electronic", "techno", "house", "ambient", "drum and bass", "dubstep"],
+            "hip-hop": ["hip hop", "rap", "hip-hop", "gangsta rap", "conscious hip hop"],
+            "r&b": ["r&b", "rhythm and blues", "contemporary r&b", "neo soul"],
+            "soul": ["soul", "northern soul", "southern soul", "motown"],
+            "reggae": ["reggae", "ska", "dub", "dancehall"],
+            "metal": ["metal", "heavy metal", "death metal", "black metal", "thrash metal"],
+            "punk": ["punk", "punk rock", "hardcore punk", "pop punk"],
+            "funk": ["funk", "p-funk", "funk rock"],
+            "gospel": ["gospel", "contemporary gospel", "traditional gospel"],
+            "world": ["world music", "ethnic", "traditional", "regional"]
+        }
+        
+        # Count matches for each genre category
+        genre_scores = {}
+        for tag in tags:
+            for genre, keywords in genre_mapping.items():
+                for keyword in keywords:
+                    if keyword in tag:
+                        genre_scores[genre] = genre_scores.get(genre, 0) + 1
+                        break
+        
+        # Return the genre with highest score
+        if genre_scores:
+            return max(genre_scores.items(), key=lambda x: x[1])[0].title()
+        
+        return None
+
+    def _calculate_musicbrainz_confidence(self, recording: Dict, target_artist: str, target_song: str, metadata: Dict) -> float:
+        """Calculate confidence score for MusicBrainz match."""
+        confidence = 0.0
+        
+        # Base confidence for having a match
+        confidence += 0.3
+        
+        # Artist name match quality
+        artist_credits = recording.get("artist-credit", [])
+        if artist_credits:
+            recording_artist = artist_credits[0].get("name", "").lower()
+            if target_artist.lower() == recording_artist:
+                confidence += 0.3
+            elif target_artist.lower() in recording_artist or recording_artist in target_artist.lower():
+                confidence += 0.2
+            elif self._fuzzy_match(target_artist.lower(), recording_artist):
+                confidence += 0.1
+        
+        # Song title match quality
+        recording_title = recording.get("title", "").lower()
+        if target_song.lower() == recording_title:
+            confidence += 0.3
+        elif target_song.lower() in recording_title or recording_title in target_song.lower():
+            confidence += 0.2
+        elif self._fuzzy_match(target_song.lower(), recording_title):
+            confidence += 0.1
+        
+        # Bonus for rich metadata
+        if metadata.get("estimated_release_year"):
+            confidence += 0.05
+        if metadata.get("musicbrainz_genre"):
+            confidence += 0.05
+        if metadata.get("record_label"):
+            confidence += 0.05
+        if recording.get("releases") and len(recording["releases"]) > 1:
+            confidence += 0.05
+        
+        return min(confidence, 1.0)
 
     def _extract_karaoke_features(self, video_data: Dict) -> Dict:
         """Extract karaoke-specific features with confidence scoring."""

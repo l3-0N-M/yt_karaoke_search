@@ -246,6 +246,27 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
                     cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (5)")
                 current_version = 5
 
+        if current_version < 6:
+            # Apply enhanced MusicBrainz metadata migration
+            migration_006_path = self.migrations_dir / "006_enhanced_musicbrainz.sql"
+            if migration_006_path.exists():
+                # Check if new columns already exist
+                cursor.execute("PRAGMA table_info(videos)")
+                existing_cols = {row[1] for row in cursor.fetchall()}
+                if "musicbrainz_recording_id" not in existing_cols:
+                    try:
+                        with open(migration_006_path, "r") as f:
+                            migration_sql = f.read()
+                        cursor.executescript(migration_sql)
+                        logger.info("Applied migration: Enhanced MusicBrainz metadata (v6)")
+                    except Exception as e:
+                        logger.warning(f"Failed to apply migration 006: {e}")
+                        cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (6)")
+                else:
+                    cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (6)")
+                    logger.info("Skipped migration 006; MusicBrainz columns already present")
+                current_version = 6
+
     def _create_initial_schema(self, cursor: sqlite3.Cursor):
         """Create the initial database schema."""
 
@@ -270,6 +291,13 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
                 featured_artists TEXT,
                 song_title TEXT,
                 estimated_release_year INTEGER,
+                musicbrainz_recording_id TEXT,
+                musicbrainz_artist_id TEXT,
+                musicbrainz_genre TEXT,
+                musicbrainz_tags TEXT,
+                musicbrainz_confidence REAL,
+                record_label TEXT,
+                recording_length_ms INTEGER,
                 genre TEXT,
                 language TEXT,
                 like_dislike_to_views_ratio REAL,
@@ -528,8 +556,11 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
                             view_count, like_count, comment_count, upload_date,
                             thumbnail_url, channel_name, channel_id, original_artist,
                             featured_artists, song_title, estimated_release_year,
-                            genre, like_dislike_to_views_ratio
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            genre, language, like_dislike_to_views_ratio,
+                            musicbrainz_recording_id, musicbrainz_artist_id, musicbrainz_genre,
+                            musicbrainz_tags, musicbrainz_confidence, record_label,
+                            recording_length_ms
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         (
                             video_data.get("video_id"),
@@ -549,7 +580,15 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (4);
                             features.get("song_title"),
                             video_data.get("estimated_release_year"),
                             features.get("genre"),
+                            video_data.get("language"),
                             like_dislike_ratio,
+                            video_data.get("musicbrainz_recording_id"),
+                            video_data.get("musicbrainz_artist_id"),
+                            video_data.get("musicbrainz_genre"),
+                            video_data.get("musicbrainz_tags"),
+                            video_data.get("musicbrainz_confidence"),
+                            video_data.get("record_label"),
+                            video_data.get("recording_length_ms"),
                         ),
                     )
 
