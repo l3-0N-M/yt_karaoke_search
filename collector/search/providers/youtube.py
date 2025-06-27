@@ -46,6 +46,10 @@ class YouTubeSearchProvider(SearchProvider):
         self.yt_dlp_opts = self._setup_yt_dlp()
 
         # Rate limiting to prevent API blocking
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
         self._request_semaphore = asyncio.Semaphore(2)
         self._last_request_time = 0
         self._min_request_interval = 2.0
