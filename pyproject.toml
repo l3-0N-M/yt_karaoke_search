@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,6 +9,7 @@ description = "Comprehensive tool for collecting karaoke video data from YouTube
 readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
+include-package-data = true
 authors = [
     {name = "Karaoke Collector Team"},
 ]
@@ -52,6 +53,9 @@ ignore = ["E501"]  # Line too long (handled by black)
 [tool.black]
 line-length = 100
 target-version = ["py38"]
+
+[tool.setuptools.package-data]
+collector = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
