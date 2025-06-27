@@ -210,3 +210,19 @@ def test_collect_from_channel_multi_strategy(monkeypatch):
     assert search.after_date == "2024-01-01"
     assert db.last_processed_called
     assert db.updated
+
+
+class DummyCleanupDB(DummyDB):
+    def get_recent_video_ids(self, days=7):
+        return {"old", "new"}
+
+
+def test_cleanup_memory_cache_keeps_recent_ids(monkeypatch):
+    config = CollectorConfig()
+    db = DummyCleanupDB()
+    monkeypatch.setattr(main, "DatabaseManager", lambda cfg: db)
+    collector = main.KaraokeCollector(config)
+    collector.processed_video_ids = {"new"}
+    asyncio.run(collector._cleanup_memory_cache(force=True))
+
+    assert collector.processed_video_ids == {"old", "new"}

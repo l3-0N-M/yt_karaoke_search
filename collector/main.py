@@ -112,16 +112,16 @@ class KaraokeCollector:
 
         try:
             # Perform cleanup - keep recent IDs
-            if current_size > self._memory_cache_limit:
+            if current_size > self._memory_cache_limit or force:
                 # Get recent video IDs from database (outside lock)
                 recent_ids = self.db_manager.get_recent_video_ids(days=7)
 
                 # Update cache atomically
                 async with self._processed_ids_lock:
                     old_size = len(self.processed_video_ids)
-                    # Keep recent database IDs plus any new ones added during cleanup
+                    # Keep recent database IDs and retain any previously processed IDs
                     self.processed_video_ids = recent_ids.union(
-                        self.processed_video_ids.intersection(recent_ids)
+                        self.processed_video_ids
                     )
                     # Enforce hard limit
                     if len(self.processed_video_ids) > self._memory_cache_limit:
