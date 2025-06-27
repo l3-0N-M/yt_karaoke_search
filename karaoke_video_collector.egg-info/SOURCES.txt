@@ -23,6 +23,7 @@ tests/test_cli.py
 tests/test_config.py
 tests/test_db.py
 tests/test_editable_install.py
+tests/test_fuzzy_matcher.py
 tests/test_main.py
 tests/test_processor.py
 tests/test_search.py
