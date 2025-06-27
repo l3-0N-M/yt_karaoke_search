@@ -6,6 +6,7 @@ import pytest
 import collector.main as main
 from collector.config import CollectorConfig
 from collector.processor import ProcessingResult
+from collector.search.providers.base import SearchResult
 
 
 class DummySearch:
@@ -71,6 +72,22 @@ class DummyChannelSearch:
     async def extract_channel_videos(self, url, max_videos=None, after_date=None):
         self.after_date = after_date
         return self.videos
+
+
+class DummyMultiChannelSearch:
+    def __init__(self):
+        self.results = [
+            SearchResult(video_id="c1", url="cu1", title="ct1", channel="ch", channel_id="cid"),
+            SearchResult(video_id="c2", url="cu2", title="ct2", channel="ch", channel_id="cid"),
+        ]
+        self.after_date = None
+
+    async def extract_channel_info(self, url):
+        return {"channel_id": "cid", "channel_name": "Test", "channel_url": url}
+
+    async def extract_channel_videos(self, url, max_videos=None, after_date=None):
+        self.after_date = after_date
+        return self.results
 
 
 class DummyChannelDB(DummyDB):
@@ -150,4 +167,46 @@ def test_collect_from_channel_batch(monkeypatch, incremental):
     else:
         assert search.after_date is None
         assert not db.last_processed_called
+    assert db.updated
+
+
+def test_collect_from_channel_multi_strategy(monkeypatch):
+    config = CollectorConfig()
+    config.search.use_multi_strategy = True
+    db = DummyChannelDB()
+    db.last_processed = "2024-01-01"
+    monkeypatch.setattr(main, "DatabaseManager", lambda cfg: db)
+    collector = main.KaraokeCollector(config)
+    search = DummyMultiChannelSearch()
+    collector.search_engine = cast(main.MultiStrategySearchEngine, search)
+
+    async def fake_process(url):
+        return ProcessingResult(
+            video_data={"video_id": url, "url": url, "title": "x", "features": {}, "view_count": 0},
+            confidence_score=1.0,
+            processing_time=0,
+            errors=[],
+            warnings=[],
+        )
+
+    collector.video_processor.process_video = fake_process
+
+    captured = {}
+
+    async def fake_batch(rows):
+        captured["rows"] = rows
+        for r in rows:
+            await collector.video_processor.process_video(r["url"])
+        return len(rows)
+
+    monkeypatch.setattr(collector, "_process_video_batch", fake_batch)
+
+    count = asyncio.run(
+        collector.collect_from_channel("http://channel", max_videos=2, incremental=True)
+    )
+
+    assert count == 2
+    assert isinstance(captured["rows"][0], dict)
+    assert search.after_date == "2024-01-01"
+    assert db.last_processed_called
     assert db.updated
