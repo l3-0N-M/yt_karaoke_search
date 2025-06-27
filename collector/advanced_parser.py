@@ -291,7 +291,7 @@ class AdvancedTitleParser:
 
         return best_result
 
-    def _advanced_clean_title(self, title: str) -> str:
+    def _advanced_clean_title(self, title: str) -> str:  # TODO: remove duplicate code
         """Advanced title cleaning with Unicode normalization."""
 
         # Unicode normalization
@@ -657,7 +657,7 @@ class AdvancedTitleParser:
             if result.song_title:
                 self.known_songs.add(result.song_title)
 
-    def _clean_extracted_text(self, text: str) -> str:
+    def _clean_extracted_text(self, text: str) -> str:  # TODO: remove duplicate code
         """Clean extracted text with advanced techniques."""
 
         if not text:
@@ -691,7 +691,7 @@ class AdvancedTitleParser:
 
         return cleaned
 
-    def _is_valid_artist_name(self, artist: str) -> bool:
+    def _is_valid_artist_name(self, artist: str) -> bool:  # TODO: remove duplicate code
         """Enhanced artist name validation."""
 
         if not artist or len(artist.strip()) < 1:
@@ -719,7 +719,7 @@ class AdvancedTitleParser:
 
         return True
 
-    def _is_valid_song_title(self, title: str) -> bool:
+    def _is_valid_song_title(self, title: str) -> bool:  # TODO: remove duplicate code
         """Enhanced song title validation."""
 
         if not title or len(title.strip()) < 1:
