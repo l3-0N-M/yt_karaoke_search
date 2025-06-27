@@ -20,7 +20,9 @@ def test_trigger_migration(tmp_path):
 
     with sqlite3.connect(db_path) as con:
         # Insert a test video
-        con.execute("INSERT INTO videos(video_id,url,title) VALUES('test123','https://example.com','Test Video')")
+        con.execute(
+            "INSERT INTO videos(video_id,url,title) VALUES('test123','https://example.com','Test Video')"
+        )
         before = con.execute("SELECT updated_at FROM videos WHERE video_id='test123'").fetchone()[0]
 
         # Wait a moment to ensure timestamp difference
@@ -33,9 +35,11 @@ def test_trigger_migration(tmp_path):
     # Verify the trigger fired and updated the timestamp
     assert before != after, "updated_at should change when other columns are modified"
 
+
 def test_database_schema_version():
     """Test that database initializes with correct schema version."""
     import tempfile
+
     db_path = Path(tempfile.gettempdir()) / "test_schema.db"
 
     try:
@@ -47,15 +51,19 @@ def test_database_schema_version():
         )
 
         with sqlite3.connect(db_path) as con:
-            version = con.execute("SELECT version FROM schema_info ORDER BY version DESC LIMIT 1").fetchone()[0]
+            version = con.execute(
+                "SELECT version FROM schema_info ORDER BY version DESC LIMIT 1"
+            ).fetchone()[0]
             assert version == 3, f"Expected schema version 3, got {version}"
     finally:
         if db_path.exists():
             db_path.unlink()
 
+
 def test_new_columns_exist():
     """Test that new columns exist in schema."""
     import tempfile
+
     db_path = Path(tempfile.gettempdir()) / "test_new_columns.db"
 
     try:
@@ -71,7 +79,7 @@ def test_new_columns_exist():
             cursor = con.execute("PRAGMA table_info(videos)")
             columns = [row[1] for row in cursor.fetchall()]
 
-            expected_new_columns = ['featured_artists', 'like_dislike_to_views_ratio']
+            expected_new_columns = ["featured_artists", "like_dislike_to_views_ratio"]
 
             for col in expected_new_columns:
                 assert col in columns, f"Missing new column: {col}"
@@ -79,9 +87,11 @@ def test_new_columns_exist():
         if db_path.exists():
             db_path.unlink()
 
+
 def test_feature_confidence_columns():
     """Test that feature confidence columns exist in schema."""
     import tempfile
+
     db_path = Path(tempfile.gettempdir()) / "test_features.db"
 
     try:
@@ -98,12 +108,12 @@ def test_feature_confidence_columns():
             columns = [row[1] for row in cursor.fetchall()]
 
             expected_confidence_columns = [
-                'has_guide_vocals_confidence',
-                'has_scrolling_lyrics_confidence',
-                'has_backing_vocals_confidence',
-                'is_instrumental_only_confidence',
-                'is_piano_only_confidence',
-                'is_acoustic_confidence'
+                "has_guide_vocals_confidence",
+                "has_scrolling_lyrics_confidence",
+                "has_backing_vocals_confidence",
+                "is_instrumental_only_confidence",
+                "is_piano_only_confidence",
+                "is_acoustic_confidence",
             ]
 
             for col in expected_confidence_columns:
