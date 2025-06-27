@@ -114,7 +114,7 @@ processed = await collector.collect_from_channel(channel_url, max_videos=5000)
 
 # Collect from multiple channels
 channel_urls = ["https://www.youtube.com/@Channel1", "https://www.youtube.com/@Channel2"]
-total = await collector.collect_from_channels(channel_urls, max_videos=10000)
+total = await collector.collect_from_channels(channel_urls, max_videos_per_channel=10000)
 
 # Get statistics
 stats = await collector.get_statistics()
