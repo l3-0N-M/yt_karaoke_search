@@ -82,7 +82,9 @@ async def _collect_channels_async(
 ) -> None:
     """Helper to collect from multiple channels and print statistics."""
     try:
-        total_processed = await collector.collect_from_channels(channel_urls, max_videos_per_channel)
+        total_processed = await collector.collect_from_channels(
+            channel_urls, max_videos_per_channel
+        )
         stats = await collector.get_channel_statistics()
 
         print("\n" + "=" * 50)

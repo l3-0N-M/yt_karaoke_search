@@ -1,7 +1,7 @@
 """Unit tests for database functionality."""
 
-import sqlite3
 import logging
+import sqlite3
 import time
 from pathlib import Path
 
@@ -66,9 +66,7 @@ def test_channel_indexes_created(tmp_path, caplog):
     db_path = tmp_path / "channels.db"
 
     with caplog.at_level(logging.WARNING, logger="collector.db"):
-        DatabaseManager(
-            DatabaseConfig(path=str(db_path), backup_enabled=False)
-        )
+        DatabaseManager(DatabaseConfig(path=str(db_path), backup_enabled=False))
 
     warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
     assert not warnings, f"Unexpected warnings: {[w.message for w in warnings]}"
