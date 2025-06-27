@@ -103,6 +103,124 @@ def collect(config, queries, max_per_query, output_db, verbose, dry_run):
 
 
 @cli.command()
+@click.argument("channel_url")
+@click.option("--config", "-c", type=click.Path(exists=True), help="Path to configuration file")
+@click.option("--max-videos", "-m", type=int, help="Maximum videos to process from channel")
+@click.option("--no-incremental", is_flag=True, help="Process all videos, not just new ones")
+@click.option("--log-level", default="INFO", help="Logging level")
+def collect_channel(channel_url, config, max_videos, no_incremental, log_level):
+    """Collect karaoke videos from a specific YouTube channel."""
+    setup_logging(getattr(logging, log_level.upper()))
+
+    if config:
+        collector_config = load_config(config)
+    else:
+        collector_config = CollectorConfig()
+
+    collector = KaraokeCollector(collector_config)
+
+    try:
+        print(f"Starting channel collection from: {channel_url}")
+        if max_videos:
+            print(f"Maximum videos to process: {max_videos}")
+
+        incremental = not no_incremental
+        if incremental:
+            print("Using incremental mode (only new videos)")
+        else:
+            print("Processing all videos in channel")
+
+        total_processed = asyncio.run(
+            collector.collect_from_channel(channel_url, max_videos, incremental)
+        )
+
+        # Show results
+        stats = asyncio.run(collector.get_channel_statistics())
+        print("\n" + "=" * 50)
+        print("CHANNEL COLLECTION RESULTS")
+        print("=" * 50)
+        print(f"Videos processed: {total_processed}")
+        print(f"Total channels in database: {stats.get('total_channels', 0)}")
+        print(f"Total videos from channels: {stats.get('total_videos_from_channels', 0):,}")
+
+        # Show channel details
+        for channel in stats.get("channels", []):
+            if channel_url in channel.get("channel_url", ""):
+                print(f"\nChannel: {channel['channel_name']}")
+                print(f"  Videos collected: {channel['collected_videos']}")
+                print(f"  Karaoke focused: {'Yes' if channel['is_karaoke_focused'] else 'No'}")
+                if channel["last_processed_at"]:
+                    print(f"  Last processed: {channel['last_processed_at']}")
+                break
+
+    except KeyboardInterrupt:
+        logging.info("Channel collection interrupted by user")
+    except Exception as e:
+        logging.error(f"Channel collection failed: {e}")
+        sys.exit(1)
+    finally:
+        asyncio.run(collector.cleanup())
+
+
+@cli.command()
+@click.argument("channels_file", type=click.Path(exists=True))
+@click.option("--config", "-c", type=click.Path(exists=True), help="Path to configuration file")
+@click.option("--max-videos", "-m", type=int, help="Maximum videos per channel")
+@click.option("--log-level", default="INFO", help="Logging level")
+def collect_channels(channels_file, config, max_videos, log_level):
+    """Collect karaoke videos from multiple channels (one URL per line in file)."""
+    setup_logging(getattr(logging, log_level.upper()))
+
+    if config:
+        collector_config = load_config(config)
+    else:
+        collector_config = CollectorConfig()
+
+    # Read channel URLs from file
+    try:
+        with open(channels_file, "r") as f:
+            channel_urls = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+    except Exception as e:
+        print(f"Error reading channels file: {e}")
+        sys.exit(1)
+
+    if not channel_urls:
+        print("No channel URLs found in file")
+        sys.exit(1)
+
+    collector = KaraokeCollector(collector_config)
+
+    try:
+        print(f"Starting collection from {len(channel_urls)} channels")
+        if max_videos:
+            print(f"Maximum videos per channel: {max_videos}")
+
+        total_processed = asyncio.run(collector.collect_from_channels(channel_urls, max_videos))
+
+        # Show results
+        stats = asyncio.run(collector.get_channel_statistics())
+        print("\n" + "=" * 50)
+        print("MULTI-CHANNEL COLLECTION RESULTS")
+        print("=" * 50)
+        print(f"Total videos processed: {total_processed}")
+        print(f"Channels processed: {len(channel_urls)}")
+        print(f"Total channels in database: {stats.get('total_channels', 0)}")
+        print(f"Total videos from channels: {stats.get('total_videos_from_channels', 0):,}")
+
+        print("\nChannels breakdown:")
+        for channel in stats.get("channels", [])[:10]:  # Show top 10
+            print(f"  {channel['channel_name']}: {channel['collected_videos']} videos")
+
+    except KeyboardInterrupt:
+        logging.info("Multi-channel collection interrupted by user")
+    except Exception as e:
+        logging.error(f"Multi-channel collection failed: {e}")
+        sys.exit(1)
+    finally:
+        asyncio.run(collector.cleanup())
+
+
+@cli.command()
 @click.option("--output", "-o", default="config_template.yaml", help="Output path for template")
 def create_config(output):
     """Create a configuration file template."""

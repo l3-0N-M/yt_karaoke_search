@@ -3,7 +3,8 @@
 import asyncio
 import logging
 import random
-from typing import Dict, List
+import time
+from typing import Dict, List, Optional
 
 try:
     import yt_dlp  # type: ignore
@@ -40,6 +41,15 @@ class SearchEngine:
         self.scraping_config = scraping_config
         self.yt_dlp_opts = self._setup_yt_dlp()
 
+        # Rate limiting to prevent API blocking
+        self._request_semaphore = asyncio.Semaphore(2)  # Max 2 concurrent requests
+        self._last_request_time = 0
+        self._min_request_interval = 1.0  # 1 second between requests
+        self._request_count = 0
+        self._rate_limit_window_start = time.time()
+        self._max_requests_per_hour = 3600  # Conservative limit
+        self._backoff_factor = 1.0
+
     def _setup_yt_dlp(self) -> Dict:
         """Called once; we'll still override UA right before each query."""
         return {
@@ -50,6 +60,52 @@ class SearchEngine:
             "socket_timeout": self.scraping_config.timeout_seconds,
         }
 
+    async def _rate_limited_request(self, request_func, *args, **kwargs):
+        """Apply rate limiting to prevent YouTube API blocking."""
+        async with self._request_semaphore:
+            current_time = time.time()
+
+            # Check hourly rate limit
+            if current_time - self._rate_limit_window_start > 3600:
+                # Reset hourly counter
+                self._request_count = 0
+                self._rate_limit_window_start = current_time
+                self._backoff_factor = 1.0  # Reset backoff
+
+            if self._request_count >= self._max_requests_per_hour:
+                wait_time = 3600 - (current_time - self._rate_limit_window_start)
+                logger.warning(f"Rate limit reached, waiting {wait_time:.1f} seconds")
+                await asyncio.sleep(wait_time)
+                self._request_count = 0
+                self._rate_limit_window_start = time.time()
+
+            # Apply minimum interval between requests with exponential backoff
+            elapsed = current_time - self._last_request_time
+            required_interval = self._min_request_interval * self._backoff_factor
+
+            if elapsed < required_interval:
+                sleep_time = required_interval - elapsed
+                logger.debug(f"Rate limiting: sleeping {sleep_time:.2f} seconds")
+                await asyncio.sleep(sleep_time)
+
+            try:
+                # Execute the request
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, request_func, *args, **kwargs)
+
+                # Success: reduce backoff factor
+                self._backoff_factor = max(1.0, self._backoff_factor * 0.9)
+                self._request_count += 1
+                self._last_request_time = time.time()
+
+                return result
+
+            except Exception as e:
+                # Failure: increase backoff factor
+                self._backoff_factor = min(10.0, self._backoff_factor * 1.5)
+                logger.warning(f"Request failed, increasing backoff to {self._backoff_factor:.2f}x: {e}")
+                raise
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def search_videos(self, query: str, max_results: int = 100) -> List[Dict]:
         """Search for videos using yt-dlp with error handling."""
@@ -59,8 +115,8 @@ class SearchEngine:
             # Pick a fresh UA for each call
             self.yt_dlp_opts["user_agent"] = random.choice(self.scraping_config.user_agents)
 
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, self._execute_search, search_query)
+            # Use rate-limited request
+            result = await self._rate_limited_request(self._execute_search, search_query)
             videos = self._process_search_results(result, query)
             logger.info(f"Found {len(videos)} videos for query: '{query}'")
             return videos
@@ -160,6 +216,177 @@ class SearchEngine:
             "professional": 0.2,
             "with lyrics": 0.3,
             "guide vocals": 0.2,
+        }
+
+        for indicator, weight in quality_indicators.items():
+            if indicator in title_lower:
+                score += weight
+
+        return min(score, 2.0)
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    async def extract_channel_info(self, channel_url: str) -> Dict:
+        """Extract channel information and metadata."""
+        try:
+            self.yt_dlp_opts["user_agent"] = random.choice(self.scraping_config.user_agents)
+
+            # Use rate-limited request for channel extraction
+            result = await self._rate_limited_request(self._execute_channel_extraction, channel_url)
+
+            if not result:
+                return {}
+
+            channel_data = {
+                "channel_id": result.get("id"),
+                "channel_url": channel_url,
+                "channel_name": result.get("title", ""),
+                "description": result.get("description", ""),
+                "subscriber_count": result.get("subscriber_count", 0),
+                "video_count": result.get("video_count", 0),
+                "is_karaoke_focused": self._detect_karaoke_channel(result),
+            }
+
+            logger.info(f"Extracted channel info: {channel_data['channel_name']}")
+            return channel_data
+
+        except Exception as e:
+            logger.error(f"Failed to extract channel info from {channel_url}: {e}")
+            return {}
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    async def extract_channel_videos(
+        self, channel_url: str, max_videos: Optional[int] = None, after_date: Optional[str] = None
+    ) -> List[Dict]:
+        """Extract all videos from a channel."""
+        try:
+            self.yt_dlp_opts["user_agent"] = random.choice(self.scraping_config.user_agents)
+
+            # Configure for channel extraction
+            channel_opts = self.yt_dlp_opts.copy()
+            channel_opts["extract_flat"] = True
+            if max_videos:
+                channel_opts["playlistend"] = max_videos
+
+            # Use rate-limited request for channel videos extraction
+            result = await self._rate_limited_request(
+                self._execute_channel_videos_extraction, channel_url, channel_opts
+            )
+
+            if not result or "entries" not in result:
+                return []
+
+            videos = []
+            channel_id = result.get("id", "")
+            channel_name = result.get("title", "")
+
+            for entry in result["entries"]:
+                if not entry or not entry.get("id"):
+                    continue
+
+                # Apply basic filtering
+                title = entry.get("title", "").lower()
+                duration = entry.get("duration") or 0
+
+                # Skip very short or very long videos
+                if not (30 <= duration <= 1200):  # 30s - 20min window for channels
+                    continue
+
+                # Apply incremental date filtering if specified
+                upload_date = entry.get("upload_date")
+                if after_date and not self._is_video_after_date(upload_date, after_date):
+                    continue
+
+                video_data = {
+                    "video_id": entry["id"],
+                    "url": f"https://www.youtube.com/watch?v={entry['id']}",
+                    "title": entry.get("title", ""),
+                    "channel": channel_name,
+                    "channel_id": channel_id,
+                    "duration": duration,
+                    "view_count": entry.get("view_count", 0),
+                    "upload_date": entry.get("upload_date"),
+                    "search_method": "channel_extraction",
+                    "search_query": channel_url,
+                    "relevance_score": self._calculate_channel_video_score(title),
+                }
+                videos.append(video_data)
+
+            filtered_count = len(videos)
+            if after_date:
+                logger.info(
+                    f"Extracted {filtered_count} videos from channel: {channel_name} (filtered by date {after_date})"
+                )
+            else:
+                logger.info(f"Extracted {filtered_count} videos from channel: {channel_name}")
+            return videos
+
+        except Exception as e:
+            logger.error(f"Failed to extract videos from channel {channel_url}: {e}")
+            return []
+
+    def _execute_channel_extraction(self, channel_url: str) -> Dict:
+        """Execute yt-dlp channel info extraction."""
+        if yt_dlp is None:
+            raise RuntimeError("yt-dlp not available")
+
+        # Configure for channel info extraction only
+        opts = self.yt_dlp_opts.copy()
+        opts["extract_flat"] = True
+        opts["playlistend"] = 0  # Don't extract any videos, just channel info
+
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            return ydl.extract_info(channel_url, download=False)
+
+    def _execute_channel_videos_extraction(self, channel_url: str, opts: Dict) -> Dict:
+        """Execute yt-dlp channel videos extraction."""
+        if yt_dlp is None:
+            raise RuntimeError("yt-dlp not available")
+
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            return ydl.extract_info(channel_url, download=False)
+
+    def _detect_karaoke_channel(self, channel_data: Dict) -> bool:
+        """Detect if a channel is focused on karaoke content."""
+        channel_name = channel_data.get("title", "").lower()
+        description = channel_data.get("description", "").lower()
+
+        karaoke_indicators = [
+            "karaoke",
+            "backing track",
+            "instrumental",
+            "sing along",
+            "minus one",
+            "playback",
+            "accompaniment",
+            "lyrics",
+        ]
+
+        # Check channel name and description
+        text_to_check = f"{channel_name} {description}"
+        indicator_count = sum(1 for indicator in karaoke_indicators if indicator in text_to_check)
+
+        # If multiple indicators or "karaoke" is in the name, likely karaoke-focused
+        return indicator_count >= 2 or "karaoke" in channel_name
+
+    def _calculate_channel_video_score(self, title: str) -> float:
+        """Calculate relevance score for channel videos (simpler than search)."""
+        title_lower = title.lower()
+        score = 0.5  # Base score for being from a karaoke channel
+
+        # Boost for explicit karaoke indicators
+        karaoke_indicators = ["karaoke", "backing track", "instrumental", "sing along"]
+        for indicator in karaoke_indicators:
+            if indicator in title_lower:
+                score += 0.3
+                break
+
+        # Quality indicators
+        quality_indicators = {
+            "hd": 0.1,
+            "4k": 0.2,
+            "high quality": 0.1,
+            "with lyrics": 0.2,
+            "guide vocals": 0.1,
         }
 
         for indicator, weight in quality_indicators.items():

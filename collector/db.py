@@ -6,7 +6,7 @@ import shutil
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Generator
+from typing import Any, Dict, Generator, List, Optional
 
 from .config import DatabaseConfig
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """Enhanced database management with migrations and backups."""
 
-    SCHEMA_VERSION = 3  # Updated to version 3 for new columns
+    SCHEMA_VERSION = 4  # Updated to version 4 for channels support
 
     def __init__(self, config: DatabaseConfig):
         self.config = config
@@ -120,6 +120,31 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (3);
             with open(migration_003_path, "w") as f:
                 f.write(migration_003_content)
 
+        migration_004_path = self.migrations_dir / "004_channels_support.sql"
+        if not migration_004_path.exists():
+            migration_004_content = """-- Migration 004: Add channels support
+CREATE TABLE IF NOT EXISTS channels (
+    channel_id TEXT PRIMARY KEY,
+    channel_url TEXT NOT NULL,
+    channel_name TEXT,
+    subscriber_count INTEGER DEFAULT 0,
+    video_count INTEGER DEFAULT 0,
+    description TEXT,
+    is_karaoke_focused BOOLEAN DEFAULT 1,
+    last_processed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Add index for faster channel lookups
+CREATE INDEX IF NOT EXISTS idx_channels_processed_at ON channels(last_processed_at);
+CREATE INDEX IF NOT EXISTS idx_videos_channel_id ON videos(channel_id);
+
+INSERT OR REPLACE INTO schema_info(version) VALUES (4);
+"""
+            with open(migration_004_path, "w") as f:
+                f.write(migration_004_content)
+
     def _apply_migrations(self, cursor: sqlite3.Cursor, current_version: int):
         """Apply database migrations."""
         if current_version < 1:
@@ -156,6 +181,24 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (3);
                     cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (3)")
                     logger.info("Skipped migration 003; columns already present")
                 current_version = 3
+
+        if current_version < 4:
+            # Apply migration from file
+            migration_004_path = self.migrations_dir / "004_channels_support.sql"
+            if migration_004_path.exists():
+                # Check if channels table already exists
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='channels'"
+                )
+                if not cursor.fetchone():
+                    with open(migration_004_path, "r") as f:
+                        migration_sql = f.read()
+                    cursor.executescript(migration_sql)
+                    logger.info("Applied migration: Channels support (v4)")
+                else:
+                    cursor.execute("INSERT OR REPLACE INTO schema_info(version) VALUES (4)")
+                    logger.info("Skipped migration 004; channels table already exists")
+                current_version = 4
 
     def _create_initial_schema(self, cursor: sqlite3.Cursor):
         """Create the initial database schema."""
@@ -280,6 +323,7 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (3);
 
         # Create indexes
         self._create_indexes(cursor)
+        self._create_performance_indexes(cursor)
 
     def _create_indexes(self, cursor: sqlite3.Cursor):
         """Create database indexes for performance."""
@@ -293,6 +337,44 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (3);
 
         for index in indexes:
             cursor.execute(index)
+
+    def _create_performance_indexes(self, cursor: sqlite3.Cursor):
+        """Create additional indexes optimized for large-scale queries."""
+        performance_indexes = [
+            # Critical indexes for scalability
+            "CREATE INDEX IF NOT EXISTS idx_videos_channel_upload ON videos(channel_id, upload_date)",
+            "CREATE INDEX IF NOT EXISTS idx_videos_scraped_updated ON videos(scraped_at, updated_at)",
+            "CREATE INDEX IF NOT EXISTS idx_videos_duration_views ON videos(duration_seconds, view_count)",
+            "CREATE INDEX IF NOT EXISTS idx_videos_channel_scraped ON videos(channel_id, scraped_at)",
+
+            # Video features performance indexes
+            "CREATE INDEX IF NOT EXISTS idx_features_karaoke_confidence ON video_features(has_guide_vocals, is_instrumental_only, confidence_score)",
+            "CREATE INDEX IF NOT EXISTS idx_features_video_style ON video_features(video_style, difficulty_level)",
+
+            # Quality and engagement indexes
+            "CREATE INDEX IF NOT EXISTS idx_quality_overall_technical ON quality_scores(overall_score, technical_score)",
+            "CREATE INDEX IF NOT EXISTS idx_quality_engagement ON quality_scores(engagement_score, calculated_at)",
+
+            # Channel processing indexes
+            "CREATE INDEX IF NOT EXISTS idx_channels_processed_karaoke ON channels(last_processed_at, is_karaoke_focused)",
+            "CREATE INDEX IF NOT EXISTS idx_channels_subscriber_count ON channels(subscriber_count, video_count)",
+
+            # Search and error tracking indexes
+            "CREATE INDEX IF NOT EXISTS idx_search_history_date_method ON search_history(search_date, search_method)",
+            "CREATE INDEX IF NOT EXISTS idx_error_log_timestamp_resolved ON error_log(timestamp, resolved)",
+            "CREATE INDEX IF NOT EXISTS idx_error_log_video_type ON error_log(video_id, error_type)",
+
+            # Composite indexes for common query patterns
+            "CREATE INDEX IF NOT EXISTS idx_videos_artist_views_date ON videos(original_artist, view_count, upload_date)",
+            "CREATE INDEX IF NOT EXISTS idx_videos_channel_artist_title ON videos(channel_id, original_artist, song_title)",
+        ]
+
+        for index in performance_indexes:
+            try:
+                cursor.execute(index)
+            except Exception as e:
+                logger.warning(f"Failed to create performance index: {e}")
+                # Continue with other indexes even if one fails
 
     def _conditional_vacuum(self, cursor: sqlite3.Cursor):
         """Only run VACUUM if database has grown significantly, with WAL checkpoint."""
@@ -358,6 +440,19 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (3);
                 return {row[0] for row in cursor.fetchall()}
         except Exception as e:
             logger.error(f"Failed to get existing video IDs: {e}")
+            return set()
+
+    def get_recent_video_ids(self, days: int = 7) -> set:
+        """Get video IDs from recent days to limit memory usage."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT video_id FROM videos WHERE scraped_at >= date('now', '-{} days')".format(days)
+                )
+                return {row[0] for row in cursor.fetchall()}
+        except Exception as e:
+            logger.error(f"Failed to get recent video IDs: {e}")
             return set()
 
     def save_video_data(self, result):
@@ -519,3 +614,130 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (3);
         except Exception as e:
             logger.error(f"Failed to get statistics: {e}")
             return {}
+
+    def save_channel_data(self, channel_data: Dict) -> bool:
+        """Save or update channel information."""
+        try:
+            with self.get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO channels (
+                        channel_id, channel_url, channel_name, subscriber_count,
+                        video_count, description, is_karaoke_focused, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        channel_data.get("channel_id"),
+                        channel_data.get("channel_url"),
+                        channel_data.get("channel_name"),
+                        channel_data.get("subscriber_count", 0),
+                        channel_data.get("video_count", 0),
+                        channel_data.get("description"),
+                        channel_data.get("is_karaoke_focused", True),
+                    ),
+                )
+                logger.debug(f"Saved channel: {channel_data.get('channel_name')}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to save channel data: {e}")
+            return False
+
+    def get_channel_last_processed(self, channel_id: str) -> Optional[str]:
+        """Get the last processed timestamp for a channel."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT last_processed_at FROM channels WHERE channel_id = ?", (channel_id,)
+                )
+                result = cursor.fetchone()
+                return result[0] if result and result[0] else None
+        except Exception as e:
+            logger.error(f"Failed to get last processed time for channel {channel_id}: {e}")
+            return None
+
+    def update_channel_processed(self, channel_id: str) -> bool:
+        """Update the last processed timestamp for a channel."""
+        try:
+            with self.get_connection() as conn:
+                conn.execute(
+                    "UPDATE channels SET last_processed_at = CURRENT_TIMESTAMP WHERE channel_id = ?",
+                    (channel_id,),
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update processed time for channel {channel_id}: {e}")
+            return False
+
+    def get_channel_videos_count(self, channel_id: str) -> int:
+        """Get the count of videos for a specific channel."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT COUNT(*) FROM videos WHERE channel_id = ?", (channel_id,)
+                )
+                result = cursor.fetchone()
+                return result[0] if result else 0
+        except Exception as e:
+            logger.error(f"Failed to get video count for channel {channel_id}: {e}")
+            return 0
+
+    def get_processed_channels(self) -> List[Dict]:
+        """Get list of all processed channels with their stats."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT
+                        c.channel_id, c.channel_name, c.channel_url,
+                        c.subscriber_count, c.is_karaoke_focused,
+                        c.last_processed_at, COUNT(v.video_id) as collected_videos
+                    FROM channels c
+                    LEFT JOIN videos v ON c.channel_id = v.channel_id
+                    GROUP BY c.channel_id
+                    ORDER BY c.channel_name
+                    """
+                )
+                return [
+                    {
+                        "channel_id": row[0],
+                        "channel_name": row[1],
+                        "channel_url": row[2],
+                        "subscriber_count": row[3],
+                        "is_karaoke_focused": bool(row[4]),
+                        "last_processed_at": row[5],
+                        "collected_videos": row[6],
+                    }
+                    for row in cursor.fetchall()
+                ]
+        except Exception as e:
+            logger.error(f"Failed to get processed channels: {e}")
+            return []
+
+    def video_exists(self, video_id: str) -> bool:
+        """Check if a video already exists in the database."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT 1 FROM videos WHERE video_id = ? LIMIT 1", (video_id,)
+                )
+                return cursor.fetchone() is not None
+        except Exception as e:
+            logger.error(f"Failed to check if video exists {video_id}: {e}")
+            return False  # Assume doesn't exist to avoid skipping on error
+
+    def get_existing_video_ids_batch(self, video_ids: List[str]) -> set:
+        """Get set of video IDs that already exist in database (batch operation)."""
+        if not video_ids:
+            return set()
+
+        try:
+            with self.get_connection() as conn:
+                # Create placeholders for the IN clause
+                placeholders = ",".join(["?"] * len(video_ids))
+                cursor = conn.execute(
+                    f"SELECT video_id FROM videos WHERE video_id IN ({placeholders})", video_ids
+                )
+                return {row[0] for row in cursor.fetchall()}
+        except Exception as e:
+            logger.error(f"Failed to get existing video IDs: {e}")
+            return set()  # Return empty set to avoid skipping on error
