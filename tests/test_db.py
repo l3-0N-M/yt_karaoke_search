@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from collector.db import DatabaseConfig, DatabaseManager
+from collector.processor import ProcessingResult
 
 
 def test_trigger_migration(tmp_path):
@@ -138,3 +139,31 @@ def test_feature_confidence_columns():
     finally:
         if db_path.exists():
             db_path.unlink()
+
+
+def test_validation_table_and_insert(tmp_path):
+    db_path = tmp_path / "val.db"
+    dbm = DatabaseManager(DatabaseConfig(path=str(db_path), backup_enabled=False))
+
+    result = ProcessingResult(
+        video_data={
+            "video_id": "vid1",
+            "url": "http://e",
+            "title": "T",
+            "features": {},
+            "validation": {"artist_valid": True, "song_valid": False, "validation_score": 0.6},
+            "correction_suggestion": {"suggested_title": "X", "reason": "r"},
+        },
+        confidence_score=0.5,
+        processing_time=0.0,
+        errors=[],
+        warnings=[],
+    )
+
+    dbm.save_video_data(result)
+
+    with sqlite3.connect(db_path) as con:
+        row = con.execute(
+            "SELECT artist_valid, song_valid, validation_score, suggested_title FROM validation_results WHERE video_id='vid1'"
+        ).fetchone()
+        assert row == (1, 0, 0.6, "X")

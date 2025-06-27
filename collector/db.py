@@ -478,6 +478,22 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
         """
         )
 
+        # Validation results table
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS validation_results (
+                video_id TEXT PRIMARY KEY,
+                artist_valid BOOLEAN,
+                song_valid BOOLEAN,
+                validation_score REAL DEFAULT 0.0,
+                suggested_artist TEXT,
+                suggested_title TEXT,
+                suggestion_reason TEXT,
+                FOREIGN KEY (video_id) REFERENCES videos(video_id) ON DELETE CASCADE
+            )
+        """
+        )
+
         # Search history table
         cursor.execute(
             """
@@ -765,6 +781,27 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                                 video_data.get("ryd_likes"),
                                 video_data.get("ryd_rating"),
                                 video_data.get("ryd_confidence"),
+                            ),
+                        )
+
+                    validation = video_data.get("validation", {})
+                    suggestion = video_data.get("correction_suggestion", {})
+                    if validation:
+                        cursor.execute(
+                            """
+                            INSERT OR REPLACE INTO validation_results (
+                                video_id, artist_valid, song_valid, validation_score,
+                                suggested_artist, suggested_title, suggestion_reason
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                video_data.get("video_id"),
+                                bool(validation.get("artist_valid")),
+                                bool(validation.get("song_valid")),
+                                validation.get("validation_score", 0.0),
+                                suggestion.get("suggested_artist"),
+                                suggestion.get("suggested_title"),
+                                suggestion.get("reason"),
                             ),
                         )
 
