@@ -1,5 +1,5 @@
-from pathlib import Path
 import yaml
+
 from collector.config import load_config, save_config_template
 
 

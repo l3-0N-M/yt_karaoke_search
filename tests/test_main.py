@@ -1,9 +1,10 @@
 import asyncio
 from typing import cast
 
-from collector.config import CollectorConfig
 import collector.main as main
+from collector.config import CollectorConfig
 from collector.processor import ProcessingResult
+
 
 class DummySearch:
     async def search_videos(self, query, max_results):

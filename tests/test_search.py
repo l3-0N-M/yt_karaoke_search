@@ -1,4 +1,4 @@
-from collector.config import SearchConfig, ScrapingConfig
+from collector.config import ScrapingConfig, SearchConfig
 from collector.search import SearchEngine
 
 
