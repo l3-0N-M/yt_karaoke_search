@@ -132,7 +132,8 @@ class SearchEngine:
         if yt_dlp is None:
             raise RuntimeError("yt-dlp not available")
         with yt_dlp.YoutubeDL(self.yt_dlp_opts) as ydl:
-            return ydl.extract_info(search_query, download=False)
+            info = ydl.extract_info(search_query, download=False)
+            return info or {}
 
     def _process_search_results(self, search_results: Dict, original_query: str) -> List[Dict]:
         """Process and normalize search results."""
@@ -338,7 +339,8 @@ class SearchEngine:
         opts["playlistend"] = 0  # Don't extract any videos, just channel info
 
         with yt_dlp.YoutubeDL(opts) as ydl:
-            return ydl.extract_info(channel_url, download=False)
+            info = ydl.extract_info(channel_url, download=False)
+            return info or {}
 
     def _execute_channel_videos_extraction(self, channel_url: str, opts: Dict) -> Dict:
         """Execute yt-dlp channel videos extraction."""
@@ -346,7 +348,8 @@ class SearchEngine:
             raise RuntimeError("yt-dlp not available")
 
         with yt_dlp.YoutubeDL(opts) as ydl:
-            return ydl.extract_info(channel_url, download=False)
+            info = ydl.extract_info(channel_url, download=False)
+            return info or {}
 
     def _detect_karaoke_channel(self, channel_data: Dict) -> bool:
         """Detect if a channel is focused on karaoke content."""
