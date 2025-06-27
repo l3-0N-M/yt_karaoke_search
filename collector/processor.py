@@ -325,7 +325,7 @@ class VideoProcessor:
             features[f"{feat}_confidence"] = min(0.6 + 0.1 * (hits - 1), 1.0) if hits else 0.0
 
         # Extract artist and song info
-        artist_info = self._extract_artist_song_info(title, description)
+        artist_info = self._extract_artist_song_info(title, description, tags)
         features.update(artist_info)
 
         # Extract featured artists
@@ -368,27 +368,41 @@ class VideoProcessor:
 
         return ", ".join(unique_featured) if unique_featured else None
 
-    def _extract_artist_song_info(self, title: str, description: str) -> Dict:
-        """Extract artist and song information."""
-        patterns = [
-            r"^(.+?)\s*-\s*(.+?)\s*\((?:karaoke|instrumental)",
-            r"^(.+?)\s+by\s+(.+?)\s*\((?:karaoke|instrumental)",
-            r"karaoke:?\s*(.+?)\s*-\s*(.+?)(?:\s|$)",
+    def _extract_artist_song_info(self, title: str, description: str, tags: str = "") -> Dict:
+        """Extract artist and song information from title, with fallbacks."""
+
+        default_patterns = [
+            (r"^(.+?)\s*-\s*(.+?)\s*\((?:karaoke|instrumental)", "artist_first"),
+            (r"^(.+?)\s+by\s+(.+?)\s*\((?:karaoke|instrumental)", "title_first"),
+            (r"^(.+?)\s*\(.*karaoke.*\)\s*-\s*(.+)$", "title_first"),
+            (r"^karaoke:?\s*(.+?)\s*-\s*(.+?)(?:\s|$)", "title_first"),
+            (r"^(.+?)\s*-\s*(.+)$", "artist_first"),
         ]
 
-        for pattern in patterns:
+        patterns = default_patterns + [(p, None) for p in self.config.search.title_patterns]
+
+        for pattern, orientation in patterns:
             match = re.search(pattern, title, re.IGNORECASE)
             if match:
                 part1, part2 = match.group(1).strip(), match.group(2).strip()
 
-                if len(part2) < len(part1) and len(part2) < 50:
+                if orientation == "artist_first":
+                    return {"song_title": part2, "original_artist": part1, "artist_confidence": 0.8}
+                if orientation == "title_first":
                     return {"song_title": part1, "original_artist": part2, "artist_confidence": 0.8}
+
+                if len(part2) < len(part1) and len(part2) < 50:
+                    return {"song_title": part1, "original_artist": part2, "artist_confidence": 0.7}
                 else:
                     return {"song_title": part2, "original_artist": part1, "artist_confidence": 0.7}
 
         desc_match = re.search(r"(?:by|artist):?\s*(.+?)(?:\n|$)", description, re.IGNORECASE)
         if desc_match:
             return {"original_artist": desc_match.group(1).strip(), "artist_confidence": 0.6}
+
+        tag_match = re.search(r"(?:by|artist):?\s*(.+?)(?:\n|$)", tags, re.IGNORECASE)
+        if tag_match:
+            return {"original_artist": tag_match.group(1).strip(), "artist_confidence": 0.5}
 
         return {"artist_confidence": 0.0}
 
