@@ -7,8 +7,8 @@ try:
     from ..search import SearchEngine
 except Exception:
     # Final fallback - minimal wrapper using the YouTube provider only.
-    from .providers.youtube import YouTubeSearchProvider
     from .providers.base import SearchResult
+    from .providers.youtube import YouTubeSearchProvider
 
     class SearchEngine:
         """Backward compatibility wrapper for original SearchEngine."""
@@ -141,11 +141,11 @@ except Exception:
             return video_date > cutoff_date
 
 
+from .cache_manager import CacheManager
+from .fuzzy_matcher import FuzzyMatcher
 from .providers.base import SearchProvider, SearchResult
 from .providers.youtube import YouTubeSearchProvider
-from .fuzzy_matcher import FuzzyMatcher
 from .result_ranker import ResultRanker
-from .cache_manager import CacheManager
 
 __all__ = [
     "SearchEngine",  # Original for backward compatibility

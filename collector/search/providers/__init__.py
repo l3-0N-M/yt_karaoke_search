@@ -22,6 +22,6 @@ __all__ = ["SearchProvider", "SearchResult", "YouTubeSearchProvider"]
 
 if HAS_BING:
     __all__.append("BingSearchProvider")
-    
+
 if HAS_DUCKDUCKGO:
     __all__.append("DuckDuckGoSearchProvider")

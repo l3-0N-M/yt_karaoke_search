@@ -29,8 +29,8 @@ except ImportError:
     def wait_random(*args, **kwargs):
         return None
 
-from .base import SearchProvider, SearchResult
 from ...config import ScrapingConfig
+from .base import SearchProvider, SearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -136,16 +136,16 @@ class YouTubeSearchProvider(SearchProvider):
 
             result = await self._rate_limited_request(self._execute_search, search_query)
             results = self._process_search_results(result, query)
-            
+
             # Filter for karaoke content
             filtered_results = self.filter_karaoke_content(results)
-            
+
             response_time = time.time() - start_time
             self.update_statistics(True, len(filtered_results), response_time)
-            
+
             self.logger.info(f"Found {len(filtered_results)} karaoke videos for query: '{query}'")
             return filtered_results
-            
+
         except Exception as e:
             response_time = time.time() - start_time
             self.update_statistics(False, 0, response_time)
