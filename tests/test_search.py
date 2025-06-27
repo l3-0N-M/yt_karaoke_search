@@ -24,3 +24,30 @@ def test_parse_and_after_date():
     assert d is not None and d.year == 2024
     assert engine._is_video_after_date("20240102", "2023-12-31")
     assert not engine._is_video_after_date("20220101", "2023-12-31")
+
+
+def test_import_without_tenacity(monkeypatch):
+    import builtins
+    import importlib
+    import sys
+
+    for mod in [
+        "collector.search_engine",
+        "collector.search.providers.youtube",
+    ]:
+        sys.modules.pop(mod, None)
+
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.startswith("tenacity"):
+            raise ImportError
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    se = importlib.import_module("collector.search_engine")
+    yp = importlib.import_module("collector.search.providers.youtube")
+
+    se.SearchEngine(SearchConfig(), ScrapingConfig())
+    yp.YouTubeSearchProvider(ScrapingConfig())

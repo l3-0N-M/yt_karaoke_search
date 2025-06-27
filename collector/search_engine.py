@@ -16,6 +16,10 @@ try:
     from tenacity import retry, stop_after_attempt, wait_exponential, wait_random  # type: ignore
 except ImportError:  # pragma: no cover - optional dependency
 
+    class _DummyWait:
+        def __add__(self, other):
+            return self
+
     def retry(*dargs, **dkwargs):
         def _decorator(fn):
             return fn
@@ -26,10 +30,10 @@ except ImportError:  # pragma: no cover - optional dependency
         return None
 
     def wait_exponential(*args, **kwargs):
-        return None
+        return _DummyWait()
 
     def wait_random(*args, **kwargs):
-        return None
+        return _DummyWait()
 
 
 from .config import ScrapingConfig, SearchConfig
