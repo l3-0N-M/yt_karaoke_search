@@ -1,6 +1,7 @@
 """Unit tests for video processing functionality."""
 
 from pathlib import Path
+import asyncio
 import sqlite3
 from collector.processor import VideoProcessor, ProcessingResult
 from collector.config import CollectorConfig
@@ -77,14 +78,39 @@ def test_like_dislike_ratio_calculation():
         
         db_manager.save_video_data(mock_result)
         
-        # Check that ratio was calculated correctly
+        # Check that the video record was created correctly and the ratio calculated
         with sqlite3.connect(db_path) as con:
-            ratio = con.execute(
-                "SELECT like_dislike_to_views_ratio FROM videos WHERE video_id='test123'"
-            ).fetchone()[0]
+            cursor = con.cursor()
+
+            # Exactly one video row should exist
+            count = cursor.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+            assert count == 1, f"Expected one video record, found {count}"
+
+            # Fetch the stored video data
+            row = cursor.execute(
+                "SELECT video_id, url, title, view_count, like_count, like_dislike_to_views_ratio "
+                "FROM videos WHERE video_id='test123'"
+            ).fetchone()
+
+            assert row is not None, "Video record was not saved"
+            vid, url, title, views, likes, ratio = row
+
+            assert vid == 'test123'
+            assert url == 'https://example.com'
+            assert title == 'Test Video'
+            assert views == 1000
+            assert likes == 800
             
             expected_ratio = (800 - 50) / 1000  # 0.75
-            assert abs(ratio - expected_ratio) < 0.001, f"Ratio calculation error: {ratio} vs {expected_ratio}"
+            assert abs(ratio - expected_ratio) < 0.001, (
+                f"Ratio calculation error: {ratio} vs {expected_ratio}"
+            )
+
+            # RYD data should also have been stored
+            ryd = cursor.execute(
+                "SELECT estimated_dislikes FROM ryd_data WHERE video_id='test123'"
+            ).fetchone()
+            assert ryd is not None and ryd[0] == 50
     
     finally:
         if db_path.exists():
@@ -115,3 +141,51 @@ def test_calculate_quality_scores():
     assert scores['technical_score'] > 0
     assert scores['engagement_score'] < scores['technical_score']  # Penalty applied
     assert scores['metadata_completeness'] > 0
+
+def test_process_video_uses_music_metadata(monkeypatch):
+    """Ensure MusicBrainz lookup occurs after feature extraction."""
+    config = CollectorConfig()
+    config.data_sources.ryd_api_enabled = False  # Avoid network in tests
+
+    processor = VideoProcessor(config)
+
+    async def dummy_extract_basic_metadata(url):
+        return {
+            'video_id': 'dummy',
+            'title': 'Artist One - Song One (Karaoke)',
+            'description': '',
+            'tags': []
+        }
+
+    async def dummy_get_ryd_data(video_id):
+        return {}
+
+    called = {'count': 0}
+
+    async def dummy_get_music_metadata(artist, song):
+        called['count'] += 1
+        return {'estimated_release_year': 2020, 'release_year_confidence': 0.9}
+
+    monkeypatch.setattr(processor, '_extract_basic_metadata', dummy_extract_basic_metadata)
+    monkeypatch.setattr(processor, '_get_ryd_data', dummy_get_ryd_data)
+    monkeypatch.setattr(processor, '_get_music_metadata', dummy_get_music_metadata)
+
+    async def run():
+        result = await processor.process_video('http://example.com')
+        await processor.cleanup()
+        return result
+
+    result = asyncio.run(run())
+
+    assert called['count'] == 1
+    assert result.video_data.get('estimated_release_year') == 2020
+
+    # Validate overall score weighting and range
+    expected_overall = (
+        scores['technical_score'] * 0.3 +
+        scores['engagement_score'] * 0.4 +
+        scores['metadata_completeness'] * 0.3
+    )
+
+    assert 0 <= scores['overall_score'] <= 1
+    assert abs(scores['overall_score'] - expected_overall) < 1e-6

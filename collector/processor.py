@@ -106,12 +106,12 @@ class VideoProcessor:
                 return ProcessingResult({}, 0.0, time.time() - start_time, 
                                       ["Failed to extract basic metadata"], [])
             
-            # Enhance with external data
-            await self._enhance_with_external_data(video_data, errors, warnings)
-            
-            # Extract karaoke features
+            # Extract karaoke features first so external lookups have artist info
             features = self._extract_karaoke_features(video_data)
             video_data['features'] = features
+
+            # Enhance with external data (uses extracted features)
+            await self._enhance_with_external_data(video_data, errors, warnings)
             
             # Calculate quality scores
             quality_scores = self._calculate_quality_scores(video_data)
@@ -291,7 +291,7 @@ class VideoProcessor:
             'is_acoustic': ['acoustic', 'unplugged', 'acoustic version'],
         }
         
-        # FIXED: Add confidence scores for each feature
+        # Assign a confidence score based on how many patterns match
         for feat, patterns in feature_patterns.items():
             hits = sum(p in combined_text for p in patterns)
             features[feat] = bool(hits)
@@ -421,7 +421,7 @@ class VideoProcessor:
         if views > 0 and likes / views > 0.01:
             engagement_factors.append(0.2)
         
-        # FIXED: Add engagement penalty for high dislike ratio
+        # Apply a penalty when the dislike ratio is high
         if video_data.get("ryd_confidence", 0) > self.config.data_sources.ryd_confidence_threshold:
             dl = video_data.get("estimated_dislikes", 0)
             lk = video_data.get("like_count", 0)
@@ -466,7 +466,7 @@ class VideoProcessor:
         if video_data.get('duration_seconds', 0) > 0:
             confidence_factors.append(0.2)
         
-        # FIXED: Karaoke-specific confidence using actual confidence keys
+        # Incorporate the confidence values from individual karaoke features
         features = video_data.get('features', {})
         confidence_keys = [
             'has_guide_vocals_confidence', 'has_scrolling_lyrics_confidence', 
