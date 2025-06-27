@@ -10,6 +10,7 @@ from .config import CollectorConfig
 from .db import DatabaseManager
 from .processor import VideoProcessor
 from .search_engine import SearchEngine
+from .enhanced_search import MultiStrategySearchEngine
 
 try:
     from tqdm.asyncio import tqdm_asyncio
@@ -28,7 +29,12 @@ class KaraokeCollector:
     def __init__(self, config: CollectorConfig):
         self.config = config
         self.db_manager = DatabaseManager(config.database)
-        self.search_engine = SearchEngine(config.search, config.scraping)
+        if getattr(config.search, "use_multi_strategy", False):
+            self.search_engine = MultiStrategySearchEngine(
+                config.search, config.scraping, self.db_manager
+            )
+        else:
+            self.search_engine = SearchEngine(config.search, config.scraping)
         self.video_processor = VideoProcessor(config)
         self.shutdown_requested = False
         self._memory_cache_limit = 50000  # Limit in-memory cache size

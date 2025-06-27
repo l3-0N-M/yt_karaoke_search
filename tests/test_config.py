@@ -56,6 +56,19 @@ def test_custom_title_patterns(tmp_path):
     assert cfg.search.title_patterns == ["(.+?) -- (.+)"]
 
 
+def test_use_multi_strategy_flag(tmp_path):
+    cfg_path = tmp_path / "multi.yaml"
+    cfg_path.write_text(
+        """
+        search:
+          use_multi_strategy: true
+        """
+    )
+
+    cfg = load_config(str(cfg_path))
+    assert cfg.search.use_multi_strategy is True
+
+
 def test_validation_error(tmp_path):
     cfg_path = tmp_path / "invalid.yaml"
     cfg_path.write_text(

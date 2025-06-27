@@ -21,7 +21,7 @@ search:
   max_results_per_query: 100
   
   # Multi-strategy search settings
-  enable_multi_strategy: true
+  use_multi_strategy: true
   fallback_threshold: 10  # Trigger fallback if primary returns < 10 results
   max_fallback_providers: 2
   enable_parallel_search: false  # Set to true for faster but more resource-intensive search
