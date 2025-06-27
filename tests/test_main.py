@@ -1,7 +1,9 @@
 import asyncio
-
 import collector.main as main
 from collector.config import CollectorConfig
+from collector.processor import ProcessingResult
+from collector.config import CollectorConfig
+import collector.main as main
 from collector.processor import ProcessingResult
 
 

@@ -1,5 +1,5 @@
 import logging
-
+from collector.utils import setup_logging
 from collector.utils import setup_logging
 
 
