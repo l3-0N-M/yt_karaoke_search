@@ -130,7 +130,7 @@ class SearchEngine:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10) + wait_random(0, 2),
+        wait=wait_exponential(multiplier=1, min=2, max=10) + wait_random(0, 2),  # type: ignore[operator]
     )
     async def search_videos(self, query: str, max_results: int = 100) -> List[Dict]:
         """Search for videos using yt-dlp with error handling."""
