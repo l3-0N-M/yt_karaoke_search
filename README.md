@@ -201,6 +201,10 @@ The collector creates a normalized SQLite database with the following tables:
 - `ryd_data` - Return YouTube Dislike data with confidence scoring
 - `search_history` - Track search performance over time
 - `error_log` - Debugging and monitoring
+- `search_cache` - Cached search results for faster subsequent lookups
+- `search_analytics` - Aggregated statistics on query performance
+- `fuzzy_reference_data` - Known artists and songs used for fuzzy matching
+- `validation_results` - Data validation outcomes and issues
 
 ### Performance Optimizations:
 ✅ **15+ database indexes** - Optimized for large-scale queries  
