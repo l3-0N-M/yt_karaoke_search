@@ -123,6 +123,8 @@ The collector features a sophisticated multi-strategy parsing system that handle
 - **Adaptive learning** - Improves accuracy over time by learning from successful parses
 - **Featured artist extraction** - Identifies collaborations and featured artists
 - **Confidence scoring** - Each extraction includes accuracy confidence metrics
+- **Robust regex patterns** - Improved pattern matching for "Artist - Title" and "Title - Artist" formats
+- **Performance statistics** - Tracks parsing success rates and pattern effectiveness
 
 ### Parser Configuration
 ```yaml
@@ -206,18 +208,37 @@ pip install -e ".[dev]"
 # Keep yt-dlp updated for YouTube API changes
 pip install --upgrade yt-dlp
 
-# Run tests
+# Run tests with coverage
 pytest
 
-# Run linting
-ruff check .
+# Run linting with auto-fix
+ruff check . --fix
 
-# Format code
+# Format code with black
 black .
 
-# Install pre-commit hooks
+# Type checking (if using mypy/pylance)
+# VS Code with Pylance provides excellent type checking support
+
+# Install pre-commit hooks (if available)
 pre-commit install
 ```
+
+### Code Quality Tools
+
+The project uses several tools to maintain code quality:
+
+- **pytest** - Testing framework with coverage reporting
+- **ruff** - Fast Python linter with auto-fix capabilities  
+- **black** - Code formatting for consistent style
+- **Pylance/mypy** - Type checking for better code reliability
+
+### Debugging and Development Tools
+
+- **debug_extraction.py** - Debug script for testing title parsing patterns
+- **Comprehensive test suite** - Unit tests for all major components
+- **Database migration system** - Automatic schema updates
+- **Performance monitoring** - Built-in statistics tracking
 
 ### 🔄 **Staying Current with YouTube Changes**
 
@@ -233,20 +254,41 @@ karaoke-collector collect -q "test" -m 5 --verbose
 
 **Pro Tip:** yt-dlp releases nightly builds that patch new YouTube restrictions. The collector automatically benefits from these updates! 🚀
 
+## Recent Improvements
+
+- ✅ **Enhanced regex patterns** - Fixed artist-song extraction for better accuracy
+- ✅ **Type safety improvements** - Resolved Pylance type checking issues  
+- ✅ **Code formatting** - Applied black formatting for consistent style
+- ✅ **Comprehensive testing** - All tests passing with coverage reporting
+- ✅ **Advanced parser stability** - Improved PatternStats dataclass handling
+
 ## Testing
 
-The package includes comprehensive tests:
+The package includes comprehensive tests with coverage reporting:
 
 ```bash
-# Run all tests
+# Run all tests with coverage (configured in pytest.ini)
 pytest
 
-# Run with coverage
-pytest --cov=collector
+# Run tests with verbose output
+pytest -v
 
 # Run specific test file
 pytest tests/test_db.py -v
+
+# Run tests with coverage report
+pytest --cov-report=html
+
+# Skip slow tests
+pytest -m "not slow"
 ```
+
+### Test Configuration
+Tests are configured with:
+- Coverage reporting (HTML and terminal)  
+- Strict markers for test categorization
+- Support for unit/integration test separation
+- Warning suppression for cleaner output
 
 ## Legal Considerations
 
