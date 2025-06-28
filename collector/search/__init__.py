@@ -4,13 +4,13 @@
 # Older layouts expected `search.py` at the package root; we directly import the
 # packaged version for reliability.
 try:
-    from ..search_engine import SearchEngine
+    from ..search_engine import SearchEngine as SearchEngineImpl
 except Exception:
     # Final fallback - minimal wrapper using the YouTube provider only.
     from .providers.base import SearchResult
     from .providers.youtube import YouTubeSearchProvider
 
-    class SearchEngine:
+    class SearchEngineImpl:
         """Backward compatibility wrapper for original SearchEngine."""
 
         def __init__(self, search_config, scraping_config):
@@ -146,6 +146,8 @@ from .fuzzy_matcher import FuzzyMatcher
 from .providers.base import SearchProvider, SearchResult
 from .providers.youtube import YouTubeSearchProvider
 from .result_ranker import ResultRanker
+
+SearchEngine = SearchEngineImpl
 
 __all__ = [
     "SearchEngine",  # Original for backward compatibility

@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import time
+from dataclasses import asdict
 from typing import Dict, List, Optional
 
 from .config import ScrapingConfig, SearchConfig
@@ -17,6 +18,7 @@ try:
 
     HAS_BING = True
 except ImportError:
+    BingSearchProvider = None  # type: ignore
     HAS_BING = False
 
 try:
@@ -24,6 +26,7 @@ try:
 
     HAS_DUCKDUCKGO = True
 except ImportError:
+    DuckDuckGoSearchProvider = None  # type: ignore
     HAS_DUCKDUCKGO = False
 
 logger = logging.getLogger(__name__)
@@ -157,12 +160,7 @@ class MultiStrategySearchEngine:
             cached_data = await self.cache_manager.get_search_results(
                 query, provider="multi", max_results=max_results
             )
-                # Set the default values
-                default_values = {"duration": None, "view_count": 0, "upload_date": None, "thumbnail_url": None, "description": None, "relevance_score": 0.0, "metadata": {}}
-
-                # If cached_data has values use it, otherwise use the default values
             if cached_data:
-                # Convert back to SearchResult objects
                 return [SearchResult(**result_dict) for result_dict in cached_data]
 
         except Exception as e:
@@ -202,7 +200,7 @@ class MultiStrategySearchEngine:
             return []
 
     async def _search_with_fallback_providers(
-        self, query: str, max_results: int, exclude: List[str] = None
+        self, query: str, max_results: int, exclude: Optional[List[str]] = None
     ) -> List[SearchResult]:
         """Search with fallback providers."""
         exclude = exclude or []

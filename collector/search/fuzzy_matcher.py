@@ -14,6 +14,7 @@ try:
 
     HAS_JELLYFISH = True
 except ImportError:
+    jellyfish = None  # type: ignore
     HAS_JELLYFISH = False
     logger.info("jellyfish not available, using basic fuzzy matching")
 
@@ -331,7 +332,11 @@ class FuzzyMatcher:
         return (first + remainder)[:4].upper()
 
     def find_best_match(
-        self, query: str, candidates: List[str], text_type: str = "general", min_score: float = None
+        self,
+        query: str,
+        candidates: List[str],
+        text_type: str = "general",
+        min_score: Optional[float] = None,
     ) -> Optional[FuzzyMatch]:
         """Find the best fuzzy match from a list of candidates."""
         if not query or not candidates:
@@ -369,7 +374,7 @@ class FuzzyMatcher:
         query: str,
         candidates: List[str],
         text_type: str = "general",
-        min_score: float = None,
+        min_score: Optional[float] = None,
         max_results: int = 10,
     ) -> List[FuzzyMatch]:
         """Find all matches above threshold, sorted by score."""
@@ -406,7 +411,7 @@ class FuzzyMatcher:
         query_artist: str,
         query_song: str,
         candidate_pairs: List[Tuple[str, str]],
-        min_score: float = None,
+        min_score: Optional[float] = None,
     ) -> Optional[Tuple[FuzzyMatch, FuzzyMatch]]:
         """Match artist-song pairs with combined scoring."""
         if not query_artist or not query_song or not candidate_pairs:

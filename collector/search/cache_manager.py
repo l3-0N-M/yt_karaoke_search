@@ -28,7 +28,7 @@ class CacheEntry:
     access_count: int = 0
     ttl_seconds: Optional[int] = None
     size_bytes: int = 0
-    metadata: Dict = None
+    metadata: Optional[Dict] = None
 
     def __post_init__(self):
         if self.metadata is None:

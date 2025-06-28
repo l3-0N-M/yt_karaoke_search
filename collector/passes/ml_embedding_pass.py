@@ -18,6 +18,7 @@ try:
 
     HAS_SENTENCE_TRANSFORMERS = True
 except ImportError:
+    SentenceTransformer = None  # type: ignore
     HAS_SENTENCE_TRANSFORMERS = False
     logger.info("sentence-transformers not available, using fallback methods")
 
@@ -26,6 +27,7 @@ try:
 
     HAS_SKLEARN = True
 except ImportError:
+    sklearn_metrics = None  # type: ignore
     HAS_SKLEARN = False
     logger.info("scikit-learn not available, using basic similarity measures")
 
@@ -396,6 +398,9 @@ class EnhancedMLEmbeddingPass:
     def _get_embeddings(self, texts: List[str]) -> Dict[str, np.ndarray]:
         """Get embeddings for a list of texts with caching."""
 
+        if self.embedding_model is None:
+            return {}
+
         embeddings = {}
 
         for text in texts:
@@ -426,7 +431,7 @@ class EnhancedMLEmbeddingPass:
 
         if match_type == "artist":
             known_entities = self.artist_candidates
-        elif match_type == "song": 
+        elif match_type == "song":
             known_entities = self.song_candidates
         else:
             return None
@@ -464,14 +469,13 @@ class EnhancedMLEmbeddingPass:
             return sklearn_metrics.cosine_similarity(
                 embedding1.reshape(1, -1), embedding2.reshape(1, -1)
             )[0][0]
-        elif not HAS_SKLEARN:
-            logger.warning("scikit-learn is not available, using fallback cosine similarity")
-        else:
-            # Fallback implementation
-            dot_product = np.dot(embedding1, embedding2)
-            norm1 = np.linalg.norm(embedding1)
-            norm2 = np.linalg.norm(embedding2)
-            return dot_product / (norm1 * norm2) if norm1 > 0 and norm2 > 0 else 0.0
+
+        logger.warning("scikit-learn is not available, using fallback cosine similarity")
+
+        dot_product = np.dot(embedding1, embedding2)
+        norm1 = np.linalg.norm(embedding1)
+        norm2 = np.linalg.norm(embedding2)
+        return dot_product / (norm1 * norm2) if norm1 > 0 and norm2 > 0 else 0.0
 
     async def _hybrid_matching(
         self, title: str, entities: Dict[str, List[str]]
@@ -490,8 +494,7 @@ class EnhancedMLEmbeddingPass:
             fuzzy_confidence = getattr(fuzzy_result, "confidence", 0.0)
             semantic_confidence = getattr(semantic_result, "confidence", 0.0)
             combined_confidence = (
-                fuzzy_confidence * self.fuzzy_weight
-                + semantic_confidence * self.embedding_weight
+                fuzzy_confidence * self.fuzzy_weight + semantic_confidence * self.embedding_weight
             )
             better_result = (
                 fuzzy_result if fuzzy_confidence > semantic_confidence else semantic_result
@@ -598,6 +601,9 @@ class EnhancedMLEmbeddingPass:
     def _generate_knowledge_base_embeddings(self):
         """Generate embeddings for all entities in the knowledge base."""
 
+        if self.embedding_model is None:
+            return
+
         try:
             # Generate artist embeddings
             artist_texts = list(self.artist_candidates.keys())
@@ -648,7 +654,7 @@ class EnhancedMLEmbeddingPass:
                     logger.warning(f"Failed to generate embedding for new entity '{text}': {e}")
 
             candidates[text] = candidate
-    
+
     def get_statistics(self) -> Dict:
         """Get statistics for the ML embedding pass."""
 
