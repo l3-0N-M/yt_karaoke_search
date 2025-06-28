@@ -100,7 +100,7 @@ class MultiPassConfig:
     """Configuration for the multi-pass parsing ladder."""
 
     # Global settings
-    enabled: bool = False  # Disabled by default for backward compatibility
+    enabled: bool = True  # Enabled by default for enhanced parsing
     max_total_retries: int = 5
     global_timeout_seconds: float = 300.0
     stop_on_first_success: bool = True
@@ -114,26 +114,21 @@ class MultiPassConfig:
     max_retry_delay: float = 300.0
     retry_exponential_base: float = 2.0
 
-    # Per-pass configurations
+    # Per-pass configurations in optimized priority order
     channel_template: MultiPassPassConfig = field(
         default_factory=lambda: MultiPassPassConfig(
-            confidence_threshold=0.85,
+            confidence_threshold=0.7,
             timeout_seconds=10.0,
             cpu_budget_limit=2.0,
             api_budget_limit=0,
         )
     )
-    auto_retemplate: MultiPassPassConfig = field(
+    musicbrainz_search: MultiPassPassConfig = field(
         default_factory=lambda: MultiPassPassConfig(
-            confidence_threshold=0.8, timeout_seconds=30.0, cpu_budget_limit=5.0, api_budget_limit=2
-        )
-    )
-    ml_embedding: MultiPassPassConfig = field(
-        default_factory=lambda: MultiPassPassConfig(
-            confidence_threshold=0.75,
-            timeout_seconds=60.0,
-            cpu_budget_limit=10.0,
-            api_budget_limit=5,
+            confidence_threshold=0.65,
+            timeout_seconds=30.0,
+            cpu_budget_limit=5.0,
+            api_budget_limit=10,
         )
     )
     web_search: MultiPassPassConfig = field(
@@ -142,6 +137,27 @@ class MultiPassConfig:
             timeout_seconds=120.0,
             cpu_budget_limit=15.0,
             api_budget_limit=20,
+        )
+    )
+    musicbrainz_validation: MultiPassPassConfig = field(
+        default_factory=lambda: MultiPassPassConfig(
+            confidence_threshold=0.8,
+            timeout_seconds=20.0,
+            cpu_budget_limit=3.0,
+            api_budget_limit=5,
+        )
+    )
+    ml_embedding: MultiPassPassConfig = field(
+        default_factory=lambda: MultiPassPassConfig(
+            confidence_threshold=0.7,
+            timeout_seconds=60.0,
+            cpu_budget_limit=10.0,
+            api_budget_limit=5,
+        )
+    )
+    auto_retemplate: MultiPassPassConfig = field(
+        default_factory=lambda: MultiPassPassConfig(
+            confidence_threshold=0.6, timeout_seconds=30.0, cpu_budget_limit=5.0, api_budget_limit=2
         )
     )
     acoustic_fingerprint: MultiPassPassConfig = field(

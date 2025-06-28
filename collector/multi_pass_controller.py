@@ -16,19 +16,23 @@ from .passes.acoustic_fingerprint_pass import AcousticFingerprintPass
 from .passes.auto_retemplate_pass import AutoRetemplatePass
 from .passes.channel_template_pass import EnhancedChannelTemplatePass
 from .passes.ml_embedding_pass import EnhancedMLEmbeddingPass
+from .passes.musicbrainz_search_pass import MusicBrainzSearchPass
+from .passes.musicbrainz_validation_pass import MusicBrainzValidationPass
 from .passes.web_search_pass import EnhancedWebSearchPass
 
 logger = logging.getLogger(__name__)
 
 
 class PassType(Enum):
-    """Multi-pass parsing ladder pass types."""
+    """Multi-pass parsing ladder pass types in optimized priority order."""
 
-    CHANNEL_TEMPLATE = "channel_template"  # Pass 0: Existing channel-template match
-    AUTO_RETEMPLATE = "auto_retemplate"  # Pass 1: Auto-re-template on recent uploads
-    ML_EMBEDDING = "ml_embedding"  # Pass 2: Light ML / embedding nearest-neighbour
-    WEB_SEARCH = "web_search"  # Pass 3: Web search with filler-stripped query
-    ACOUSTIC_FINGERPRINT = "acoustic_fingerprint"  # Pass 4: Optional acoustic fingerprint batch
+    CHANNEL_TEMPLATE = "channel_template"  # Pass 0: Enhanced channel pattern extrapolation (EFFICIENCY)
+    MUSICBRAINZ_SEARCH = "musicbrainz_search"  # Pass 1: Direct MusicBrainz API lookup (VALIDATION)
+    WEB_SEARCH = "web_search"  # Pass 2: Enhanced web search if MB confidence low (FALLBACK)
+    MUSICBRAINZ_VALIDATION = "musicbrainz_validation"  # Pass 3: Post-web-search MB validation (ENRICHMENT)
+    ML_EMBEDDING = "ml_embedding"  # Pass 4: Light ML / embedding nearest-neighbour (FINAL FALLBACK)
+    AUTO_RETEMPLATE = "auto_retemplate"  # Pass 5: Auto-re-template on recent uploads (FINAL FALLBACK)
+    ACOUSTIC_FINGERPRINT = "acoustic_fingerprint"  # Pass 6: Optional acoustic fingerprint batch (DISABLED)
 
 
 @dataclass
@@ -77,12 +81,14 @@ class MultiPassParsingController:
         self.search_engine = search_engine
         self.db_manager = db_manager
 
-        # Create pass type to config mapping
+        # Create pass type to config mapping in optimized order
         self.pass_configs = {
             PassType.CHANNEL_TEMPLATE: config.channel_template,
-            PassType.AUTO_RETEMPLATE: config.auto_retemplate,
-            PassType.ML_EMBEDDING: config.ml_embedding,
+            PassType.MUSICBRAINZ_SEARCH: config.musicbrainz_search,
             PassType.WEB_SEARCH: config.web_search,
+            PassType.MUSICBRAINZ_VALIDATION: config.musicbrainz_validation,
+            PassType.ML_EMBEDDING: config.ml_embedding,
+            PassType.AUTO_RETEMPLATE: config.auto_retemplate,
             PassType.ACOUSTIC_FINGERPRINT: config.acoustic_fingerprint,
         }
 
@@ -103,6 +109,8 @@ class MultiPassParsingController:
         # Initialize pass implementations
         self.channel_template_pass = EnhancedChannelTemplatePass(advanced_parser, db_manager)
         self.auto_retemplate_pass = AutoRetemplatePass(advanced_parser, db_manager)
+        self.musicbrainz_search_pass = MusicBrainzSearchPass(advanced_parser, db_manager)
+        self.musicbrainz_validation_pass = MusicBrainzValidationPass(advanced_parser, db_manager)
 
         # Initialize fuzzy matcher for ML embedding pass
         from .search.fuzzy_matcher import FuzzyMatcher
@@ -125,14 +133,15 @@ class MultiPassParsingController:
     def _initialize_pass_implementations(self):
         """Initialize the specific implementations for each pass."""
 
-        # Pass implementations will be loaded here
-        # For now, we'll use placeholders that delegate to existing systems
+        # Pass implementations in optimized priority order
         self.pass_implementations = {
             PassType.CHANNEL_TEMPLATE: self._pass_0_channel_template,
-            PassType.AUTO_RETEMPLATE: self._pass_1_auto_retemplate,
-            PassType.ML_EMBEDDING: self._pass_2_ml_embedding,
-            PassType.WEB_SEARCH: self._pass_3_web_search,
-            PassType.ACOUSTIC_FINGERPRINT: self._pass_4_acoustic_fingerprint,
+            PassType.MUSICBRAINZ_SEARCH: self._pass_1_musicbrainz_search,
+            PassType.WEB_SEARCH: self._pass_2_web_search,
+            PassType.MUSICBRAINZ_VALIDATION: self._pass_3_musicbrainz_validation,
+            PassType.ML_EMBEDDING: self._pass_4_ml_embedding,
+            PassType.AUTO_RETEMPLATE: self._pass_5_auto_retemplate,
+            PassType.ACOUSTIC_FINGERPRINT: self._pass_6_acoustic_fingerprint,
         }
 
     async def parse_video(
@@ -195,50 +204,103 @@ class MultiPassParsingController:
         channel_id: str,
         metadata: Dict,
     ):
-        """Execute the parsing ladder with confidence-based stopping."""
+        """Execute the optimized parsing ladder with intelligent flow control."""
 
-        for pass_type in PassType:
-            pass_config = self.pass_configs.get(pass_type)
-
-            # Skip disabled passes
-            if not pass_config or not pass_config.enabled:
-                continue
-
-            # Check if we've exceeded global budgets
-            if self._check_budget_exceeded(result, pass_config):
-                logger.info(f"Skipping {pass_type.value} due to budget constraints")
-                break
-
-            # Execute the pass
-            pass_result = await self._execute_single_pass(
-                pass_type, pass_config, title, description, tags, channel_name, channel_id, metadata
+        # Intelligent execution flow based on your strategy
+        mb_search_result = None
+        web_search_result = None
+        
+        # Pass 0: Channel Template (Pattern Extrapolation)
+        channel_result = await self._execute_pass_if_enabled(
+            PassType.CHANNEL_TEMPLATE, result, title, description, tags, 
+            channel_name, channel_id, metadata
+        )
+        
+        if channel_result and channel_result.confidence >= self.pass_configs[PassType.CHANNEL_TEMPLATE].confidence_threshold:
+            result.final_result = channel_result.parse_result
+            result.stopped_at_pass = PassType.CHANNEL_TEMPLATE
+            logger.info(f"Early exit at channel template with confidence {channel_result.confidence:.2f}")
+            return
+        
+        # Pass 1: MusicBrainz Search (Validation)
+        mb_result = await self._execute_pass_if_enabled(
+            PassType.MUSICBRAINZ_SEARCH, result, title, description, tags,
+            channel_name, channel_id, metadata
+        )
+        
+        if mb_result:
+            mb_search_result = mb_result.parse_result
+            mb_confidence = mb_result.confidence
+            
+            # If MusicBrainz confidence is high enough, skip web search
+            if mb_confidence >= self.pass_configs[PassType.MUSICBRAINZ_SEARCH].confidence_threshold:
+                result.final_result = mb_search_result
+                result.stopped_at_pass = PassType.MUSICBRAINZ_SEARCH
+                logger.info(f"High MB confidence {mb_confidence:.2f}, skipping web search")
+                
+                # Learn from this successful pattern for future efficiency
+                if mb_search_result:
+                    await self._learn_channel_pattern(channel_name, channel_id, title, mb_search_result)
+                return
+            else:
+                logger.info(f"MB confidence {mb_confidence:.2f} below threshold, proceeding to web search")
+        
+        # Pass 2: Web Search (only if MusicBrainz confidence was low)
+        web_result = await self._execute_pass_if_enabled(
+            PassType.WEB_SEARCH, result, title, description, tags,
+            channel_name, channel_id, metadata
+        )
+        
+        if web_result:
+            web_search_result = web_result.parse_result
+            
+            # Pass 3: MusicBrainz Validation (enrich web search results)
+            validation_metadata = metadata.copy()
+            validation_metadata['web_search_result'] = web_search_result
+            
+            validation_result = await self._execute_pass_if_enabled(
+                PassType.MUSICBRAINZ_VALIDATION, result, title, description, tags,
+                channel_name, channel_id, validation_metadata
             )
-
-            result.passes_attempted.append(pass_result)
-
-            # Update budget consumption
-            result.budget_consumed["cpu"] += pass_result.metadata.get("cpu_time", 0.0)
-            result.budget_consumed["api"] += pass_result.metadata.get("api_calls", 0)
-
-            # Check if this pass was successful and meets threshold
-            if pass_result.success and pass_result.confidence >= pass_config.confidence_threshold:
-
-                result.final_result = pass_result.parse_result
+            
+            if validation_result and validation_result.parse_result:
+                result.final_result = validation_result.parse_result
+                result.stopped_at_pass = PassType.MUSICBRAINZ_VALIDATION
+                
+                # Learn from successful web search + validation pattern
+                if validation_result.confidence >= 0.8:
+                    await self._learn_channel_pattern(channel_name, channel_id, title, validation_result.parse_result)
+                
+                logger.info(f"Web search + validation completed with confidence {validation_result.confidence:.2f}")
+                return
+            else:
+                # Use web search result if validation failed
+                result.final_result = web_search_result
+                result.stopped_at_pass = PassType.WEB_SEARCH
+                logger.info(f"Using web search result (validation failed)")
+                return
+        
+        # Fallback passes if everything above failed
+        fallback_passes = [PassType.ML_EMBEDDING, PassType.AUTO_RETEMPLATE]
+        
+        for pass_type in fallback_passes:
+            fallback_result = await self._execute_pass_if_enabled(
+                pass_type, result, title, description, tags, channel_name, channel_id, metadata
+            )
+            
+            if fallback_result and fallback_result.confidence >= self.pass_configs[pass_type].confidence_threshold:
+                result.final_result = fallback_result.parse_result
                 result.stopped_at_pass = pass_type
-
-                logger.info(
-                    f"Parsing stopped at {pass_type.value} with confidence {pass_result.confidence:.2f}"
-                )
-
-                if self.config.stop_on_first_success:
-                    break
-
-        # If no pass succeeded, use the best result
+                logger.info(f"Fallback success at {pass_type.value} with confidence {fallback_result.confidence:.2f}")
+                return
+        
+        # If we get here, use the best result from any successful pass
         if not result.final_result and result.passes_attempted:
             best_pass = max(result.passes_attempted, key=lambda p: p.confidence)
             if best_pass.parse_result:
                 result.final_result = best_pass.parse_result
                 result.stopped_at_pass = best_pass.pass_type
+                logger.info(f"Using best available result from {best_pass.pass_type.value}")
 
     async def _execute_single_pass(
         self,
@@ -402,13 +464,13 @@ class MultiPassParsingController:
         channel_id: str,
         metadata: Dict,
     ) -> Optional[ParseResult]:
-        """Pass 0: Enhanced channel-template match."""
+        """Pass 0: Enhanced channel pattern extrapolation for efficiency."""
 
         return self.channel_template_pass.parse(
             title, description, tags, channel_name, channel_id, metadata
         )
 
-    async def _pass_1_auto_retemplate(
+    async def _pass_5_auto_retemplate(
         self,
         title: str,
         description: str,
@@ -423,7 +485,7 @@ class MultiPassParsingController:
             title, description, tags, channel_name, channel_id, metadata
         )
 
-    async def _pass_2_ml_embedding(
+    async def _pass_4_ml_embedding(
         self,
         title: str,
         description: str,
@@ -438,7 +500,7 @@ class MultiPassParsingController:
             title, description, tags, channel_name, channel_id, metadata
         )
 
-    async def _pass_3_web_search(
+    async def _pass_2_web_search(
         self,
         title: str,
         description: str,
@@ -447,7 +509,7 @@ class MultiPassParsingController:
         channel_id: str,
         metadata: Dict,
     ) -> Optional[ParseResult]:
-        """Pass 3: Web search with filler-stripped query."""
+        """Pass 2: Enhanced web search if MusicBrainz confidence low."""
 
         if not self.web_search_pass:
             return None
@@ -456,7 +518,37 @@ class MultiPassParsingController:
             title, description, tags, channel_name, channel_id, metadata
         )
 
-    async def _pass_4_acoustic_fingerprint(
+    async def _pass_1_musicbrainz_search(
+        self,
+        title: str,
+        description: str,
+        tags: str,
+        channel_name: str,
+        channel_id: str,
+        metadata: Dict,
+    ) -> Optional[ParseResult]:
+        """Pass 1: Direct MusicBrainz API lookup for validation."""
+
+        return await self.musicbrainz_search_pass.parse(
+            title, description, tags, channel_name, channel_id, metadata
+        )
+
+    async def _pass_3_musicbrainz_validation(
+        self,
+        title: str,
+        description: str,
+        tags: str,
+        channel_name: str,
+        channel_id: str,
+        metadata: Dict,
+    ) -> Optional[ParseResult]:
+        """Pass 3: Post-web-search MusicBrainz validation and enrichment."""
+
+        return await self.musicbrainz_validation_pass.parse(
+            title, description, tags, channel_name, channel_id, metadata
+        )
+
+    async def _pass_6_acoustic_fingerprint(
         self,
         title: str,
         description: str,
@@ -470,3 +562,68 @@ class MultiPassParsingController:
         return await self.acoustic_fingerprint_pass.parse(
             title, description, tags, channel_name, channel_id, metadata
         )
+
+    async def _execute_pass_if_enabled(
+        self,
+        pass_type: PassType,
+        result: MultiPassResult,
+        title: str,
+        description: str,
+        tags: str,
+        channel_name: str,
+        channel_id: str,
+        metadata: Dict,
+    ) -> Optional[PassResult]:
+        """Execute a single pass if enabled and within budget."""
+        
+        pass_config = self.pass_configs.get(pass_type)
+        
+        # Skip disabled passes
+        if not pass_config or not pass_config.enabled:
+            return None
+            
+        # Check if we've exceeded global budgets
+        if self._check_budget_exceeded(result, pass_config):
+            logger.info(f"Skipping {pass_type.value} due to budget constraints")
+            return None
+        
+        # Execute the pass
+        pass_result = await self._execute_single_pass(
+            pass_type, pass_config, title, description, tags, channel_name, channel_id, metadata
+        )
+        
+        result.passes_attempted.append(pass_result)
+        
+        # Update budget consumption
+        result.budget_consumed["cpu"] += pass_result.metadata.get("cpu_time", 0.0)
+        result.budget_consumed["api"] += pass_result.metadata.get("api_calls", 0)
+        
+        return pass_result if pass_result.success else None
+
+    async def _learn_channel_pattern(
+        self,
+        channel_name: str,
+        channel_id: str,
+        title: str,
+        successful_result: ParseResult,
+    ):
+        """Learn channel-specific patterns from successful high-confidence parses."""
+        
+        if not channel_id or not successful_result:
+            return
+            
+        try:
+            # Use the existing channel template pass learning functionality
+            if hasattr(self.channel_template_pass, '_learn_from_success'):
+                self.channel_template_pass._learn_from_success(
+                    channel_id=channel_id,
+                    channel_name=channel_name,
+                    title=title,
+                    result=successful_result
+                )
+                
+                logger.info(f"Learned new pattern for channel {channel_name} from title: {title}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to learn channel pattern: {e}")
+            # Non-critical, continue processing

@@ -110,6 +110,33 @@ class FillerWordProcessor:
                     "rendition",
                     "interpretation",
                 },
+                "language_prefixes": {
+                    "de",
+                    "en", 
+                    "fr",
+                    "es",
+                    "it",
+                    "pt",
+                    "nl",
+                    "pl",
+                    "ru",
+                    "jp",
+                    "kr",
+                    "cn",
+                },
+                "noise_terms": {
+                    "video",
+                    "lyrics",
+                    "with",
+                    "without",
+                    "original",
+                    "new",
+                    "best",
+                    "top",
+                    "hit",
+                    "song",
+                    "music",
+                },
             },
             "spanish": {
                 "karaoke_terms": {
@@ -185,19 +212,41 @@ class FillerWordProcessor:
         )
 
     def _additional_cleaning(self, query: str, removed_terms: List[str]) -> str:
-        """Additional query cleaning operations."""
+        """Additional query cleaning operations with karaoke-specific enhancements."""
 
         # Remove excessive punctuation
         query = re.sub(r"[^\w\s\-\'\"&]", " ", query)
 
-        # Remove standalone numbers (often video IDs)
-        query = re.sub(r"\b\d+\b", " ", query)
+        # Remove large ID numbers (> 1001) that are likely video IDs
+        query = re.sub(r"\b\d{4,}\b", " ", query)
+        
+        # Remove smaller standalone numbers but keep years (1900-2099)
+        query = re.sub(r"\b(?:(?:19|20)\d{2})\b", " YEAR ", query)  # Temporarily replace years
+        query = re.sub(r"\b\d{1,3}\b", " ", query)  # Remove other small numbers
+        query = re.sub(r"\bYEAR\b", "", query)  # Remove year placeholder (optional for search)
 
-        # Remove very short words (often acronyms or noise)
+        # Remove language prefixes at the beginning
+        query = re.sub(r"^(?:DE|EN|FR|ES|IT|PT|NL|PL|RU|JP|KR|CN)\s+", "", query, flags=re.IGNORECASE)
+        
+        # Remove quality/format indicators
+        quality_patterns = [
+            r"\b(?:HD|HQ|4K|1080p|720p|480p|360p|UHD|FHD)\b",
+            r"\b(?:high|low)\s+(?:quality|def|definition)\b",
+            r"\b(?:ultra|full)\s+hd\b",
+            r"\b(?:mp3|mp4|wav|flac|video|audio)\b",
+        ]
+        for pattern in quality_patterns:
+            query = re.sub(pattern, " ", query, flags=re.IGNORECASE)
+        
+        # Remove timestamps and duration indicators  
+        query = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\b", " ", query)
+        
+        # Remove very short words (often acronyms or noise) but keep important short words
         words = query.split()
-        words = [word for word in words if len(word) >= 2 or word.lower() in {"a", "i"}]
+        important_short_words = {"a", "i", "am", "is", "be", "to", "of", "in", "on", "at", "by", "me", "my", "we", "up", "go", "no"}
+        words = [word for word in words if len(word) >= 2 or word.lower() in important_short_words]
 
-        # Remove duplicate words
+        # Remove duplicate words while preserving order
         seen = set()
         unique_words = []
         for word in words:
@@ -206,7 +255,11 @@ class FillerWordProcessor:
                 seen.add(word_lower)
                 unique_words.append(word)
 
-        return " ".join(unique_words)
+        # Final cleanup - remove excessive whitespace
+        cleaned = " ".join(unique_words)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        
+        return cleaned
 
 
 class SERPCache:

@@ -17,6 +17,12 @@ try:
 except ImportError:
     HAS_FUZZY_MATCHER = False
 
+try:
+    from .passes.web_search_pass import FillerWordProcessor
+    HAS_FILLER_PROCESSOR = True
+except ImportError:
+    HAS_FILLER_PROCESSOR = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,6 +69,12 @@ class AdvancedTitleParser:
         else:
             self.fuzzy_matcher = None
             logger.info("FuzzyMatcher not available, using basic fuzzy matching")
+        
+        # Initialize filler word processor for enhanced cleaning
+        if HAS_FILLER_PROCESSOR:
+            self.filler_processor = FillerWordProcessor()
+        else:
+            self.filler_processor = None
 
         # Load comprehensive patterns
         self._load_patterns()
@@ -80,7 +92,7 @@ class AdvancedTitleParser:
                 r"^[Kk]araoke\s*[-–—]\s*([^-]+?)\s*[-–—]\s*(.+)$",
                 2,
                 1,
-                0.98,
+                0.85,
                 "karaoke_song_artist",
             ),
             # Quoted patterns - Highest priority
@@ -148,13 +160,29 @@ class AdvancedTitleParser:
             ),
             (r"^([^(]+?)\s*\([^)]*[Ss]tyle\s+of\s+([^)]+?)\)", 2, 1, 0.75, "style_of_standard"),
             (r"^([^(]+?)\s+by\s+([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)", 2, 1, 0.75, "by_pattern"),
+            # Known artist patterns (highest confidence for cleaned German titles)
+            (
+                r"^(helene fischer|unheilig|beatrice egli|peter wackel|andrea berg|gregor meyle)\s+(.+)$",
+                1,
+                2,
+                0.75,
+                "known_artist_pattern",
+            ),
             # Fallback patterns
             (
                 r"^([^-–—]+?)\s*[-–—]\s*([^([\]]+)(?:\s*[\(\[][^)\]]*[Kk]araoke[^)\]]*[\)\]])?",
-                1,
                 2,
+                1,
                 0.6,
                 "basic_dash",
+            ),
+            # Space-separated artist-song patterns (for cleaned titles)
+            (
+                r"^([a-zA-Z\s]+?)\s+([a-zA-Z\s]{3,}?)$",
+                1,
+                2,
+                0.5,
+                "space_separated_artist_song",
             ),
             (r"^([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)", None, 1, 0.5, "title_only"),
         ]
@@ -320,12 +348,24 @@ class AdvancedTitleParser:
         return best_result
 
     def _advanced_clean_title(self, title: str) -> str:
-        """Advanced title cleaning with Unicode normalization."""
+        """Advanced title cleaning with Unicode normalization and enhanced filler removal."""
 
         # Unicode normalization
         cleaned = unicodedata.normalize("NFKC", title)
 
-        # Remove common prefixes/suffixes
+        # Apply enhanced filler word removal if available
+        if self.filler_processor:
+            try:
+                filler_result = self.filler_processor.clean_query(cleaned, "english")
+                cleaned = filler_result.cleaned_query
+                # If filler removal produced empty result, fall back to original
+                if not cleaned.strip():
+                    cleaned = title
+            except Exception as e:
+                logger.warning(f"Filler word processing failed: {e}")
+                # Continue with original cleaning logic
+
+        # Remove common prefixes/suffixes (fallback if filler processor unavailable)
         prefixes = [
             r"^\[[^\]]*\]\s*",  # [Any brackets]
             r"^【[^】]*】\s*",  # 【CJK brackets】
@@ -333,10 +373,18 @@ class AdvancedTitleParser:
             r"^.*?presents\s*:?\s*",  # "Channel presents:"
             r"^Official\s+",  # "Official "
             r"^HD\s+",  # "HD "
+            r"^(?:DE|EN|FR|ES|IT|PT|NL|PL|RU|JP|KR|CN)\s+",  # Language prefixes
         ]
 
         for prefix in prefixes:
             cleaned = re.sub(prefix, "", cleaned, flags=re.IGNORECASE)
+
+        # Additional fallback cleaning for problematic patterns
+        if not self.filler_processor:
+            # Remove large ID numbers (fallback)
+            cleaned = re.sub(r"\b\d{4,}\b", "", cleaned)
+            # Remove quality indicators (fallback)  
+            cleaned = re.sub(r"\b(?:HD|HQ|4K|1080p|720p|480p)\b", "", cleaned, flags=re.IGNORECASE)
 
         # Normalize separators
         cleaned = re.sub(r"[-–—]", "-", cleaned)  # Normalize dashes
@@ -766,6 +814,9 @@ class AdvancedTitleParser:
         # Remove quotes and brackets
         cleaned = re.sub(r'^["\'`]+|["\'`]+$', "", text.strip())
         cleaned = re.sub(r"^\([^)]*\)|^\[[^\]]*\]", "", cleaned).strip()
+        
+        # Remove leading "Karaoke" prefix
+        cleaned = re.sub(r"^[Kk]araoke\s+", "", cleaned).strip()
 
         # Remove trailing noise
         noise_patterns = [
@@ -777,6 +828,7 @@ class AdvancedTitleParser:
             r"\s*\([^)]*[Kk]ey\)$",
             r"\s*\([^)]*\d+[Kk]ey\)$",
             r"\s*\(.*?[Bb]acking.*?\)$",
+            r"\s*\*+\s*$",
         ]
 
         for pattern in noise_patterns:
