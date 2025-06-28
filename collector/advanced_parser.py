@@ -6,7 +6,7 @@ import unicodedata
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from .validation_corrector import ValidationResult
 
@@ -21,6 +21,7 @@ try:
     from .passes.web_search_pass import FillerWordProcessor
     HAS_FILLER_PROCESSOR = True
 except ImportError:
+    FillerWordProcessor = None  # type: ignore
     HAS_FILLER_PROCESSOR = False
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class AdvancedTitleParser:
             logger.info("FuzzyMatcher not available, using basic fuzzy matching")
         
         # Initialize filler word processor for enhanced cleaning
-        if HAS_FILLER_PROCESSOR:
+        if HAS_FILLER_PROCESSOR and FillerWordProcessor is not None:
             self.filler_processor = FillerWordProcessor()
         else:
             self.filler_processor = None
