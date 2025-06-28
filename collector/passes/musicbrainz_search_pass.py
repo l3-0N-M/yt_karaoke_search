@@ -66,6 +66,8 @@ class MusicBrainzSearchPass:
             "api_errors": 0,
             "fuzzy_matches": 0,
             "direct_matches": 0,
+            "title_mismatches_detected": 0,
+            "title_mismatches_strong_penalty": 0,
         }
 
     async def parse(
@@ -246,8 +248,25 @@ class MusicBrainzSearchPass:
     def _calculate_confidence(self, mb_score: int, title: str, artist: str, query: str) -> float:
         """Calculate confidence score for a MusicBrainz match."""
         
+        # Ensure mb_score is numeric (sometimes it comes as string)
+        try:
+            if isinstance(mb_score, str):
+                mb_score = int(mb_score)
+            elif mb_score is None:
+                mb_score = 0
+            mb_score = int(mb_score)
+        except (ValueError, TypeError):
+            mb_score = 0
+        
         # Base confidence from MusicBrainz score (0-100)
         base_confidence = min(mb_score / 100.0, 1.0)
+        
+        # CRITICAL: Title-based cross-validation
+        # Check if the MB artist significantly differs from what's suggested in the title
+        title_artist_penalty = self._check_title_artist_mismatch(query, artist)
+        if title_artist_penalty > 0:
+            base_confidence *= (1.0 - title_artist_penalty)
+            logger.warning(f"Title-artist mismatch detected: query='{query}', mb_artist='{artist}', penalty={title_artist_penalty:.2f}")
         
         # Boost for exact matches in query
         query_lower = query.lower()
@@ -280,6 +299,65 @@ class MusicBrainzSearchPass:
             
         # Cap at reasonable maximum
         return min(base_confidence, 0.95)
+    
+    def _check_title_artist_mismatch(self, query: str, mb_artist: str) -> float:
+        """Check if MusicBrainz artist significantly differs from title-suggested artist.
+        
+        Returns penalty (0.0 = no penalty, 1.0 = maximum penalty)
+        """
+        from difflib import SequenceMatcher
+        import re
+        
+        # Extract potential artist names from the query
+        # Look for patterns like "Artist - Song", "Artist, Name - Song", etc.
+        potential_artists = []
+        
+        # Pattern 1: "Artist - Song" or "Artist: Song"
+        dash_match = re.search(r'^([^-:]+?)[-:]', query)
+        if dash_match:
+            potential_artists.append(dash_match.group(1).strip())
+        
+        # Pattern 2: "LastName, FirstName - Song" 
+        comma_match = re.search(r'^([^,]+),\s*([^-]+)', query)
+        if comma_match:
+            # Both "LastName, FirstName" and "FirstName LastName" order
+            potential_artists.append(f"{comma_match.group(1).strip()}, {comma_match.group(2).strip()}")
+            potential_artists.append(f"{comma_match.group(2).strip()} {comma_match.group(1).strip()}")
+        
+        # Pattern 3: Words at the end of query (often artist after song in some formats)
+        words = query.split()
+        if len(words) >= 2:
+            # Last 1-3 words might be artist
+            potential_artists.append(" ".join(words[-2:]))
+            if len(words) >= 3:
+                potential_artists.append(" ".join(words[-3:]))
+        
+        # Check similarity between MB artist and each potential artist
+        mb_artist_lower = mb_artist.lower()
+        max_similarity = 0.0
+        
+        for potential in potential_artists:
+            potential_lower = potential.lower()
+            
+            # Skip if potential artist is too short or contains obvious noise
+            if len(potential_lower) < 3 or any(noise in potential_lower for noise in ['karaoke', 'lyrics', 'instrumental']):
+                continue
+                
+            similarity = SequenceMatcher(None, mb_artist_lower, potential_lower).ratio()
+            max_similarity = max(max_similarity, similarity)
+        
+        # Calculate penalty based on similarity
+        # If similarity < 0.3, it's probably a wrong match
+        if max_similarity < 0.3 and max_similarity > 0:
+            penalty = 0.6  # Strong penalty for likely wrong artist
+            self.stats["title_mismatches_strong_penalty"] += 1
+        elif max_similarity < 0.5:
+            penalty = 0.3  # Moderate penalty for questionable match
+            self.stats["title_mismatches_detected"] += 1
+        else:
+            penalty = 0.0  # No penalty for reasonable matches
+        
+        return penalty
 
     def _convert_to_parse_result(self, match: MusicBrainzMatch, query: str) -> ParseResult:
         """Convert MusicBrainz match to ParseResult."""
@@ -315,5 +393,7 @@ class MusicBrainzSearchPass:
             "success_rate": success_rate,
             "direct_matches": self.stats["direct_matches"],
             "fuzzy_matches": self.stats["fuzzy_matches"],
+            "title_mismatches_detected": self.stats["title_mismatches_detected"],
+            "title_mismatches_strong_penalty": self.stats["title_mismatches_strong_penalty"],
             "dependencies_available": HAS_MUSICBRAINZ and HAS_REQUESTS,
         }

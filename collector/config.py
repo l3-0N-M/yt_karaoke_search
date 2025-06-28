@@ -117,7 +117,7 @@ class MultiPassConfig:
     # Per-pass configurations in optimized priority order
     channel_template: MultiPassPassConfig = field(
         default_factory=lambda: MultiPassPassConfig(
-            confidence_threshold=0.7,
+            confidence_threshold=0.75,
             timeout_seconds=10.0,
             cpu_budget_limit=2.0,
             api_budget_limit=0,

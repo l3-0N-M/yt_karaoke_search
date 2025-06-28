@@ -88,9 +88,34 @@ class AdvancedTitleParser:
 
         # Core karaoke patterns (existing + new)
         self.core_patterns = [
+            # Channel-specific patterns - Highest priority
+            # Let's Sing Karaoke format: "LastName, FirstName - Song Title (Karaoke & Lyrics)"
+            (
+                r"^([^,]+),\s*([^-]+)\s*[-–—]\s*([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)",
+                "custom_lets_sing",  # Special handling needed for name reordering
+                3,
+                0.95,
+                "lets_sing_karaoke_format",
+            ),
+            # Lugn format: "ARTIST • Song Title • Karaoke"
+            (
+                r"^([^•]+?)\s*•\s*([^•]+?)\s*•\s*[Kk]araoke",
+                1,
+                2,
+                0.95,
+                "lugn_artist_song_karaoke",
+            ),
+            # KaraFun Deutschland format: "Karaoke Song Title - Artist Name *"
+            (
+                r"^[Kk]araoke\s+([^-]+?)\s*[-–—]\s*([^*]+?)\s*\*",
+                2,
+                1,
+                0.95,
+                "karafun_deutschland_format",
+            ),
             # Specific karaoke format - Highest priority
             (
-                r"^[Kk]araoke\s*[-–—]\s*([^-]+?)\s*[-–—]\s*(.+)$",
+                r"^[Kk]araoke\s+(.+?)\s*[-–—]\s*(.+)$",
                 2,
                 1,
                 0.85,
@@ -230,6 +255,33 @@ class AdvancedTitleParser:
 
         # Channel-specific patterns (can be learned)
         self.channel_patterns = {
+            "lets_sing_karaoke": [
+                (
+                    r"^([^,]+),\s*([^-]+)\s*[-–—]\s*([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)",
+                    "custom_lets_sing",
+                    3,
+                    0.95,
+                    "lets_sing_lastname_firstname",
+                ),
+            ],
+            "lugn": [
+                (
+                    r"^([^•]+?)\s*•\s*([^•]+?)\s*•\s*[Kk]araoke",
+                    1,
+                    2,
+                    0.95,
+                    "lugn_bullet_format",
+                ),
+            ],
+            "karafun_deutschland": [
+                (
+                    r"^[Kk]araoke\s+([^-]+?)\s*[-–—]\s*([^*]+?)\s*\*",
+                    2,
+                    1,
+                    0.95,
+                    "karafun_song_artist_star",
+                ),
+            ],
             "sing_king": [
                 (
                     r'^Sing King Karaoke\s*[-–—]\s*"([^"]+)"\s*\([^)]*[Ss]tyle\s+of\s+"([^"]+)"[^)]*\)',
@@ -415,7 +467,13 @@ class AdvancedTitleParser:
         channel_lower = channel_name.lower()
         channel_type = None
 
-        if "sing king" in channel_lower:
+        if "let's sing karaoke" in channel_lower or "lets sing karaoke" in channel_lower:
+            channel_type = "lets_sing_karaoke"
+        elif "lugn" in channel_lower:
+            channel_type = "lugn"
+        elif "karafun deutschland" in channel_lower or "karafun" in channel_lower:
+            channel_type = "karafun_deutschland"
+        elif "sing king" in channel_lower:
             channel_type = "sing_king"
         elif "zoom" in channel_lower and "karaoke" in channel_lower:
             channel_type = "zoom_karaoke"
@@ -654,7 +712,18 @@ class AdvancedTitleParser:
 
         result = ParseResult(method=method, pattern_used=pattern)
 
-        if artist_group and artist_group <= len(match.groups()):
+        # Special handling for Let's Sing Karaoke format
+        if artist_group == "custom_lets_sing":
+            # Format: "LastName, FirstName - Song Title (Karaoke & Lyrics)"
+            # Group 1: LastName, Group 2: FirstName, Group 3: Song Title
+            if len(match.groups()) >= 3:
+                last_name = self._clean_extracted_text(match.group(1))
+                first_name = self._clean_extracted_text(match.group(2))
+                # Reorder to "FirstName LastName"
+                artist = f"{first_name.strip()} {last_name.strip()}".strip()
+                if self._is_valid_artist_name(artist):
+                    result.original_artist = artist
+        elif artist_group and artist_group <= len(match.groups()):
             artist = self._clean_extracted_text(match.group(artist_group))
             if self._is_valid_artist_name(artist):
                 result.original_artist = artist
@@ -835,9 +904,12 @@ class AdvancedTitleParser:
         for pattern in noise_patterns:
             cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
 
-        # Normalize capitalization
-        if cleaned.isupper() or cleaned.islower():
+        # Normalize capitalization (conservative approach)
+        # Only normalize if it's clearly all lowercase and appears to be a normal sentence
+        # Preserve intentional all-caps artist names like "AYLIVA"
+        if cleaned.islower() and len(cleaned) > 3:
             cleaned = cleaned.title()
+        # Don't normalize all-uppercase names as they might be intentional stylization
 
         # Clean up whitespace
         cleaned = re.sub(r"\s+", " ", cleaned).strip()

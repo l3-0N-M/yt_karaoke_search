@@ -236,6 +236,7 @@ class EnhancedChannelTemplatePass:
         channel_lower = channel_name.lower()
         karaoke_indicators = [
             "karaoke",
+            "karafun",
             "karaoké",
             "karaokê",
             "караоке",
@@ -254,8 +255,8 @@ class EnhancedChannelTemplatePass:
 
         # Try to extract without requiring "karaoke" in title since channel is karaoke-focused
         simple_patterns = [
-            (r"^([^-–—]+)\s*[-–—]\s*([^(\[]+)", 1, 2, 0.65, "simple_dash"),
-            (r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"', 1, 2, 0.7, "simple_quoted"),
+            (r"^([^-–—]+)\s*[-–—]\s*([^(\[]+)", 2, 1, 0.65, "simple_dash"),
+            (r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"', 2, 1, 0.7, "simple_quoted"),
             (r"^([^(]+?)\s*\([^)]*by\s+([^)]+)\)", 2, 1, 0.6, "by_in_parentheses"),
         ]
 
