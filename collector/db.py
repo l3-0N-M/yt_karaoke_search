@@ -709,6 +709,10 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                     if views > 0:
                         like_dislike_ratio = (likes - dislikes) / views
 
+                    # Ensure channel exists before inserting video
+                    if not self.ensure_channel_exists(cursor, video_data):
+                        raise Exception("Failed to create required channel record")
+
                     # Insert main video record
                     cursor.execute(
                         """
@@ -918,6 +922,45 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                 return True
         except Exception as e:
             logger.error(f"Failed to save channel data: {e}")
+            return False
+
+    def ensure_channel_exists(self, cursor, video_data: Dict) -> bool:
+        """Ensure a channel record exists before saving video data."""
+        channel_id = video_data.get("uploader_id")
+        if not channel_id:
+            return True  # No channel_id to create
+
+        try:
+            # Check if channel already exists
+            cursor.execute("SELECT 1 FROM channels WHERE channel_id = ?", (channel_id,))
+            if cursor.fetchone():
+                return True  # Channel already exists
+
+            # Create channel record from video data
+            channel_url = f"https://www.youtube.com/channel/{channel_id}"
+            channel_name = video_data.get("uploader", "Unknown Channel")
+            
+            cursor.execute(
+                """
+                INSERT INTO channels (
+                    channel_id, channel_url, channel_name, subscriber_count,
+                    video_count, description, is_karaoke_focused, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (
+                    channel_id,
+                    channel_url,
+                    channel_name,
+                    0,  # subscriber_count (unknown)
+                    0,  # video_count (unknown)
+                    None,  # description (unknown)
+                    True,  # is_karaoke_focused (assume true for karaoke collector)
+                ),
+            )
+            logger.debug(f"Created channel record: {channel_name} ({channel_id})")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create channel record for {channel_id}: {e}")
             return False
 
     def get_channel_last_processed(self, channel_id: str) -> Optional[str]:
