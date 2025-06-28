@@ -53,6 +53,9 @@ class MusicBrainzValidationPass:
             "confidence_penalties": 0,
             "enrichments_added": 0,
             "validation_failures": 0,
+            "artist_corrections": 0,
+            "title_corrections": 0,
+            "existing_mb_data_used": 0,
         }
 
     async def parse(
@@ -142,6 +145,18 @@ class MusicBrainzValidationPass:
                 validation_method="incomplete_parse_data"
             )
         
+        # First check if we have existing MusicBrainz data in the database
+        existing_mb_data = await self._check_existing_musicbrainz_data(original_title)
+        if existing_mb_data:
+            logger.info(f"Found existing MusicBrainz data for '{original_title}' - using authoritative data")
+            self.stats["existing_mb_data_used"] += 1
+            return ValidationResult(
+                validated=True,
+                confidence_adjustment=1.2,  # Boost for existing validated data
+                enriched_data=existing_mb_data,
+                validation_method="existing_musicbrainz_data"
+            )
+        
         # Search MusicBrainz for the artist + song combination
         search_query = f'artist:"{parse_result.original_artist}" AND recording:"{parse_result.song_title}"'
         
@@ -152,6 +167,7 @@ class MusicBrainzValidationPass:
             if not mb_matches:
                 # Try broader search with just artist or song
                 fallback_queries = [
+                    f'artist:"{parse_result.song_title}" AND recording:"{parse_result.original_artist}"',  # Try swapped artist/title
                     f'artist:"{parse_result.original_artist}"',
                     f'recording:"{parse_result.song_title}"',
                     f'{parse_result.original_artist} {parse_result.song_title}'
@@ -173,6 +189,10 @@ class MusicBrainzValidationPass:
                 if validation_confidence >= self.validation_threshold:
                     # Extract enrichment data
                     enriched_data = self._extract_enrichment_data(best_match)
+                    
+                    # Add authoritative artist/title data from MusicBrainz API result
+                    enriched_data["authoritative_artist"] = best_match.artist_name
+                    enriched_data["authoritative_title"] = best_match.song_title
                     
                     return ValidationResult(
                         validated=True,
@@ -283,15 +303,86 @@ class MusicBrainzValidationPass:
         
         return enrichment
 
+    async def _check_existing_musicbrainz_data(self, original_title: str) -> Optional[Dict]:
+        """Check if we already have high-quality MusicBrainz data for this video."""
+        
+        if not self.db_manager:
+            return None
+            
+        try:
+            # Query for existing videos with this title that have MusicBrainz data
+            query = """
+                SELECT original_artist, song_title, musicbrainz_recording_id, 
+                       musicbrainz_artist_id, musicbrainz_confidence,
+                       estimated_release_year, recording_length_ms
+                FROM videos 
+                WHERE title = ? 
+                AND musicbrainz_recording_id IS NOT NULL 
+                AND musicbrainz_artist_id IS NOT NULL
+                AND musicbrainz_confidence > 0.7
+                ORDER BY musicbrainz_confidence DESC
+                LIMIT 1
+            """
+            
+            cursor = await self.db_manager.execute_query(query, (original_title,))
+            row = await cursor.fetchone()
+            
+            if row:
+                return {
+                    "authoritative_artist": row[0],
+                    "authoritative_title": row[1], 
+                    "musicbrainz_recording_id": row[2],
+                    "musicbrainz_artist_id": row[3],
+                    "musicbrainz_confidence": row[4],
+                    "estimated_release_year": row[5],
+                    "recording_length_ms": row[6],
+                    "data_source": "database"
+                }
+                
+        except Exception as e:
+            logger.warning(f"Failed to check existing MusicBrainz data: {e}")
+            
+        return None
+
     def _apply_validation_results(
         self, parse_result: ParseResult, validation_result: ValidationResult
     ) -> ParseResult:
         """Apply validation results to enhance the parse result."""
         
-        # Create a copy of the parse result
+        # Check if we should use authoritative MusicBrainz artist/title data
+        use_authoritative_data = (
+            validation_result.confidence_adjustment >= 0.8 and 
+            validation_result.enriched_data and
+            ("authoritative_artist" in validation_result.enriched_data or
+             "musicbrainz_recording_id" in validation_result.enriched_data)
+        )
+        
+        # Determine final artist and title values
+        final_artist = parse_result.original_artist
+        final_title = parse_result.song_title
+        artist_corrected = False
+        title_corrected = False
+        
+        if use_authoritative_data:
+            # Use authoritative data from existing database or high-confidence MusicBrainz match
+            if "authoritative_artist" in validation_result.enriched_data:
+                if validation_result.enriched_data["authoritative_artist"] != parse_result.original_artist:
+                    artist_corrected = True
+                    self.stats["artist_corrections"] += 1
+                    logger.info(f"Correcting artist from '{parse_result.original_artist}' to '{validation_result.enriched_data['authoritative_artist']}' using MusicBrainz data")
+                final_artist = validation_result.enriched_data["authoritative_artist"]
+                
+            if "authoritative_title" in validation_result.enriched_data:
+                if validation_result.enriched_data["authoritative_title"] != parse_result.song_title:
+                    title_corrected = True
+                    self.stats["title_corrections"] += 1
+                    logger.info(f"Correcting title from '{parse_result.song_title}' to '{validation_result.enriched_data['authoritative_title']}' using MusicBrainz data")
+                final_title = validation_result.enriched_data["authoritative_title"]
+        
+        # Create a copy of the parse result with potentially corrected artist/title
         enhanced_result = ParseResult(
-            original_artist=parse_result.original_artist,
-            song_title=parse_result.song_title,
+            original_artist=final_artist,
+            song_title=final_title,
             featured_artists=parse_result.featured_artists,
             confidence=parse_result.confidence * validation_result.confidence_adjustment,
             method=f"{parse_result.method}_mb_validated",
@@ -307,6 +398,8 @@ class MusicBrainzValidationPass:
             "validation_confidence": validation_result.confidence_adjustment,
             "validation_method": validation_result.validation_method,
             "mb_match_score": validation_result.mb_match_score,
+            "artist_corrected": artist_corrected,
+            "title_corrected": title_corrected,
         })
         
         # Add enrichment data
@@ -332,5 +425,8 @@ class MusicBrainzValidationPass:
             "confidence_boosts": self.stats["confidence_boosts"],
             "confidence_penalties": self.stats["confidence_penalties"],
             "enrichments_added": self.stats["enrichments_added"],
+            "artist_corrections": self.stats["artist_corrections"],
+            "title_corrections": self.stats["title_corrections"],
+            "existing_mb_data_used": self.stats["existing_mb_data_used"],
             "dependencies_available": HAS_MUSICBRAINZ,
         }
