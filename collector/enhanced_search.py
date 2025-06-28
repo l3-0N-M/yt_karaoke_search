@@ -77,12 +77,12 @@ class MultiStrategySearchEngine:
         self.providers["youtube"] = YouTubeSearchProvider(self.scraping_config)
 
         # Fallback providers
-        if HAS_BING:
+        if HAS_BING and BingSearchProvider:
             self.providers["bing"] = BingSearchProvider(self.scraping_config)
         else:
             logger.info("Bing search provider not available")
 
-        if HAS_DUCKDUCKGO:
+        if HAS_DUCKDUCKGO and DuckDuckGoSearchProvider:
             self.providers["duckduckgo"] = DuckDuckGoSearchProvider(self.scraping_config)
         else:
             logger.info("DuckDuckGo search provider not available")
@@ -161,7 +161,13 @@ class MultiStrategySearchEngine:
                 query, provider="multi", max_results=max_results
             )
             if cached_data:
-                return [SearchResult(**result_dict) for result_dict in cached_data]
+                results = []
+                for result_dict in cached_data:
+                    if isinstance(result_dict, dict):
+                        results.append(SearchResult(**result_dict))
+                    elif isinstance(result_dict, SearchResult):
+                        results.append(result_dict)
+                return results
 
         except Exception as e:
             logger.warning(f"Cache retrieval failed: {e}")

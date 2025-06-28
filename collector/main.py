@@ -5,7 +5,7 @@ import logging
 import signal
 import time
 from dataclasses import asdict
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 from .config import CollectorConfig
 from .db import DatabaseManager
@@ -352,8 +352,14 @@ class KaraokeCollector:
             )
 
             # Convert SearchResult objects to dictionaries for processing
-            if video_list and isinstance(video_list[0], SearchResult):
-                video_list = cast(List[Dict[str, Any]], [asdict(v) for v in video_list])
+            if video_list:
+                processed_videos = []
+                for v in video_list:
+                    if isinstance(v, SearchResult):
+                        processed_videos.append(asdict(v))
+                    elif isinstance(v, dict):
+                        processed_videos.append(v)
+                video_list = processed_videos
 
             if not video_list:
                 logger.warning(f"No videos found in channel: {channel_data.get('channel_name')}")
@@ -364,7 +370,7 @@ class KaraokeCollector:
             )
 
             # Process videos using existing batch processing
-            processed_count = await self._process_video_batch(video_list)
+            processed_count = await self._process_video_batch(video_list)  # type: ignore[arg-type]
             total_processed += processed_count
 
             # Update channel processed timestamp

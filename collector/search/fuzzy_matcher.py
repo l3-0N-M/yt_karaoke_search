@@ -170,7 +170,7 @@ class FuzzyMatcher:
             similarities.append(("jaro_winkler", jaro_sim))
 
         # 3. Levenshtein distance normalized
-        if HAS_JELLYFISH:
+        if HAS_JELLYFISH and jellyfish:
             lev_distance = jellyfish.levenshtein_distance(norm1, norm2)
             max_len = max(len(norm1), len(norm2))
             lev_sim = 1.0 - (lev_distance / max_len) if max_len > 0 else 0.0
@@ -343,6 +343,7 @@ class FuzzyMatcher:
             return None
 
         min_score = min_score if min_score is not None else self.min_similarity_threshold
+        assert min_score is not None  # Type narrowing
         best_match = None
         best_score = 0.0
 
@@ -382,6 +383,7 @@ class FuzzyMatcher:
             return []
 
         min_score = min_score if min_score is not None else self.min_similarity_threshold
+        assert min_score is not None  # Type narrowing
         matches = []
 
         for candidate in candidates:
@@ -418,6 +420,7 @@ class FuzzyMatcher:
             return None
 
         min_score = min_score if min_score is not None else self.min_similarity_threshold
+        assert min_score is not None  # Type narrowing
         best_match = None
         best_combined_score = 0.0
 

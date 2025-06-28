@@ -99,9 +99,13 @@ class EnhancedMLEmbeddingPass:
             return
 
         try:
-            self.embedding_model = SentenceTransformer(self.embedding_model_name, device="cpu")
-            logger.info(f"Initialized embedding model: {self.embedding_model_name}")
-            self.has_embedding_model = True
+            if SentenceTransformer:
+                self.embedding_model = SentenceTransformer(self.embedding_model_name, device="cpu")
+                logger.info(f"Initialized embedding model: {self.embedding_model_name}")
+                self.has_embedding_model = True
+            else:
+                logger.warning("SentenceTransformer not available")
+                self.embedding_model = None
         except Exception as e:
             logger.warning(f"Failed to initialize embedding model: {e}")
             self.embedding_model = None
@@ -465,7 +469,7 @@ class EnhancedMLEmbeddingPass:
     def _cosine_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
         """Calculate cosine similarity between two embeddings."""
 
-        if HAS_SKLEARN:
+        if HAS_SKLEARN and sklearn_metrics:
             return sklearn_metrics.cosine_similarity(
                 embedding1.reshape(1, -1), embedding2.reshape(1, -1)
             )[0][0]

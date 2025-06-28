@@ -4,7 +4,7 @@
 # Older layouts expected `search.py` at the package root; we directly import the
 # packaged version for reliability.
 try:
-    from ..search_engine import SearchEngine as SearchEngineImpl
+    from ..search_engine import SearchEngine as SearchEngineImpl  # type: ignore[assignment]
 except Exception:
     # Final fallback - minimal wrapper using the YouTube provider only.
     from .providers.base import SearchResult

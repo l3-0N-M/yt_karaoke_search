@@ -118,6 +118,10 @@ class DuckDuckGoSearchProvider(SearchProvider):
 
         try:
             # First, get the search token
+            if not requests:
+                self.logger.error("requests library not available")
+                return []
+            
             session = requests.Session()
             session.headers.update(self.headers)
 
