@@ -2,7 +2,7 @@
 
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -133,7 +133,7 @@ class ResultRanker:
         }
 
     def rank_results(
-        self, results: List[SearchResult], query: str = "", context: Dict = None
+        self, results: List[SearchResult], query: str = "", context: Optional[Dict] = None
     ) -> List[RankingResult]:
         """Rank search results using multi-dimensional scoring."""
         if not results:
@@ -460,7 +460,7 @@ class ResultRanker:
             "log_view_score": math.log10(max(1, result.view_count)) if result.view_count else 0,
             "upload_date": result.upload_date,
             "estimated_age_days": self._calculate_age_days(result.upload_date),
-        } # type: ignore
+        }  # type: ignore
 
     def _get_metadata_details(self, result: SearchResult) -> Dict:
         """Get detailed metadata completeness information."""
@@ -493,7 +493,7 @@ class ResultRanker:
         else:
             return "unknown"
 
-    def _calculate_age_days(self, upload_date: str) -> Optional[int]:
+    def _calculate_age_days(self, upload_date: Optional[str]) -> Optional[int]:
         """Calculate age in days from upload date."""
         if not upload_date:
             return None

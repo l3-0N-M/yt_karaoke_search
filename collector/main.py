@@ -5,7 +5,7 @@ import logging
 import signal
 import time
 from dataclasses import asdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from .config import CollectorConfig
 from .db import DatabaseManager
@@ -198,7 +198,9 @@ class KaraokeCollector:
                 logger.info(f"Found {len(video_urls)} videos for '{query}'")
 
                 # Process videos
-                processed_count = await self._process_video_batch([asdict(v) if isinstance(v, SearchResult) else v for v in video_urls])
+                processed_count = await self._process_video_batch(
+                    [asdict(v) if isinstance(v, SearchResult) else v for v in video_urls]
+                )
                 total_processed += processed_count
 
             except Exception as e:
@@ -208,7 +210,7 @@ class KaraokeCollector:
         logger.info(f"Collection completed: {total_processed} videos in {collection_time:.1f}s")
         return total_processed
 
-    async def _process_video_batch(self, video_rows: List[Dict]) -> int:
+    async def _process_video_batch(self, video_rows: List[Dict[str, Any]]) -> int:
         """
         Fully-async batch runner with optional progress bar:
           • uses one asyncio.Semaphore to cap concurrency
@@ -351,7 +353,7 @@ class KaraokeCollector:
 
             # Convert SearchResult objects to dictionaries for processing
             if video_list and isinstance(video_list[0], SearchResult):
-                video_list = [asdict(v) for v in video_list]
+                video_list = cast(List[Dict[str, Any]], [asdict(v) for v in video_list])
 
             if not video_list:
                 logger.warning(f"No videos found in channel: {channel_data.get('channel_name')}")

@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional
 
@@ -107,7 +107,9 @@ class MultiPassParsingController:
         # Initialize fuzzy matcher for ML embedding pass
         from .search.fuzzy_matcher import FuzzyMatcher
 
-        fuzzy_matcher = FuzzyMatcher(config.dict() if hasattr(config, "__dataclass_fields__") else {})
+        fuzzy_matcher = FuzzyMatcher(
+            asdict(config) if hasattr(config, "__dataclass_fields__") else {}
+        )
 
         self.ml_embedding_pass = EnhancedMLEmbeddingPass(advanced_parser, fuzzy_matcher, db_manager)
 

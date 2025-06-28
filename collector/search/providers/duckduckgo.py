@@ -3,13 +3,14 @@
 import logging
 import re
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 try:
     import requests
 
     HAS_REQUESTS = True
 except ImportError:
+    requests = None  # type: ignore
     HAS_REQUESTS = False
 
 from .base import SearchProvider, SearchResult
@@ -234,9 +235,9 @@ class DuckDuckGoSearchProvider(SearchProvider):
         results.sort(key=lambda x: x.relevance_score, reverse=True)
         return results
 
-    def _parse_duration(self, duration_str: str) -> int:
+    def _parse_duration(self, duration_str: str) -> Optional[int]:
         """Parse duration string to seconds."""
-        if not duration_str:  # Changed from "if not duration_str:" to "if duration_str is None:"
+        if not duration_str:
             return None
 
         try:

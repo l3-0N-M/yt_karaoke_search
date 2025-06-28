@@ -78,12 +78,9 @@ class AutoRetemplatePass:
             return None
 
         start_time = time.time()
+        trend: ChannelTrend = self._get_or_create_trend(channel_id, channel_name)
 
         try:
-            trend: ChannelTrend
-            # Step 1: Get or create channel trend tracking
-            trend = self._get_or_create_trend(channel_id, channel_name)
-
 
             # Step 2: Try current active patterns first
             result = self._try_active_patterns(trend, title, description, tags)
@@ -412,8 +409,10 @@ class AutoRetemplatePass:
             # Escape the extracted parts
             # Replace the parts with capturing groups
             pattern = title or ""
-            pattern = pattern.replace(result.original_artist, "([^-–—\"']+?)")
-            pattern = pattern.replace(result.song_title, "([^(\\[]+?)")
+            if result.original_artist:
+                pattern = pattern.replace(result.original_artist, "([^-–—\"']+?)")
+            if result.song_title:
+                pattern = pattern.replace(result.song_title, "([^(\\[]+?)")
 
             # Clean up and validate
             pattern = f"^{pattern}$"
