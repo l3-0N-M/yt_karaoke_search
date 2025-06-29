@@ -160,15 +160,6 @@ class MultiPassConfig:
             confidence_threshold=0.6, timeout_seconds=30.0, cpu_budget_limit=5.0, api_budget_limit=2
         )
     )
-    acoustic_fingerprint: MultiPassPassConfig = field(
-        default_factory=lambda: MultiPassPassConfig(
-            enabled=False,  # Placeholder for future implementation
-            confidence_threshold=0.9,
-            timeout_seconds=300.0,
-            cpu_budget_limit=60.0,
-            api_budget_limit=50,
-        )
-    )
 
 
 @dataclass
@@ -387,7 +378,6 @@ def load_config(config_path: Optional[str] = None) -> CollectorConfig:
                 "auto_retemplate",
                 "ml_embedding",
                 "web_search",
-                "acoustic_fingerprint",
             ]:
                 pass_data = multi_pass_data.pop(pass_name, {})
                 pass_configs[pass_name] = MultiPassPassConfig(

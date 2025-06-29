@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from ..advanced_parser import AdvancedTitleParser, ParseResult
+from .base import ParsingPass, PassType
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class ChannelTrend:
     successful_recent_parses: int = 0
 
 
-class AutoRetemplatePass:
+class AutoRetemplatePass(ParsingPass):
     """Pass 1: Auto-re-template on recent uploads with intelligent pattern evolution."""
 
     def __init__(self, advanced_parser: AdvancedTitleParser, db_manager=None):
@@ -62,6 +63,10 @@ class AutoRetemplatePass:
 
         # Load existing trends
         self._load_channel_trends()
+
+    @property
+    def pass_type(self) -> PassType:
+        return PassType.AUTO_RETEMPLATE
 
     async def parse(
         self,
@@ -394,7 +399,7 @@ class AutoRetemplatePass:
 
         if basic_result and basic_result.confidence > 0.5:
             # Try to create a new pattern based on this successful parse
-            if basic_result.original_artist and basic_result.song_title:
+            if basic_result.artist and basic_result.song_title:
                 new_pattern = self._create_pattern_from_parse(title, basic_result)
                 if new_pattern:
                     self._add_learned_pattern(trend, new_pattern, title)
@@ -409,8 +414,8 @@ class AutoRetemplatePass:
             # Escape the extracted parts
             # Replace the parts with capturing groups
             pattern = title or ""
-            if result.original_artist:
-                pattern = pattern.replace(result.original_artist, "([^-–—\"']+?)")
+            if result.artist:
+                pattern = pattern.replace(result.artist, "([^-–—\"']+?)")
             if result.song_title:
                 pattern = pattern.replace(result.song_title, "([^(\\[]+?)")
 
@@ -455,7 +460,7 @@ class AutoRetemplatePass:
                     match.group(pattern.artist_group)
                 )
                 if self.advanced_parser._is_valid_artist_name(artist):
-                    result.original_artist = artist
+                    result.artist = artist
 
             if pattern.title_group and pattern.title_group <= len(match.groups()):
                 song_title = self.advanced_parser._clean_extracted_text(
@@ -475,9 +480,9 @@ class AutoRetemplatePass:
             success_rate = pattern.success_count / max(pattern.video_count, 1)
             success_factor = 0.5 + 0.5 * success_rate
 
-            if result.original_artist and result.song_title:
+            if result.artist and result.song_title:
                 result.confidence = base_confidence * recency_factor * success_factor
-            elif result.original_artist or result.song_title:
+            elif result.artist or result.song_title:
                 result.confidence = base_confidence * recency_factor * success_factor * 0.7
             else:
                 result.confidence = 0

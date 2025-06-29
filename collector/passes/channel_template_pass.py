@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from ..advanced_parser import AdvancedTitleParser, ParseResult
+from .base import ParsingPass, PassType
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class ChannelStats:
     drift_threshold: float = 0.5
 
 
-class EnhancedChannelTemplatePass:
+class EnhancedChannelTemplatePass(ParsingPass):
     """Enhanced Pass 0: Channel-template matching with learning and drift detection."""
 
     def __init__(self, advanced_parser: AdvancedTitleParser, db_manager=None):
@@ -66,7 +67,11 @@ class EnhancedChannelTemplatePass:
         # Load existing patterns if available
         self._load_channel_patterns()
 
-    def parse(
+    @property
+    def pass_type(self) -> PassType:
+        return PassType.CHANNEL_TEMPLATE
+
+    async def parse(
         self,
         title: str,
         description: str = "",
@@ -297,7 +302,7 @@ class EnhancedChannelTemplatePass:
                     match.group(pattern.artist_group)
                 )
                 if self.advanced_parser._is_valid_artist_name(artist):
-                    result.original_artist = artist
+                    result.artist = artist
 
             if pattern.title_group and pattern.title_group <= len(match.groups()):
                 song_title = self.advanced_parser._clean_extracted_text(
@@ -308,9 +313,9 @@ class EnhancedChannelTemplatePass:
 
             # Calculate confidence based on pattern history and extraction success
             base_confidence = pattern.confidence
-            if result.original_artist and result.song_title:
+            if result.artist and result.song_title:
                 result.confidence = base_confidence
-            elif result.original_artist or result.song_title:
+            elif result.artist or result.song_title:
                 result.confidence = base_confidence * 0.7
             else:
                 result.confidence = 0
@@ -351,7 +356,7 @@ class EnhancedChannelTemplatePass:
         stats.last_updated = datetime.now()
 
         # Track format patterns
-        if result.original_artist and result.song_title:
+        if result.artist and result.song_title:
             # Try to generalize the successful pattern
             generalized_pattern = self._generalize_pattern(title, result)
             if generalized_pattern:
@@ -360,7 +365,7 @@ class EnhancedChannelTemplatePass:
     def _generalize_pattern(self, title: str, result: ParseResult) -> Optional[str]:
         """Generalize a successful parse into a reusable pattern."""
 
-        if not result.original_artist or not result.song_title:
+        if not result.artist or not result.song_title:
             return None
 
         # Escape the extracted parts for regex
@@ -368,7 +373,7 @@ class EnhancedChannelTemplatePass:
         pattern = title
 
         # Replace artist with group 1
-        pattern = pattern.replace(result.original_artist, "([^-–—\"']+?)")
+        pattern = pattern.replace(result.artist, "([^-–—\"']+?)")
 
         # Replace title with group 2
         pattern = pattern.replace(result.song_title, r"([^(\[]+?)")

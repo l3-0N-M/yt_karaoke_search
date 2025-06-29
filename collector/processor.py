@@ -275,23 +275,23 @@ class VideoProcessor:
         features = video_data.get("features", {})
         if (
             self.config.data_sources.musicbrainz_enabled
-            and features.get("original_artist")
+            and features.get("artist")
             and features.get("song_title")
         ):
             music_data, recording = await self._get_music_metadata(
-                features["original_artist"], features["song_title"]
+                features["artist"], features["song_title"]
             )
             video_data.update(music_data)
             if recording:
                 validation, suggestion = self.validator.validate(
-                    features["original_artist"], features["song_title"], recording
+                    features["artist"], features["song_title"], recording
                 )
                 video_data["validation"] = asdict(validation)
                 if suggestion:
                     video_data["correction_suggestion"] = asdict(suggestion)
                 if self.advanced_parser:
                     self.advanced_parser.apply_validation_feedback(
-                        features["original_artist"],
+                        features["artist"],
                         features["song_title"],
                         validation,
                     )
@@ -395,7 +395,7 @@ class VideoProcessor:
         except Exception as e:
             logger.debug(f"MusicBrainz lookup failed for {artist} - {song}: {e}")
 
-        return {"musicbrainz_confidence": 0.0}, None
+        return {"parse_confidence": 0.0}, None
 
     def _select_best_recording(
         self, recordings: List[Dict], target_artist: str, target_song: str
@@ -510,7 +510,7 @@ class VideoProcessor:
                         record_labels.add(label_name)
 
             if earliest_year:
-                metadata["estimated_release_year"] = earliest_year
+                metadata["release_year"] = earliest_year
 
             if record_labels:
                 metadata["record_label"] = ", ".join(sorted(record_labels)[:3])  # Limit to top 3
@@ -525,7 +525,7 @@ class VideoProcessor:
         metadata.update(genre_info)
 
         # Calculate confidence score
-        metadata["musicbrainz_confidence"] = self._calculate_musicbrainz_confidence(
+        metadata["parse_confidence"] = self._calculate_parse_confidence(
             recording, target_artist, target_song, metadata
         )
 
@@ -618,7 +618,7 @@ class VideoProcessor:
 
         return None
 
-    def _calculate_musicbrainz_confidence(
+    def _calculate_parse_confidence(
         self, recording: Dict, target_artist: str, target_song: str, metadata: Dict
     ) -> float:
         """Calculate confidence score for MusicBrainz match."""
@@ -651,7 +651,7 @@ class VideoProcessor:
             confidence += 0.1
 
         # Bonus for rich metadata
-        if metadata.get("estimated_release_year"):
+        if metadata.get("release_year"):
             confidence += 0.05
         if metadata.get("musicbrainz_genre"):
             confidence += 0.05
@@ -695,7 +695,7 @@ class VideoProcessor:
 
         if parse_result is not None:
             artist_info = {
-                "original_artist": parse_result.original_artist,
+                "original_artist": parse_result.artist,
                 "song_title": parse_result.song_title,
                 "artist_confidence": parse_result.confidence,
                 "parsing_method": parse_result.method,
@@ -910,7 +910,7 @@ class VideoProcessor:
                 if artist_group and artist_group <= len(match.groups()):
                     artist = self._clean_extracted_text(match.group(artist_group))
                     if self._is_valid_artist_name(artist):
-                        result["original_artist"] = artist
+                        result["artist"] = artist
 
                 if title_group and title_group <= len(match.groups()):
                     song_title = self._clean_extracted_text(match.group(title_group))
@@ -929,7 +929,7 @@ class VideoProcessor:
         if desc_match:
             artist = self._clean_extracted_text(desc_match.group(1))
             if self._is_valid_artist_name(artist):
-                return {"original_artist": artist, "artist_confidence": 0.5}
+                return {"artist": artist, "artist_confidence": 0.5}
 
         # Try custom patterns from config
         for custom_pattern in self.config.search.title_patterns:
@@ -941,7 +941,7 @@ class VideoProcessor:
                     result = {}
 
                     if self._is_valid_artist_name(artist):
-                        result["original_artist"] = artist
+                        result["artist"] = artist
                     if self._is_valid_song_title(song_title):
                         result["song_title"] = song_title
 
@@ -1109,7 +1109,7 @@ class VideoProcessor:
             metadata_factors.append(0.2)
         if video_data.get("tags"):
             metadata_factors.append(0.2)
-        if video_data.get("features", {}).get("original_artist"):
+        if video_data.get("features", {}).get("artist"):
             metadata_factors.append(0.2)
         if video_data.get("features", {}).get("song_title"):
             metadata_factors.append(0.2)

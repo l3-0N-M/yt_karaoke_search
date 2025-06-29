@@ -113,9 +113,9 @@ class DummyChannelDB(DummyDB):
 
 def test_collect_videos(monkeypatch):
     config = CollectorConfig()
-    monkeypatch.setattr(main, "DatabaseManager", lambda cfg: DummyDB())
+    monkeypatch.setattr(main, "OptimizedDatabaseManager", lambda cfg: DummyDB())
     collector = main.KaraokeCollector(config)
-    collector.search_engine = cast(main.SearchEngine, DummySearch())
+    collector.search_engine = cast(main.MultiStrategySearchEngine, DummySearch())
     collector.video_processor = cast(main.VideoProcessor, DummyProcessor())
 
     count = asyncio.run(collector.collect_videos(["test"], 2))
@@ -128,10 +128,10 @@ def test_collect_from_channel_batch(monkeypatch, incremental):
     config = CollectorConfig()
     db = DummyChannelDB()
     db.last_processed = "2024-01-01"
-    monkeypatch.setattr(main, "DatabaseManager", lambda cfg: db)
+    monkeypatch.setattr(main, "OptimizedDatabaseManager", lambda cfg: db)
     collector = main.KaraokeCollector(config)
     search = DummyChannelSearch()
-    collector.search_engine = cast(main.SearchEngine, search)
+    collector.search_engine = cast(main.MultiStrategySearchEngine, search)
 
     async def fake_process(url):
         assert collector.video_processor.advanced_parser is not None
@@ -175,7 +175,7 @@ def test_collect_from_channel_multi_strategy(monkeypatch):
     config.search.use_multi_strategy = True
     db = DummyChannelDB()
     db.last_processed = "2024-01-01"
-    monkeypatch.setattr(main, "DatabaseManager", lambda cfg: db)
+    monkeypatch.setattr(main, "OptimizedDatabaseManager", lambda cfg: db)
     collector = main.KaraokeCollector(config)
     search = DummyMultiChannelSearch()
     collector.search_engine = cast(main.MultiStrategySearchEngine, search)
@@ -220,7 +220,7 @@ class DummyCleanupDB(DummyDB):
 def test_cleanup_memory_cache_keeps_recent_ids(monkeypatch):
     config = CollectorConfig()
     db = DummyCleanupDB()
-    monkeypatch.setattr(main, "DatabaseManager", lambda cfg: db)
+    monkeypatch.setattr(main, "OptimizedDatabaseManager", lambda cfg: db)
     collector = main.KaraokeCollector(config)
     collector.processed_video_ids = {"new"}
     asyncio.run(collector._cleanup_memory_cache(force=True))

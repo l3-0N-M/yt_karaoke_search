@@ -9,6 +9,7 @@ import numpy as np
 
 from ..advanced_parser import AdvancedTitleParser, ParseResult
 from ..search.fuzzy_matcher import FuzzyMatcher
+from .base import ParsingPass, PassType
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class SemanticCandidate:
     aliases: Set[str] = field(default_factory=set)
 
 
-class EnhancedMLEmbeddingPass:
+class EnhancedMLEmbeddingPass(ParsingPass):
     """Pass 2: Enhanced ML/embedding similarity with semantic understanding."""
 
     def __init__(
@@ -132,6 +133,10 @@ class EnhancedMLEmbeddingPass:
                 r"\([^)]*(?:key|tempo|bpm)[^)]*\)",
             ],
         }
+
+    @property
+    def pass_type(self) -> PassType:
+        return PassType.ML_EMBEDDING
 
     async def parse(
         self,
@@ -283,7 +288,7 @@ class EnhancedMLEmbeddingPass:
                             if combined_confidence > best_confidence:
                                 best_confidence = combined_confidence
                                 best_match = ParseResult(
-                                    original_artist=artist_match.matched,
+                                    artist=artist_match.matched,
                                     song_title=song_match.matched,
                                     confidence=combined_confidence,
                                     method="enhanced_fuzzy_matching",
@@ -382,7 +387,7 @@ class EnhancedMLEmbeddingPass:
                     combined_confidence *= 0.85  # Penalty for single match
 
                 return ParseResult(
-                    original_artist=best_artist_match.matched_text if best_artist_match else None,
+                    artist=best_artist_match.matched_text if best_artist_match else None,
                     song_title=best_song_match.matched_text if best_song_match else None,
                     confidence=combined_confidence,
                     method="semantic_similarity",
@@ -518,13 +523,13 @@ class EnhancedMLEmbeddingPass:
 
         if (
             better_result is None
-            or not hasattr(better_result, "original_artist")
+            or not hasattr(better_result, "artist")
             or not hasattr(better_result, "song_title")
         ):
             return None
 
         hybrid_result = ParseResult(
-            original_artist=better_result.original_artist,
+            artist=better_result.original_artist,
             song_title=better_result.song_title,
             confidence=combined_confidence,
             method="hybrid_fuzzy_semantic",
@@ -553,7 +558,7 @@ class EnhancedMLEmbeddingPass:
         if len(quoted_texts) >= 2:
             # Assume first quoted text is artist, second is song
             return ParseResult(
-                original_artist=quoted_texts[0],
+                artist=quoted_texts[0],
                 song_title=quoted_texts[1],
                 confidence=0.65,
                 method="entity_pattern_quoted",
@@ -563,7 +568,7 @@ class EnhancedMLEmbeddingPass:
         if len(quoted_texts) == 1 and len(capitalized) >= 1:
             # One quoted (probably song), one capitalized (probably artist)
             return ParseResult(
-                original_artist=capitalized[0],
+                artist=capitalized[0],
                 song_title=quoted_texts[0],
                 confidence=0.6,
                 method="entity_pattern_mixed",
@@ -573,7 +578,7 @@ class EnhancedMLEmbeddingPass:
         if len(capitalized) >= 2:
             # Assume first capitalized is artist, last is song
             return ParseResult(
-                original_artist=capitalized[0],
+                artist=capitalized[0],
                 song_title=capitalized[-1],
                 confidence=0.55,
                 method="entity_pattern_capitalized",

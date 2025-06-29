@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 
 from ..advanced_parser import AdvancedTitleParser, ParseResult
 from ..enhanced_search import MultiStrategySearchEngine
+from .base import ParsingPass, PassType
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ class FillerWordProcessor:
                 },
                 "language_prefixes": {
                     "de",
-                    "en", 
+                    "en",
                     "fr",
                     "es",
                     "it",
@@ -219,15 +220,17 @@ class FillerWordProcessor:
 
         # Remove large ID numbers (> 1001) that are likely video IDs
         query = re.sub(r"\b\d{4,}\b", " ", query)
-        
+
         # Remove smaller standalone numbers but keep years (1900-2099)
         query = re.sub(r"\b(?:(?:19|20)\d{2})\b", " YEAR ", query)  # Temporarily replace years
         query = re.sub(r"\b\d{1,3}\b", " ", query)  # Remove other small numbers
         query = re.sub(r"\bYEAR\b", "", query)  # Remove year placeholder (optional for search)
 
         # Remove language prefixes at the beginning
-        query = re.sub(r"^(?:DE|EN|FR|ES|IT|PT|NL|PL|RU|JP|KR|CN)\s+", "", query, flags=re.IGNORECASE)
-        
+        query = re.sub(
+            r"^(?:DE|EN|FR|ES|IT|PT|NL|PL|RU|JP|KR|CN)\s+", "", query, flags=re.IGNORECASE
+        )
+
         # Remove quality/format indicators
         quality_patterns = [
             r"\b(?:HD|HQ|4K|1080p|720p|480p|360p|UHD|FHD)\b",
@@ -237,13 +240,31 @@ class FillerWordProcessor:
         ]
         for pattern in quality_patterns:
             query = re.sub(pattern, " ", query, flags=re.IGNORECASE)
-        
-        # Remove timestamps and duration indicators  
+
+        # Remove timestamps and duration indicators
         query = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\b", " ", query)
-        
+
         # Remove very short words (often acronyms or noise) but keep important short words
         words = query.split()
-        important_short_words = {"a", "i", "am", "is", "be", "to", "of", "in", "on", "at", "by", "me", "my", "we", "up", "go", "no"}
+        important_short_words = {
+            "a",
+            "i",
+            "am",
+            "is",
+            "be",
+            "to",
+            "of",
+            "in",
+            "on",
+            "at",
+            "by",
+            "me",
+            "my",
+            "we",
+            "up",
+            "go",
+            "no",
+        }
         words = [word for word in words if len(word) >= 2 or word.lower() in important_short_words]
 
         # Remove duplicate words while preserving order
@@ -258,7 +279,7 @@ class FillerWordProcessor:
         # Final cleanup - remove excessive whitespace
         cleaned = " ".join(unique_words)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
-        
+
         return cleaned
 
 
@@ -375,6 +396,7 @@ class SERPCache:
 
     def set_total_requests(self, total_requests: int):
         self.total_requests = total_requests
+
     def _calculate_avg_age_hours(self) -> float:
         """Calculate average age of cache entries."""
 
@@ -396,7 +418,7 @@ class SERPCache:
         return [(entry.query, entry.access_count) for _, entry in sorted_entries[:limit]]
 
 
-class EnhancedWebSearchPass:
+class EnhancedWebSearchPass(ParsingPass):
     """Pass 3: Enhanced web search with intelligent query processing."""
 
     def __init__(
@@ -426,6 +448,10 @@ class EnhancedWebSearchPass:
             "successful_parses": 0,
             "query_cleaning_improvements": 0,
         }
+
+    @property
+    def pass_type(self) -> PassType:
+        return PassType.WEB_SEARCH
 
     async def parse(
         self,
@@ -657,7 +683,7 @@ class EnhancedWebSearchPass:
 
         for result in parsed_results:
             key = (
-                result.original_artist.lower() if result.original_artist else "",
+                result.artist.lower() if result.artist else "",
                 result.song_title.lower() if result.song_title else "",
             )
             result_groups[key].append(result)

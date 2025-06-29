@@ -7,8 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from collector.advanced_parser import ParseResult
-from collector.config import CollectorConfig
-from collector.db import DatabaseConfig, DatabaseManager
+from collector.config import CollectorConfig, DatabaseConfig
+from collector.db_optimized import OptimizedDatabaseManager
 from collector.processor import ProcessingResult, VideoProcessor
 
 
@@ -89,7 +89,9 @@ def test_like_dislike_ratio_calculation():
     db_path = Path(tempfile.gettempdir()) / "test_ratio.db"
 
     try:
-        db_manager = DatabaseManager(DatabaseConfig(path=str(db_path), backup_enabled=False))
+        db_manager = OptimizedDatabaseManager(
+            DatabaseConfig(path=str(db_path), backup_enabled=False)
+        )
 
         # Mock result with engagement data
         mock_result = ProcessingResult(
@@ -120,7 +122,7 @@ def test_like_dislike_ratio_calculation():
 
             # Fetch the stored video data
             row = cursor.execute(
-                "SELECT video_id, url, title, view_count, like_count, like_dislike_to_views_ratio "
+                "SELECT video_id, url, title, view_count, like_count, engagement_ratio "
                 "FROM videos WHERE video_id='test123'"
             ).fetchone()
 

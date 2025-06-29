@@ -141,11 +141,11 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (2);
         if not migration_003_path.exists():
             migration_003_content = """-- Migration 003: Add featured artists and engagement ratios
 ALTER TABLE videos ADD COLUMN featured_artists TEXT;
-ALTER TABLE videos ADD COLUMN like_dislike_to_views_ratio REAL;
+ALTER TABLE videos ADD COLUMN engagement_ratio REAL;
 
 -- Update existing records with computed ratios
 UPDATE videos
-SET like_dislike_to_views_ratio =
+SET engagement_ratio =
   CASE
     WHEN view_count > 0 THEN
       (like_count - COALESCE((SELECT estimated_dislikes FROM ryd_data WHERE ryd_data.video_id = videos.video_id), 0)) * 1.0 / view_count
@@ -200,7 +200,7 @@ ALTER TABLE videos ADD COLUMN musicbrainz_recording_id TEXT;
 ALTER TABLE videos ADD COLUMN musicbrainz_artist_id TEXT;
 ALTER TABLE videos ADD COLUMN musicbrainz_genre TEXT;
 ALTER TABLE videos ADD COLUMN musicbrainz_tags TEXT;
-ALTER TABLE videos ADD COLUMN musicbrainz_confidence REAL;
+ALTER TABLE videos ADD COLUMN parse_confidence REAL;
 ALTER TABLE videos ADD COLUMN record_label TEXT;
 ALTER TABLE videos ADD COLUMN recording_length_ms INTEGER;
 
@@ -434,17 +434,17 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                 original_artist TEXT,
                 featured_artists TEXT,
                 song_title TEXT,
-                estimated_release_year INTEGER,
+                release_year INTEGER,
                 musicbrainz_recording_id TEXT,
                 musicbrainz_artist_id TEXT,
                 musicbrainz_genre TEXT,
                 musicbrainz_tags TEXT,
-                musicbrainz_confidence REAL,
+                parse_confidence REAL,
                 record_label TEXT,
                 recording_length_ms INTEGER,
                 genre TEXT,
                 language TEXT,
-                like_dislike_to_views_ratio REAL,
+                engagement_ratio REAL,
                 scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -593,8 +593,8 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
             "CREATE INDEX IF NOT EXISTS idx_error_log_timestamp_resolved ON error_log(timestamp, resolved)",
             "CREATE INDEX IF NOT EXISTS idx_error_log_video_type ON error_log(video_id, error_type)",
             # Composite indexes for common query patterns
-            "CREATE INDEX IF NOT EXISTS idx_videos_artist_views_date ON videos(original_artist, view_count, upload_date)",
-            "CREATE INDEX IF NOT EXISTS idx_videos_channel_artist_title ON videos(channel_id, original_artist, song_title)",
+            "CREATE INDEX IF NOT EXISTS idx_videos_artist_views_date ON videos(artist, view_count, upload_date)",
+            "CREATE INDEX IF NOT EXISTS idx_videos_channel_artist_title ON videos(channel_id, artist, song_title)",
         ]
 
         for index in performance_indexes:
@@ -673,12 +673,15 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
     def get_recent_video_ids(self, days: int = 7) -> set:
         """Get video IDs from recent days to limit memory usage."""
         try:
+            # Validate input parameter
+            if not isinstance(days, int) or days < 0:
+                raise ValueError(f"Days must be a non-negative integer, got: {days}")
+
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT video_id FROM videos WHERE scraped_at >= date('now', '-{} days')".format(
-                        days
-                    )
+                    "SELECT video_id FROM videos WHERE scraped_at >= date('now', '-' || ? || ' days')",
+                    (days,),
                 )
                 return {row[0] for row in cursor.fetchall()}
         except Exception as e:
@@ -719,11 +722,11 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                         INSERT OR REPLACE INTO videos (
                             video_id, url, title, description, duration_seconds,
                             view_count, like_count, comment_count, upload_date,
-                            thumbnail_url, channel_name, channel_id, original_artist,
-                            featured_artists, song_title, estimated_release_year,
-                            genre, language, like_dislike_to_views_ratio,
+                            thumbnail_url, channel_name, channel_id, artist,
+                            featured_artists, song_title, release_year,
+                            genre, language, engagement_ratio,
                             musicbrainz_recording_id, musicbrainz_artist_id, musicbrainz_genre,
-                            musicbrainz_tags, musicbrainz_confidence, record_label,
+                            musicbrainz_tags, parse_confidence, record_label,
                             recording_length_ms
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
@@ -740,10 +743,10 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                             video_data.get("thumbnail"),
                             video_data.get("uploader"),
                             video_data.get("uploader_id") or None,
-                            features.get("original_artist"),
+                            features.get("artist"),
                             features.get("featured_artists"),
                             features.get("song_title"),
-                            video_data.get("estimated_release_year"),
+                            video_data.get("release_year"),
                             features.get("genre"),
                             video_data.get("language"),
                             like_dislike_ratio,
@@ -751,7 +754,7 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
                             video_data.get("musicbrainz_artist_id"),
                             video_data.get("musicbrainz_genre"),
                             video_data.get("musicbrainz_tags"),
-                            video_data.get("musicbrainz_confidence"),
+                            video_data.get("parse_confidence"),
                             video_data.get("record_label"),
                             video_data.get("recording_length_ms"),
                         ),
@@ -882,7 +885,7 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
 
                 cursor.execute(
                     """
-                    SELECT original_artist, COUNT(*) as count, AVG(view_count) as avg_views
+                    SELECT artist, COUNT(*) as count, AVG(view_count) as avg_views
                     FROM videos
                     WHERE original_artist IS NOT NULL
                     GROUP BY original_artist
@@ -939,7 +942,7 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
             # Create channel record from video data
             channel_url = f"https://www.youtube.com/channel/{channel_id}"
             channel_name = video_data.get("uploader", "Unknown Channel")
-            
+
             cursor.execute(
                 """
                 INSERT INTO channels (

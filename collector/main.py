@@ -8,11 +8,10 @@ from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
 from .config import CollectorConfig
-from .db import DatabaseManager
+from .db_optimized import OptimizedDatabaseManager
 from .enhanced_search import MultiStrategySearchEngine
 from .processor import VideoProcessor
 from .search.providers.base import SearchResult
-from .search_engine import SearchEngine
 
 try:
     from tqdm.asyncio import tqdm_asyncio
@@ -30,13 +29,10 @@ class KaraokeCollector:
 
     def __init__(self, config: CollectorConfig):
         self.config = config
-        self.db_manager = DatabaseManager(config.database)
-        if getattr(config.search, "use_multi_strategy", False):
-            self.search_engine = MultiStrategySearchEngine(
-                config.search, config.scraping, self.db_manager
-            )
-        else:
-            self.search_engine = SearchEngine(config.search, config.scraping)
+        self.db_manager = OptimizedDatabaseManager(config.database)
+        self.search_engine = MultiStrategySearchEngine(
+            config.search, config.scraping, self.db_manager
+        )
         self.video_processor = VideoProcessor(config)
 
         # Initialize multi-pass controller if enabled
@@ -44,17 +40,32 @@ class KaraokeCollector:
         if config.search.multi_pass.enabled:
             from .advanced_parser import AdvancedTitleParser
             from .multi_pass_controller import MultiPassParsingController
+            from .passes.auto_retemplate_pass import AutoRetemplatePass
+            from .passes.channel_template_pass import EnhancedChannelTemplatePass
+            from .passes.ml_embedding_pass import EnhancedMLEmbeddingPass
+            from .passes.musicbrainz_search_pass import MusicBrainzSearchPass
+            from .passes.musicbrainz_validation_pass import MusicBrainzValidationPass
+            from .passes.web_search_pass import EnhancedWebSearchPass
+            from .search.fuzzy_matcher import FuzzyMatcher
 
-            search_engine_for_mp = (
-                self.search_engine
-                if isinstance(self.search_engine, MultiStrategySearchEngine)
-                else None
-            )
+            search_engine_for_mp = self.search_engine
             advanced_parser = self.video_processor.advanced_parser or AdvancedTitleParser(
                 config.search
             )
+            fuzzy_matcher = FuzzyMatcher(config.search)
+
+            passes = [
+                EnhancedChannelTemplatePass(advanced_parser, self.db_manager),
+                AutoRetemplatePass(advanced_parser, self.db_manager),
+                MusicBrainzSearchPass(advanced_parser, self.db_manager),
+                MusicBrainzValidationPass(advanced_parser, self.db_manager),
+                EnhancedMLEmbeddingPass(advanced_parser, fuzzy_matcher, self.db_manager),
+                EnhancedWebSearchPass(advanced_parser, search_engine_for_mp, self.db_manager),
+            ]
+
             self.multi_pass_controller = MultiPassParsingController(
                 config.search.multi_pass,
+                passes,
                 advanced_parser,
                 search_engine_for_mp,
                 self.db_manager,
