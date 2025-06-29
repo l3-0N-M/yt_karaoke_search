@@ -1,10 +1,13 @@
 """Utilities and helper functions."""
 
+import asyncio
 import logging
 import re
 import sys
+import time
 import unicodedata
 from logging.handlers import RotatingFileHandler
+from typing import Optional
 
 
 def setup_logging(
@@ -191,3 +194,63 @@ def normalize_text(text: str, text_type: str = "general") -> str:
     normalized = normalized.strip()
     _NORMALIZATION_CACHE[cache_key] = normalized
     return normalized
+
+
+class DiscogsRateLimiter:
+    """Rate limiter for Discogs API requests following their limits.
+    
+    Discogs API limits:
+    - 60 requests per minute for authenticated requests
+    - 25 requests per minute for unauthenticated requests  
+    - Initial burst of 5 requests allowed
+    """
+    
+    def __init__(self, requests_per_minute: int = 60):
+        self.requests_per_minute = requests_per_minute
+        self.requests_per_second = requests_per_minute / 60.0
+        
+        self.tokens = 5.0  # Initial burst tokens
+        self.max_tokens = 5.0  # Maximum burst tokens
+        self.last_update = time.time()
+        self.lock = asyncio.Lock()
+        
+        self.logger = logging.getLogger(__name__)
+        
+    async def wait_for_request(self) -> None:
+        """Wait until a request can be made according to rate limits."""
+        async with self.lock:
+            now = time.time()
+            elapsed = now - self.last_update
+            
+            # Add tokens based on elapsed time
+            self.tokens = min(
+                self.max_tokens,
+                self.tokens + elapsed * self.requests_per_second
+            )
+            self.last_update = now
+            
+            if self.tokens >= 1.0:
+                # We have tokens available
+                self.tokens -= 1.0
+                return
+            
+            # Need to wait for next token
+            wait_time = (1.0 - self.tokens) / self.requests_per_second
+            self.logger.debug(f"Rate limit hit, waiting {wait_time:.2f} seconds")
+            await asyncio.sleep(wait_time)
+            self.tokens = 0.0
+    
+    def get_remaining_tokens(self) -> float:
+        """Get the current number of available tokens."""
+        now = time.time()
+        elapsed = now - self.last_update
+        
+        return min(
+            self.max_tokens,
+            self.tokens + elapsed * self.requests_per_second
+        )
+    
+    def reset(self) -> None:
+        """Reset the rate limiter to initial state."""
+        self.tokens = self.max_tokens
+        self.last_update = time.time()
