@@ -81,6 +81,7 @@ class DataTransformer:
             "original_artist": "artist",
             "uploader": "channel_name",
             "uploader_id": "channel_id",
+            "thumbnail": "thumbnail_url",
         }
 
         for old_field, new_field in field_mappings.items():
@@ -101,6 +102,8 @@ class DataTransformer:
                 transformed["parse_confidence"] = features["artist_confidence"]
             if not transformed.get("release_year") and features.get("release_year"):
                 transformed["release_year"] = features["release_year"]
+            if not transformed.get("genre") and features.get("genre"):
+                transformed["genre"] = features["genre"]
 
         # Ensure quality scores are properly formatted
         quality_scores = transformed.get("quality_scores", {})

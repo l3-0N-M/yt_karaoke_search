@@ -98,6 +98,7 @@ class OptimizedDatabaseManager:
                     song_title TEXT,
                     featured_artists TEXT,
                     release_year INTEGER,
+                    genre TEXT,
                     -- Quality metrics (rounded)
                     parse_confidence REAL,
                     quality_score REAL,
@@ -215,6 +216,9 @@ class OptimizedDatabaseManager:
             # Create indexes for performance
             self._create_indexes(conn)
 
+            # Add missing columns to existing tables (migration)
+            self._add_missing_columns(conn)
+
             # Insert schema version
             conn.execute(
                 """
@@ -240,6 +244,20 @@ class OptimizedDatabaseManager:
         for index_sql in indexes:
             conn.execute(index_sql)
 
+    def _add_missing_columns(self, conn: sqlite3.Connection):
+        """Add missing columns to existing tables for backwards compatibility."""
+        try:
+            # Check if genre column exists in videos table
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(videos)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            if "genre" not in columns:
+                conn.execute("ALTER TABLE videos ADD COLUMN genre TEXT")
+                logger.info("Added genre column to videos table")
+        except Exception as e:
+            logger.warning(f"Failed to add missing columns: {e}")
+
     def save_video_data(self, result):
         """Save video data using the optimized schema."""
         try:
@@ -259,6 +277,12 @@ class OptimizedDatabaseManager:
                 # Round values for the optimized schema
                 parse_confidence = optimized_result.get("parse_confidence")
                 engagement_ratio = optimized_result.get("engagement_ratio")
+                
+                # Extract quality score from quality_scores data if available
+                quality_score = None
+                quality_scores = optimized_result.get("quality_scores", {})
+                if quality_scores and quality_scores.get("overall_score") is not None:
+                    quality_score = round(quality_scores["overall_score"], 2)
 
                 # Insert into videos table
                 conn.execute(
@@ -267,9 +291,9 @@ class OptimizedDatabaseManager:
                         video_id, url, title, description, duration_seconds,
                         view_count, like_count, comment_count, upload_date,
                         thumbnail_url, channel_name, channel_id,
-                        artist, song_title, featured_artists, release_year,
-                        parse_confidence, engagement_ratio, scraped_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        artist, song_title, featured_artists, release_year, genre,
+                        parse_confidence, quality_score, engagement_ratio, scraped_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
                         optimized_result["video_id"],
@@ -288,7 +312,9 @@ class OptimizedDatabaseManager:
                         optimized_result.get("song_title"),
                         optimized_result.get("featured_artists"),
                         optimized_result.get("release_year"),
+                        optimized_result.get("genre"),
                         parse_confidence,
+                        quality_score,
                         engagement_ratio,
                         datetime.now(),
                     ),
