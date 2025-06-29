@@ -68,6 +68,7 @@ class MultiPassParsingController:
         self.pass_configs = {
             PassType.CHANNEL_TEMPLATE: config.channel_template,
             PassType.MUSICBRAINZ_SEARCH: config.musicbrainz_search,
+            PassType.DISCOGS_SEARCH: config.discogs_search,
             PassType.WEB_SEARCH: config.web_search,
             PassType.MUSICBRAINZ_VALIDATION: config.musicbrainz_validation,
             PassType.ML_EMBEDDING: config.ml_embedding,

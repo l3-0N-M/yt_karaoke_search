@@ -195,3 +195,93 @@ class DataTransformer:
                     logger.warning(f"Could not round percentage field {field}: {rounded[field]}")
 
         return rounded
+
+    @staticmethod
+    def merge_metadata_sources(
+        musicbrainz_data: Dict[str, Any] = None, 
+        discogs_data: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """Merge metadata from MusicBrainz and Discogs sources intelligently.
+        
+        Priority:
+        - MusicBrainz takes precedence for core music data (artist, title)
+        - Discogs provides additional metadata (genres, year, label)
+        - Use highest confidence source for conflicting data
+        """
+        merged = {}
+        
+        # Start with base data from the higher confidence source
+        if musicbrainz_data and discogs_data:
+            mb_confidence = musicbrainz_data.get("confidence", 0.0)
+            discogs_confidence = discogs_data.get("confidence", 0.0)
+            
+            if mb_confidence >= discogs_confidence:
+                merged.update(musicbrainz_data)
+                secondary_data = discogs_data
+            else:
+                merged.update(discogs_data)
+                secondary_data = musicbrainz_data
+        elif musicbrainz_data:
+            merged.update(musicbrainz_data)
+            secondary_data = {}
+        elif discogs_data:
+            merged.update(discogs_data)
+            secondary_data = {}
+        else:
+            return merged
+        
+        # Merge additional fields from secondary source
+        if secondary_data:
+            # Fields that Discogs typically provides better data for
+            discogs_preferred_fields = [
+                "genres", "styles", "year", "release_year", "label", 
+                "country", "format", "discogs_release_id", "discogs_master_id"
+            ]
+            
+            # Fields that MusicBrainz typically provides better data for
+            musicbrainz_preferred_fields = [
+                "recording_id", "artist_id", "mbid", "musicbrainz_confidence"
+            ]
+            
+            for field, value in secondary_data.items():
+                if field not in merged or not merged[field]:
+                    # Add missing fields
+                    merged[field] = value
+                elif field in discogs_preferred_fields and discogs_data and field in discogs_data:
+                    # Prefer Discogs for genre/label/year data
+                    merged[field] = discogs_data[field]
+                elif field in musicbrainz_preferred_fields and musicbrainz_data and field in musicbrainz_data:
+                    # Prefer MusicBrainz for core music database fields
+                    merged[field] = musicbrainz_data[field]
+        
+        # Special handling for genres - combine both sources
+        if musicbrainz_data and discogs_data:
+            mb_genres = musicbrainz_data.get("genres", [])
+            discogs_genres = discogs_data.get("genres", [])
+            
+            if mb_genres and discogs_genres:
+                # Combine and deduplicate genres
+                combined_genres = list(set(mb_genres + discogs_genres))
+                merged["genres"] = combined_genres
+            elif discogs_genres:
+                merged["genres"] = discogs_genres
+            elif mb_genres:
+                merged["genres"] = mb_genres
+        
+        # Set metadata source tags
+        sources = []
+        if musicbrainz_data:
+            sources.append("musicbrainz")
+        if discogs_data:
+            sources.append("discogs")
+        
+        merged["metadata_sources"] = sources
+        
+        # Calculate combined confidence
+        if musicbrainz_data and discogs_data:
+            mb_conf = musicbrainz_data.get("confidence", 0.0)
+            discogs_conf = discogs_data.get("confidence", 0.0)
+            # Use weighted average, giving slight preference to MusicBrainz
+            merged["confidence"] = round((mb_conf * 0.6 + discogs_conf * 0.4), 2)
+        
+        return merged

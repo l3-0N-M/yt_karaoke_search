@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class OptimizedDatabaseManager:
     """Database manager for the optimized streamlined schema."""
 
-    SCHEMA_VERSION = 2  # Optimized schema version
+    SCHEMA_VERSION = 3  # Optimized schema version with Discogs support
 
     def __init__(self, config: DatabaseConfig):
         self.config = config
@@ -202,6 +202,33 @@ class OptimizedDatabaseManager:
             """
             )
 
+            # Discogs metadata
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS discogs_data (
+                    video_id TEXT PRIMARY KEY,
+                    release_id TEXT,
+                    master_id TEXT,
+                    artist_name TEXT,
+                    song_title TEXT,
+                    year INTEGER,
+                    genres TEXT, -- JSON array of genres
+                    styles TEXT, -- JSON array of styles  
+                    label TEXT,
+                    country TEXT,
+                    format TEXT,
+                    confidence REAL DEFAULT 0.0,
+                    discogs_url TEXT,
+                    community_have INTEGER DEFAULT 0,
+                    community_want INTEGER DEFAULT 0,
+                    barcode TEXT,
+                    catno TEXT,
+                    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (video_id) REFERENCES videos(video_id) ON DELETE CASCADE
+                )
+            """
+            )
+
             # Schema version tracking
             conn.execute(
                 """
@@ -225,7 +252,7 @@ class OptimizedDatabaseManager:
                 INSERT OR REPLACE INTO schema_info (version, description)
                 VALUES (?, ?)
             """,
-                (self.SCHEMA_VERSION, "Optimized schema - streamlined and rounded values"),
+                (self.SCHEMA_VERSION, "Optimized schema with Discogs integration support"),
             )
 
             conn.commit()
@@ -237,6 +264,8 @@ class OptimizedDatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_videos_artist ON videos(artist)",
             "CREATE INDEX IF NOT EXISTS idx_videos_scraped_at ON videos(scraped_at)",
             "CREATE INDEX IF NOT EXISTS idx_musicbrainz_recording ON musicbrainz_data(recording_id)",
+            "CREATE INDEX IF NOT EXISTS idx_discogs_release ON discogs_data(release_id)",
+            "CREATE INDEX IF NOT EXISTS idx_discogs_artist ON discogs_data(artist_name)",
             "CREATE INDEX IF NOT EXISTS idx_channels_name ON channels(channel_name)",
             "CREATE INDEX IF NOT EXISTS idx_quality_overall ON quality_scores(overall_score)",
         ]
@@ -332,6 +361,12 @@ class OptimizedDatabaseManager:
 
                 if optimized_result.get("ryd_data") or optimized_result.get("estimated_dislikes"):
                     self._save_ryd_data(conn, optimized_result)
+
+                if optimized_result.get("discogs_release_id"):
+                    discogs_success = self._save_discogs_data(conn, optimized_result)
+                    # Record database save if we have access to monitor
+                    if hasattr(self, '_discogs_monitor') and self._discogs_monitor:
+                        self._discogs_monitor.record_database_save(discogs_success)
 
                 conn.commit()
                 return True
@@ -460,6 +495,70 @@ class OptimizedDatabaseManager:
             ),
         )
 
+    def _save_discogs_data(self, conn: sqlite3.Connection, result: Dict) -> bool:
+        """Save Discogs data to optimized table."""
+        import json
+        
+        # Extract Discogs data from metadata or top-level fields
+        discogs_data = {}
+        metadata = result.get("metadata", {})
+        
+        # Check for Discogs data in metadata or top-level
+        for key in ["discogs_release_id", "discogs_master_id", "year", "genres", "styles", 
+                   "label", "country", "format", "confidence", "discogs_url", 
+                   "community", "barcode", "catno"]:
+            value = metadata.get(key) or result.get(key)
+            if value is not None:
+                discogs_data[key] = value
+        
+        # Also check for artist_name and song_title from Discogs
+        discogs_artist = metadata.get("artist_name") or result.get("artist")
+        discogs_title = metadata.get("song_title") or result.get("song_title")
+        
+        if not discogs_data.get("discogs_release_id"):
+            return False  # No Discogs data to save
+        
+        # Handle community data
+        community = discogs_data.get("community", {})
+        community_have = community.get("have", 0) if isinstance(community, dict) else 0
+        community_want = community.get("want", 0) if isinstance(community, dict) else 0
+        
+        # Convert arrays to JSON strings
+        genres_json = json.dumps(discogs_data.get("genres", [])) if discogs_data.get("genres") else None
+        styles_json = json.dumps(discogs_data.get("styles", [])) if discogs_data.get("styles") else None
+        
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO discogs_data (
+                video_id, release_id, master_id, artist_name, song_title,
+                year, genres, styles, label, country, format, confidence,
+                discogs_url, community_have, community_want, barcode, catno,
+                fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                result["video_id"],
+                discogs_data.get("discogs_release_id"),
+                discogs_data.get("discogs_master_id"),
+                discogs_artist,
+                discogs_title,
+                discogs_data.get("year"),
+                genres_json,
+                styles_json,
+                discogs_data.get("label"),
+                discogs_data.get("country"),
+                discogs_data.get("format"),
+                round(float(discogs_data.get("confidence", 0)), 2),
+                discogs_data.get("discogs_url"),
+                int(community_have),
+                int(community_want),
+                discogs_data.get("barcode"),
+                discogs_data.get("catno"),
+                datetime.now(),
+            ),
+        )
+        return True
+
     def get_existing_video_ids(self) -> set:
         """Get all existing video IDs."""
         try:
@@ -511,6 +610,11 @@ class OptimizedDatabaseManager:
                 # MusicBrainz integration
                 stats["musicbrainz_records"] = conn.execute(
                     "SELECT COUNT(*) FROM musicbrainz_data"
+                ).fetchone()[0]
+
+                # Discogs integration
+                stats["discogs_records"] = conn.execute(
+                    "SELECT COUNT(*) FROM discogs_data"
                 ).fetchone()[0]
 
                 # Average scores

@@ -42,6 +42,7 @@ class KaraokeCollector:
             from .multi_pass_controller import MultiPassParsingController
             from .passes.auto_retemplate_pass import AutoRetemplatePass
             from .passes.channel_template_pass import EnhancedChannelTemplatePass
+            from .passes.discogs_search_pass import DiscogsSearchPass
             from .passes.ml_embedding_pass import EnhancedMLEmbeddingPass
             from .passes.musicbrainz_search_pass import MusicBrainzSearchPass
             from .passes.musicbrainz_validation_pass import MusicBrainzValidationPass
@@ -58,6 +59,7 @@ class KaraokeCollector:
                 EnhancedChannelTemplatePass(advanced_parser, self.db_manager),
                 AutoRetemplatePass(advanced_parser, self.db_manager),
                 MusicBrainzSearchPass(advanced_parser, self.db_manager),
+                DiscogsSearchPass(advanced_parser, config, self.db_manager),
                 MusicBrainzValidationPass(advanced_parser, self.db_manager),
                 EnhancedMLEmbeddingPass(advanced_parser, fuzzy_matcher, self.db_manager),
                 EnhancedWebSearchPass(advanced_parser, search_engine_for_mp, self.db_manager),

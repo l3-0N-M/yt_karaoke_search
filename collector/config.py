@@ -71,6 +71,17 @@ class DataSourceConfig:
     musicbrainz_timeout: int = 5
     musicbrainz_user_agent: str = "KaraokeCollector/2.1 (https://github.com/your/repo)"
 
+    # Discogs API configuration
+    discogs_enabled: bool = True
+    discogs_token: str = ""
+    discogs_user_agent: str = "KaraokeCollector/2.1 +https://github.com/karaoke/search"
+    discogs_timeout: int = 10
+    discogs_requests_per_minute: int = 60
+    discogs_use_as_fallback: bool = True
+    discogs_min_musicbrainz_confidence: float = 0.6
+    discogs_max_results_per_search: int = 10
+    discogs_confidence_threshold: float = 0.5
+
 
 @dataclass
 class FuzzyMatchingConfig:
@@ -129,6 +140,14 @@ class MultiPassConfig:
             timeout_seconds=30.0,
             cpu_budget_limit=5.0,
             api_budget_limit=10,
+        )
+    )
+    discogs_search: MultiPassPassConfig = field(
+        default_factory=lambda: MultiPassPassConfig(
+            confidence_threshold=0.6,
+            timeout_seconds=20.0,
+            cpu_budget_limit=3.0,
+            api_budget_limit=5,
         )
     )
     web_search: MultiPassPassConfig = field(
@@ -274,6 +293,18 @@ def validate_config(cfg: CollectorConfig) -> None:
     if not 0 <= cfg.data_sources.ryd_confidence_threshold <= 1:
         raise ValueError("ryd_confidence_threshold must be between 0 and 1")
 
+    # Discogs validation
+    if not 0 <= cfg.data_sources.discogs_confidence_threshold <= 1:
+        raise ValueError("discogs_confidence_threshold must be between 0 and 1")
+    if not 0 <= cfg.data_sources.discogs_min_musicbrainz_confidence <= 1:
+        raise ValueError("discogs_min_musicbrainz_confidence must be between 0 and 1")
+    if not (1 <= cfg.data_sources.discogs_requests_per_minute <= 300):
+        raise ValueError("discogs_requests_per_minute must be between 1 and 300")
+    if not (1 <= cfg.data_sources.discogs_max_results_per_search <= 100):
+        raise ValueError("discogs_max_results_per_search must be between 1 and 100")
+    if not (1 <= cfg.data_sources.discogs_timeout <= 60):
+        raise ValueError("discogs_timeout must be between 1 and 60 seconds")
+
     # URL validation for security
     def validate_url(url: str, name: str):
         try:
@@ -378,6 +409,7 @@ def load_config(config_path: Optional[str] = None) -> CollectorConfig:
                 "auto_retemplate",
                 "ml_embedding",
                 "web_search",
+                "discogs_search",
             ]:
                 pass_data = multi_pass_data.pop(pass_name, {})
                 pass_configs[pass_name] = MultiPassPassConfig(

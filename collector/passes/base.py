@@ -14,6 +14,7 @@ class PassType(Enum):
         "channel_template"  # Pass 0: Enhanced channel pattern extrapolation (EFFICIENCY)
     )
     MUSICBRAINZ_SEARCH = "musicbrainz_search"  # Pass 1: Direct MusicBrainz API lookup (VALIDATION)
+    DISCOGS_SEARCH = "discogs_search"  # Pass 1.5: Discogs API lookup as MusicBrainz fallback
     WEB_SEARCH = "web_search"  # Pass 2: Enhanced web search if MB confidence low (FALLBACK)
     MUSICBRAINZ_VALIDATION = (
         "musicbrainz_validation"  # Pass 3: Post-web-search MB validation (ENRICHMENT)
