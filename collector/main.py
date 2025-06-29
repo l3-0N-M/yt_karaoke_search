@@ -8,7 +8,7 @@ from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
 from .config import CollectorConfig
-from .db import DatabaseManager
+from .db_optimized import OptimizedDatabaseManager
 from .enhanced_search import MultiStrategySearchEngine
 from .processor import VideoProcessor
 from .search.providers.base import SearchResult
@@ -29,7 +29,7 @@ class KaraokeCollector:
 
     def __init__(self, config: CollectorConfig):
         self.config = config
-        self.db_manager = DatabaseManager(config.database)
+        self.db_manager = OptimizedDatabaseManager(config.database)
         self.search_engine = MultiStrategySearchEngine(
             config.search, config.scraping, self.db_manager
         )

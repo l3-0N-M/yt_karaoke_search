@@ -138,7 +138,7 @@ class TestMainParseMethod:
     def sample_web_search_result(self):
         """Create a sample web search result."""
         return ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.8,
             method="web_search",
@@ -282,7 +282,7 @@ class TestValidationAgainstMusicBrainz:
     def sample_parse_result(self):
         """Create a sample parse result."""
         return ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.8,
             method="web_search",
@@ -292,7 +292,7 @@ class TestValidationAgainstMusicBrainz:
     async def test_validate_incomplete_parse_data(self, validation_pass):
         """Test validation with incomplete parse data."""
         parse_result = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title=None,  # Missing title
             confidence=0.8,
         )
@@ -466,7 +466,7 @@ class TestValidationConfidenceCalculation:
     def sample_parse_result(self):
         """Create a sample parse result."""
         return ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.8,
         )
@@ -719,7 +719,7 @@ class TestApplyValidationResults:
     def sample_parse_result(self):
         """Create a sample parse result."""
         return ParseResult(
-            original_artist="Original Artist",
+            artist="Original Artist",
             song_title="Original Song",
             confidence=0.8,
             method="web_search",
@@ -894,7 +894,7 @@ class TestMusicBrainzValidationPassIntegration:
         """Test full validation workflow with mocked components."""
         # Sample web search result to validate
         web_search_result = ParseResult(
-            original_artist="Ed Sheeran",
+            artist="Ed Sheeran",
             song_title="Shape of You",
             confidence=0.75,
             method="web_search",
@@ -932,7 +932,7 @@ class TestMusicBrainzValidationPassIntegration:
     def test_confidence_calculation_scenarios(self, full_validation_pass):
         """Test confidence calculation in various scenarios."""
         parse_result = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.8,
         )

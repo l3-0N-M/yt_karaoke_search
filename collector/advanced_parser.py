@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class ParseResult:
     """Enhanced parsing result with detailed metadata."""
 
-    original_artist: Optional[str] = None
+    artist: Optional[str] = None  # renamed from original_artist
     song_title: Optional[str] = None
     featured_artists: Optional[str] = None
     confidence: float = 0.0
@@ -41,6 +41,17 @@ class ParseResult:
     validation_score: float = 0.0
     alternative_results: List[Dict] = field(default_factory=list)
     metadata: Dict = field(default_factory=dict)
+
+    # Backward compatibility property
+    @property
+    def original_artist(self) -> Optional[str]:
+        """Backward compatibility for original_artist field name."""
+        return self.artist
+
+    @original_artist.setter
+    def original_artist(self, value: Optional[str]):
+        """Backward compatibility setter for original_artist field name."""
+        self.artist = value
 
 
 @dataclass
@@ -569,7 +580,7 @@ class AdvancedTitleParser:
 
             if len(before_sep) < len(after_sep_clean) and len(before_sep) > 0:
                 return ParseResult(
-                    original_artist=before_sep.title(),
+                    artist=before_sep.title(),
                     song_title=after_sep_clean.title(),
                     confidence=0.6,
                     method="heuristic_length",
@@ -577,7 +588,7 @@ class AdvancedTitleParser:
                 )
             elif len(after_sep_clean) > 0:
                 return ParseResult(
-                    original_artist=after_sep_clean.title(),
+                    artist=after_sep_clean.title(),
                     song_title=before_sep.title(),
                     confidence=0.5,
                     method="heuristic_length",
@@ -597,7 +608,7 @@ class AdvancedTitleParser:
                 artist = self._clean_extracted_text(match.group(1))
                 if self._is_valid_artist_name(artist):
                     return ParseResult(
-                        original_artist=artist,
+                        artist=artist,
                         confidence=0.7,
                         method="description_extraction",
                         pattern_used=pattern,
@@ -633,7 +644,7 @@ class AdvancedTitleParser:
 
         if best_artist_match or best_song_match:
             return ParseResult(
-                original_artist=best_artist_match,
+                artist=best_artist_match,
                 song_title=best_song_match,
                 confidence=max(best_artist_score, best_song_score)
                 * 0.9,  # Slight penalty for fuzzy
@@ -692,7 +703,7 @@ class AdvancedTitleParser:
             confidence = best_combined_score * 0.95  # Slight penalty for fuzzy matching
 
             return ParseResult(
-                original_artist=best_artist_match.matched if best_artist_match else None,
+                artist=best_artist_match.matched if best_artist_match else None,
                 song_title=best_song_match.matched if best_song_match else None,
                 confidence=confidence,
                 method="advanced_fuzzy_matching",
@@ -723,11 +734,11 @@ class AdvancedTitleParser:
                 # Reorder to "FirstName LastName"
                 artist = f"{first_name.strip()} {last_name.strip()}".strip()
                 if self._is_valid_artist_name(artist):
-                    result.original_artist = artist
+                    result.artist = artist
         elif artist_group and artist_group <= len(match.groups()):
             artist = self._clean_extracted_text(match.group(artist_group))
             if self._is_valid_artist_name(artist):
-                result.original_artist = artist
+                result.artist = artist
 
         if title_group and title_group <= len(match.groups()):
             song_title = self._clean_extracted_text(match.group(title_group))
@@ -735,9 +746,9 @@ class AdvancedTitleParser:
                 result.song_title = song_title
 
         # Calculate confidence based on extraction success
-        if result.original_artist and result.song_title:
+        if result.artist and result.song_title:
             result.confidence = confidence
-        elif result.original_artist or result.song_title:
+        elif result.artist or result.song_title:
             result.confidence = confidence * 0.7
         else:
             result.confidence = 0
@@ -759,7 +770,7 @@ class AdvancedTitleParser:
             score = result.confidence
 
             # Bonus for having both artist and title
-            if result.original_artist and result.song_title:
+            if result.artist and result.song_title:
                 score *= 1.2
 
             # Bonus for high-confidence methods
@@ -767,7 +778,7 @@ class AdvancedTitleParser:
                 score *= 1.1
 
             # Penalty for very short extractions
-            if result.original_artist and len(result.original_artist) < 3:
+            if result.artist and len(result.artist) < 3:
                 score *= 0.8
             if result.song_title and len(result.song_title) < 3:
                 score *= 0.8
@@ -783,7 +794,7 @@ class AdvancedTitleParser:
             {
                 "method": r.method,
                 "confidence": r.confidence,
-                "artist": r.original_artist,
+                "artist": r.artist,
                 "title": r.song_title,
             }
             for _, r in sorted(scored_results, key=lambda x: x[0], reverse=True)[1:3]
@@ -795,9 +806,9 @@ class AdvancedTitleParser:
         """Validate and enhance the result using external information."""
 
         # Cross-validate with description/tags
-        if result.original_artist:
+        if result.artist:
             # Check if artist appears in description
-            if result.original_artist.lower() in description.lower():
+            if result.artist.lower() in description.lower():
                 result.confidence *= 1.1
                 result.metadata["description_validation"] = True
 
@@ -808,9 +819,9 @@ class AdvancedTitleParser:
                 result.metadata["description_validation"] = True
 
         # Extract featured artists
-        if result.original_artist or result.song_title:
+        if result.artist or result.song_title:
             featured = self._extract_featured_artists_advanced(
-                f"{result.original_artist or ''} {result.song_title or ''}", description
+                f"{result.artist or ''} {result.song_title or ''}", description
             )
             if featured:
                 result.featured_artists = featured
@@ -862,8 +873,8 @@ class AdvancedTitleParser:
 
         # Add to known artists/songs if high confidence
         if result.confidence > 0.8:
-            if result.original_artist:
-                self.known_artists.add(result.original_artist)
+            if result.artist:
+                self.known_artists.add(result.artist)
             if result.song_title:
                 self.known_songs.add(result.song_title)
 

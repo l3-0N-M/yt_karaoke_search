@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from collector.config import ScrapingConfig, SearchConfig
-from collector.db import DatabaseManager
+from collector.db_optimized import OptimizedDatabaseManager
 from collector.enhanced_search import MultiStrategySearchEngine
 from collector.search.providers.base import SearchResult
 
@@ -23,7 +23,7 @@ def scraping_config():
 
 @pytest.fixture
 def db_manager():
-    return MagicMock(spec=DatabaseManager)
+    return MagicMock(spec=OptimizedDatabaseManager)
 
 
 @pytest.fixture

@@ -143,7 +143,7 @@ class MusicBrainzValidationPass(ParsingPass):
     ) -> ValidationResult:
         """Validate a parse result against MusicBrainz database."""
 
-        if not parse_result.original_artist or not parse_result.song_title:
+        if not parse_result.artist or not parse_result.song_title:
             return ValidationResult(
                 validated=False,
                 confidence_adjustment=0.9,
@@ -165,9 +165,7 @@ class MusicBrainzValidationPass(ParsingPass):
             )
 
         # Search MusicBrainz for the artist + song combination
-        search_query = (
-            f'artist:"{parse_result.original_artist}" AND recording:"{parse_result.song_title}"'
-        )
+        search_query = f'artist:"{parse_result.artist}" AND recording:"{parse_result.song_title}"'
 
         try:
             # Use the existing MusicBrainz search functionality
@@ -176,10 +174,10 @@ class MusicBrainzValidationPass(ParsingPass):
             if not mb_matches:
                 # Try broader search with just artist or song
                 fallback_queries = [
-                    f'artist:"{parse_result.song_title}" AND recording:"{parse_result.original_artist}"',  # Try swapped artist/title
-                    f'artist:"{parse_result.original_artist}"',
+                    f'artist:"{parse_result.song_title}" AND recording:"{parse_result.artist}"',  # Try swapped artist/title
+                    f'artist:"{parse_result.artist}"',
                     f'recording:"{parse_result.song_title}"',
-                    f"{parse_result.original_artist} {parse_result.song_title}",
+                    f"{parse_result.artist} {parse_result.song_title}",
                 ]
 
                 for query in fallback_queries:
@@ -241,7 +239,7 @@ class MusicBrainzValidationPass(ParsingPass):
 
         # Compare artist names
         artist_similarity = SequenceMatcher(
-            None, parse_result.original_artist.lower(), mb_match.artist_name.lower()
+            None, parse_result.artist.lower(), mb_match.artist_name.lower()
         ).ratio()
 
         # Compare song titles
@@ -277,7 +275,7 @@ class MusicBrainzValidationPass(ParsingPass):
         enrichment = {
             "musicbrainz_recording_id": mb_match.recording_id,
             "musicbrainz_artist_id": mb_match.artist_id,
-            "musicbrainz_confidence": mb_match.confidence,
+            "parse_confidence": mb_match.confidence,
             "musicbrainz_search_score": mb_match.score,
         }
 
@@ -296,7 +294,7 @@ class MusicBrainzValidationPass(ParsingPass):
                             pass
 
                 if years:
-                    enrichment["estimated_release_year"] = min(years)
+                    enrichment["release_year"] = min(years)
 
             # Add recording length if available
             if "length" in mb_match.metadata:
@@ -317,15 +315,15 @@ class MusicBrainzValidationPass(ParsingPass):
         try:
             # Query for existing videos with this title that have MusicBrainz data
             query = """
-                SELECT original_artist, song_title, musicbrainz_recording_id,
-                       musicbrainz_artist_id, musicbrainz_confidence,
-                       estimated_release_year, recording_length_ms
+                SELECT artist, song_title, musicbrainz_recording_id,
+                       musicbrainz_artist_id, parse_confidence,
+                       release_year, recording_length_ms
                 FROM videos
                 WHERE title = ?
                 AND musicbrainz_recording_id IS NOT NULL
                 AND musicbrainz_artist_id IS NOT NULL
-                AND musicbrainz_confidence > 0.7
-                ORDER BY musicbrainz_confidence DESC
+                AND parse_confidence > 0.7
+                ORDER BY parse_confidence DESC
                 LIMIT 1
             """
 
@@ -338,8 +336,8 @@ class MusicBrainzValidationPass(ParsingPass):
                     "authoritative_title": row[1],
                     "musicbrainz_recording_id": row[2],
                     "musicbrainz_artist_id": row[3],
-                    "musicbrainz_confidence": row[4],
-                    "estimated_release_year": row[5],
+                    "parse_confidence": row[4],
+                    "release_year": row[5],
                     "recording_length_ms": row[6],
                     "data_source": "database",
                 }
@@ -365,7 +363,7 @@ class MusicBrainzValidationPass(ParsingPass):
         )
 
         # Determine final artist and title values
-        final_artist = parse_result.original_artist
+        final_artist = parse_result.artist
         final_title = parse_result.song_title
         artist_corrected = False
         title_corrected = False
@@ -373,14 +371,11 @@ class MusicBrainzValidationPass(ParsingPass):
         if use_authoritative_data:
             # Use authoritative data from existing database or high-confidence MusicBrainz match
             if "authoritative_artist" in validation_result.enriched_data:
-                if (
-                    validation_result.enriched_data["authoritative_artist"]
-                    != parse_result.original_artist
-                ):
+                if validation_result.enriched_data["authoritative_artist"] != parse_result.artist:
                     artist_corrected = True
                     self.stats["artist_corrections"] += 1
                     logger.info(
-                        f"Correcting artist from '{parse_result.original_artist}' to '{validation_result.enriched_data['authoritative_artist']}' using MusicBrainz data"
+                        f"Correcting artist from '{parse_result.artist}' to '{validation_result.enriched_data['authoritative_artist']}' using MusicBrainz data"
                     )
                 final_artist = validation_result.enriched_data["authoritative_artist"]
 
@@ -398,7 +393,7 @@ class MusicBrainzValidationPass(ParsingPass):
 
         # Create a copy of the parse result with potentially corrected artist/title
         enhanced_result = ParseResult(
-            original_artist=final_artist,
+            artist=final_artist,
             song_title=final_title,
             featured_artists=parse_result.featured_artists,
             confidence=parse_result.confidence * validation_result.confidence_adjustment,

@@ -22,7 +22,7 @@ def mock_advanced_parser():
     """Fixture for a mock AdvancedTitleParser."""
     mock = MagicMock()
     mock.parse_title.return_value = ParseResult(
-        original_artist="Fallback Artist", song_title="Fallback Song", confidence=0.5
+        artist="Fallback Artist", song_title="Fallback Song", confidence=0.5
     )
     return mock
 
@@ -67,7 +67,7 @@ class MockPass(ParsingPass):
             return None
 
         parse_result = ParseResult(
-            original_artist=f"{self.pass_type.name} Artist",
+            artist=f"{self.pass_type.name} Artist",
             song_title=f"{self.pass_type.name} Song",
             confidence=self._confidence,
             method=self.pass_type.value,

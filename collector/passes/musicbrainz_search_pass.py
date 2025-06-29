@@ -384,7 +384,7 @@ class MusicBrainzSearchPass(ParsingPass):
         """Convert MusicBrainz match to ParseResult."""
 
         result = ParseResult(
-            original_artist=match.artist_name,
+            artist=match.artist_name,
             song_title=match.song_title,
             confidence=match.confidence,
             method="musicbrainz_search",

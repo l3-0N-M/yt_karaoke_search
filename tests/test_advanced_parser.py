@@ -19,7 +19,7 @@ class TestParseResult:
     def test_parse_result_creation(self):
         """Test creating a ParseResult with default values."""
         result = ParseResult()
-        assert result.original_artist is None
+        assert result.artist is None
         assert result.song_title is None
         assert result.featured_artists is None
         assert result.confidence == 0.0
@@ -32,13 +32,13 @@ class TestParseResult:
     def test_parse_result_with_values(self):
         """Test creating a ParseResult with specific values."""
         result = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.85,
             method="test_method",
             pattern_used="test_pattern",
         )
-        assert result.original_artist == "Test Artist"
+        assert result.artist == "Test Artist"
         assert result.song_title == "Test Song"
         assert result.confidence == 0.85
         assert result.method == "test_method"
@@ -47,14 +47,14 @@ class TestParseResult:
     def test_parse_result_serializable(self):
         """Test that ParseResult can be converted to dict."""
         result = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.85,
             metadata={"key": "value"},
         )
         result_dict = asdict(result)
         assert isinstance(result_dict, dict)
-        assert result_dict["original_artist"] == "Test Artist"
+        assert result_dict["artist"] == "Test Artist"
         assert result_dict["metadata"]["key"] == "value"
 
 
@@ -206,7 +206,7 @@ class TestChannelPatterns:
         """Test Let's Sing Karaoke pattern."""
         title = "Smith, John - Great Song (Karaoke & Lyrics)"
         result = parser._parse_with_channel_patterns(title, "Let's Sing Karaoke")
-        assert result.original_artist == "John Smith"
+        assert result.artist == "John Smith"
         assert result.song_title == "Great Song"
         assert result.confidence > 0.9
 
@@ -214,7 +214,7 @@ class TestChannelPatterns:
         """Test Lugn channel pattern."""
         title = "Test Artist • Test Song • Karaoke"
         result = parser._parse_with_channel_patterns(title, "Lugn Music")
-        assert result.original_artist == "Test Artist"
+        assert result.artist == "Test Artist"
         assert result.song_title == "Test Song"
         assert result.confidence > 0.9
 
@@ -222,7 +222,7 @@ class TestChannelPatterns:
         """Test KaraFun Deutschland pattern."""
         title = "Karaoke Great Song - Famous Artist *"
         result = parser._parse_with_channel_patterns(title, "KaraFun Deutschland")
-        assert result.original_artist == "Famous Artist"
+        assert result.artist == "Famous Artist"
         assert result.song_title == "Great Song"
         assert result.confidence > 0.9
 
@@ -230,7 +230,7 @@ class TestChannelPatterns:
         """Test Sing King pattern."""
         title = 'Sing King Karaoke - "Great Song" (Style of "Famous Artist")'
         result = parser._parse_with_channel_patterns(title, "Sing King")
-        assert result.original_artist == "Famous Artist"
+        assert result.artist == "Famous Artist"
         assert result.song_title == "Great Song"
         assert result.confidence > 0.9
 
@@ -253,7 +253,7 @@ class TestCorePatterns:
         """Test standard artist-title pattern."""
         title = "Famous Artist - Great Song (Karaoke Version)"
         result = parser._parse_with_core_patterns(title)
-        assert result.original_artist == "Famous Artist"
+        assert result.artist == "Famous Artist"
         assert result.song_title == "Great Song"
         assert result.confidence > 0.7
 
@@ -261,7 +261,7 @@ class TestCorePatterns:
         """Test quoted patterns."""
         title = '"Artist Name" - "Song Title" (Karaoke)'
         result = parser._parse_with_core_patterns(title)
-        assert result.original_artist == "Artist Name"
+        assert result.artist == "Artist Name"
         assert result.song_title == "Song Title"
         assert result.confidence > 0.9
 
@@ -269,7 +269,7 @@ class TestCorePatterns:
         """Test karaoke-prefixed pattern."""
         title = "Karaoke Great Song - Famous Artist"
         result = parser._parse_with_core_patterns(title)
-        assert result.original_artist == "Famous Artist"
+        assert result.artist == "Famous Artist"
         assert result.song_title == "Great Song"
         assert result.confidence > 0.8
 
@@ -277,7 +277,7 @@ class TestCorePatterns:
         """Test 'style of' pattern."""
         title = "Great Song (Style of Famous Artist)"
         result = parser._parse_with_core_patterns(title)
-        assert result.original_artist == "Famous Artist"
+        assert result.artist == "Famous Artist"
         assert result.song_title == "Great Song"
         assert result.confidence > 0.7
 
@@ -285,7 +285,7 @@ class TestCorePatterns:
         """Test 'by' pattern."""
         title = "Great Song by Famous Artist (Karaoke)"
         result = parser._parse_with_core_patterns(title)
-        assert result.original_artist == "Famous Artist"
+        assert result.artist == "Famous Artist"
         assert result.song_title == "Great Song"
         assert result.confidence > 0.7
 
@@ -302,7 +302,7 @@ class TestHeuristicParsing:
         title = "Artist - This is a much longer song title"
         result = parser._parse_with_heuristics(title, "", "")
         # Shorter part (Artist) should be artist, longer part should be title
-        assert result.original_artist == "Artist"
+        assert result.artist == "Artist"
         assert result.song_title == "This Is A Much Longer Song Title"
         assert result.confidence > 0.5
 
@@ -311,7 +311,7 @@ class TestHeuristicParsing:
         title = "Some Title"
         description = "Artist: Famous Artist\nThis is a great song"
         result = parser._parse_with_heuristics(title, description, "")
-        assert result.original_artist == "Famous Artist"
+        assert result.artist == "Famous Artist"
         assert result.confidence > 0.6
 
     def test_no_separators_found(self, parser):
@@ -339,7 +339,7 @@ class TestFuzzyMatching:
         title = "Beatless - Some Song"  # Misspelled Beatles
         result = parser_with_known_data._parse_with_fuzzy_matching(title)
         # Should match Beatles with high confidence
-        assert result.original_artist == "Beatles"
+        assert result.artist == "Beatles"
         assert result.confidence > 0.7
 
     def test_fuzzy_song_matching(self, parser_with_known_data):
@@ -378,18 +378,18 @@ class TestResultSelection:
     def test_select_with_completeness_bonus(self, parser):
         """Test selection with completeness bonus."""
         results = [
-            ParseResult(confidence=0.7, method="method1", original_artist="Artist"),
+            ParseResult(confidence=0.7, method="method1", artist="Artist"),
             ParseResult(
                 confidence=0.6,
                 method="method2",
-                original_artist="Artist",
+                artist="Artist",
                 song_title="Song",
             ),
         ]
         best = parser._select_best_result(results, "test title")
         # Second result should win due to completeness bonus
         assert best.method == "method2"
-        assert best.original_artist == "Artist"
+        assert best.artist == "Artist"
         assert best.song_title == "Song"
 
     def test_no_valid_results(self, parser):
@@ -511,7 +511,7 @@ class TestLearningMechanism:
     def test_learn_from_successful_parse(self, parser):
         """Test learning from successful parse."""
         result = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.85,
             pattern_used="test_pattern",
@@ -546,7 +546,7 @@ class TestLearningMechanism:
     def test_low_confidence_no_learning(self, parser):
         """Test that low confidence results don't add to known data."""
         result = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.5,
             pattern_used="test_pattern",
@@ -617,7 +617,7 @@ class TestMainParseMethod:
         title = "Famous Artist - Great Song (Karaoke)"
         result = parser.parse_title(title)
 
-        assert result.original_artist == "Famous Artist"
+        assert result.artist == "Famous Artist"
         assert result.song_title == "Great Song"
         assert result.confidence > 0.7
         assert result.method in ["core_patterns"]
@@ -627,7 +627,7 @@ class TestMainParseMethod:
         title = "Smith, John - Great Song (Karaoke & Lyrics)"
         result = parser.parse_title(title, channel_name="Let's Sing Karaoke")
 
-        assert result.original_artist == "John Smith"
+        assert result.artist == "John Smith"
         assert result.song_title == "Great Song"
         assert result.confidence > 0.9
 
@@ -709,8 +709,8 @@ class TestEdgeCases:
         result = parser.parse_title(title)
         assert isinstance(result, ParseResult)
         # Should clean up the special characters
-        if result.original_artist:
-            assert "@#$%" not in result.original_artist
+        if result.artist:
+            assert "@#$%" not in result.artist
 
 
 @pytest.mark.integration
@@ -729,7 +729,7 @@ class TestParserIntegration:
 
         result = parser.parse_title(title, description, tags)
 
-        assert result.original_artist == "Ed Sheeran"
+        assert result.artist == "Ed Sheeran"
         assert result.song_title == "Shape Of You"
         assert result.confidence > 0.7
         assert result.method is not None
@@ -742,7 +742,7 @@ class TestParserIntegration:
 
         result = parser.parse_title(title, description)
 
-        assert result.original_artist == "Taylor Swift"
+        assert result.artist == "Taylor Swift"
         assert result.song_title == "Shake It Off"
         assert result.confidence > 0.8
         # Should extract featured artists

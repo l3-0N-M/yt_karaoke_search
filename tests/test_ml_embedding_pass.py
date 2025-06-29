@@ -543,14 +543,14 @@ class TestHybridMatching:
     async def test_hybrid_matching_both_results(self, ml_pass):
         """Test hybrid matching with both fuzzy and semantic results."""
         fuzzy_result = ParseResult(
-            original_artist="Fuzzy Artist",
+            artist="Fuzzy Artist",
             song_title="Fuzzy Song",
             confidence=0.8,
             method="enhanced_fuzzy",
         )
 
         semantic_result = ParseResult(
-            original_artist="Semantic Artist",
+            artist="Semantic Artist",
             song_title="Semantic Song",
             confidence=0.7,
             method="semantic_similarity",
@@ -575,7 +575,7 @@ class TestHybridMatching:
     async def test_hybrid_matching_fuzzy_only(self, ml_pass):
         """Test hybrid matching with only fuzzy result."""
         fuzzy_result = ParseResult(
-            original_artist="Fuzzy Artist",
+            artist="Fuzzy Artist",
             song_title="Fuzzy Song",
             confidence=0.8,
             method="enhanced_fuzzy",
@@ -597,7 +597,7 @@ class TestHybridMatching:
     async def test_hybrid_matching_semantic_only(self, ml_pass):
         """Test hybrid matching with only semantic result."""
         semantic_result = ParseResult(
-            original_artist="Semantic Artist",
+            artist="Semantic Artist",
             song_title="Semantic Song",
             confidence=0.7,
             method="semantic_similarity",
@@ -633,14 +633,14 @@ class TestHybridMatching:
     async def test_hybrid_matching_confidence_weighting(self, ml_pass):
         """Test confidence weighting in hybrid matching."""
         fuzzy_result = ParseResult(
-            original_artist="Fuzzy Artist",
+            artist="Fuzzy Artist",
             song_title="Fuzzy Song",
             confidence=0.6,
             method="enhanced_fuzzy",
         )
 
         semantic_result = ParseResult(
-            original_artist="Semantic Artist",
+            artist="Semantic Artist",
             song_title="Semantic Song",
             confidence=0.8,
             method="semantic_similarity",

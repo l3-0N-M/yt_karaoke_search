@@ -395,7 +395,7 @@ class TestEnhancedWebSearchPass:
         """Create a mock AdvancedTitleParser."""
         parser = MagicMock(spec=AdvancedTitleParser)
         parser.parse_title.return_value = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.8,
             method="advanced_parser",
@@ -655,7 +655,7 @@ class TestResultParsing:
         """Test parsing with low confidence results."""
         # Mock parser to return low confidence
         web_search_pass.advanced_parser.parse_title.return_value = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.3,  # Low confidence
         )
@@ -685,9 +685,9 @@ class TestResultParsing:
     def test_select_consensus_result_single_group(self, web_search_pass):
         """Test consensus selection with single result group."""
         parse_results = [
-            ParseResult(original_artist="Artist", song_title="Song", confidence=0.8),
-            ParseResult(original_artist="Artist", song_title="Song", confidence=0.7),
-            ParseResult(original_artist="Artist", song_title="Song", confidence=0.9),
+            ParseResult(artist="Artist", song_title="Song", confidence=0.8),
+            ParseResult(artist="Artist", song_title="Song", confidence=0.7),
+            ParseResult(artist="Artist", song_title="Song", confidence=0.9),
         ]
 
         query_info = QueryCleaningResult(
@@ -703,9 +703,9 @@ class TestResultParsing:
     def test_select_consensus_result_multiple_groups(self, web_search_pass):
         """Test consensus selection with multiple result groups."""
         parse_results = [
-            ParseResult(original_artist="Artist1", song_title="Song1", confidence=0.6),
-            ParseResult(original_artist="Artist1", song_title="Song1", confidence=0.5),
-            ParseResult(original_artist="Artist2", song_title="Song2", confidence=0.8),
+            ParseResult(artist="Artist1", song_title="Song1", confidence=0.6),
+            ParseResult(artist="Artist1", song_title="Song1", confidence=0.5),
+            ParseResult(artist="Artist2", song_title="Song2", confidence=0.8),
         ]
 
         query_info = QueryCleaningResult(
@@ -734,8 +734,8 @@ class TestResultParsing:
     def test_select_consensus_result_fallback(self, web_search_pass):
         """Test fallback to highest individual confidence."""
         parse_results = [
-            ParseResult(original_artist="", song_title="", confidence=0.5),  # Empty result
-            ParseResult(original_artist="Artist", song_title="Song", confidence=0.8),
+            ParseResult(artist="", song_title="", confidence=0.5),  # Empty result
+            ParseResult(artist="Artist", song_title="Song", confidence=0.8),
         ]
 
         query_info = QueryCleaningResult(
@@ -799,7 +799,7 @@ class TestMainParseMethod:
         """Test early exit with high confidence result."""
         # Mock parser to return very high confidence
         web_search_pass.advanced_parser.parse_title.return_value = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.95,  # Very high confidence
         )

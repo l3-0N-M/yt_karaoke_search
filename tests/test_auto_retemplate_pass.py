@@ -455,7 +455,7 @@ class TestAutoRetemplatePassPatternLearning:
         """Test creating a pattern from a successful parse."""
         title = "Test Artist - Test Song (Karaoke)"
         result = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.8,
         )
@@ -799,7 +799,7 @@ class TestAutoRetemplatePassAsyncMethods:
 
         # Mock the advanced parser to return a successful parse
         mock_result = ParseResult(
-            original_artist="Learned Artist",
+            artist="Learned Artist",
             song_title="Learned Song",
             confidence=0.7,
         )

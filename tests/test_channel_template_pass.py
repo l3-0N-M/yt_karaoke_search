@@ -112,13 +112,13 @@ class TestEnhancedChannelTemplatePass:
         """Create a mock AdvancedTitleParser."""
         parser = MagicMock(spec=AdvancedTitleParser)
         parser._parse_with_channel_patterns.return_value = ParseResult(
-            original_artist="Mock Artist",
+            artist="Mock Artist",
             song_title="Mock Song",
             confidence=0.7,
             method="mock_channel_pattern",
         )
         parser._create_result_from_match.return_value = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.8,
             method="test_method",
@@ -191,7 +191,7 @@ class TestChannelPatternMatching:
         # Mock the pattern matching
         with patch.object(channel_pass, "_create_result_from_pattern_match") as mock_create:
             mock_create.return_value = ParseResult(
-                original_artist="Test Artist",
+                artist="Test Artist",
                 song_title="Test Song",
                 confidence=0.85,
                 pattern_used=pattern.pattern,
@@ -210,7 +210,7 @@ class TestChannelPatternMatching:
         # Mock enhanced detection method
         with patch.object(channel_pass, "_enhanced_channel_detection") as mock_enhanced:
             mock_enhanced.return_value = ParseResult(
-                original_artist="Enhanced Artist",
+                artist="Enhanced Artist",
                 song_title="Enhanced Song",
                 confidence=0.8,
                 method="enhanced_channel",
@@ -229,7 +229,7 @@ class TestChannelPatternMatching:
         """Test fallback to advanced parser."""
         # Mock the advanced parser
         channel_pass.advanced_parser._parse_with_channel_patterns.return_value = ParseResult(
-            original_artist="Fallback Artist",
+            artist="Fallback Artist",
             song_title="Fallback Song",
             confidence=0.75,
             method="advanced_parser",
@@ -258,7 +258,7 @@ class TestChannelPatternMatching:
             mock_enhanced.return_value = None
             channel_pass.advanced_parser._parse_with_channel_patterns.return_value = None
             mock_context.return_value = ParseResult(
-                original_artist="Context Artist",
+                artist="Context Artist",
                 song_title="Context Song",
                 confidence=0.65,
                 method="channel_context",
@@ -292,7 +292,7 @@ class TestEnhancedChannelDetection:
     def channel_pass(self):
         parser = MagicMock(spec=AdvancedTitleParser)
         parser._create_result_from_match.return_value = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.8,
             method="test_method",
@@ -353,7 +353,7 @@ class TestChannelContextExtraction:
     def channel_pass(self):
         parser = MagicMock(spec=AdvancedTitleParser)
         parser._create_result_from_match.return_value = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.65,
             method="test_method",
@@ -388,7 +388,7 @@ class TestChannelContextExtraction:
     def test_extract_confidence_boost(self, channel_pass):
         """Test that karaoke channel boost is applied."""
         original_result = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.6,
             method="test_method",
@@ -445,7 +445,7 @@ class TestPatternLearning:
     def test_learn_from_success(self, channel_pass):
         """Test learning from successful parse."""
         result = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.85,
             method="test_method",
@@ -469,7 +469,7 @@ class TestPatternLearning:
     def test_generalize_pattern(self, channel_pass):
         """Test pattern generalization from successful parse."""
         result = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title="Test Song",
             confidence=0.85,
             method="test_method",
@@ -491,7 +491,7 @@ class TestPatternLearning:
     def test_generalize_pattern_incomplete_result(self, channel_pass):
         """Test pattern generalization with incomplete result."""
         result = ParseResult(
-            original_artist="Test Artist",
+            artist="Test Artist",
             song_title=None,  # Missing title
             confidence=0.85,
             method="test_method",
@@ -776,7 +776,7 @@ class TestPatternMatching:
 
         with patch.object(channel_pass, "_create_result_from_pattern_match") as mock_create:
             mock_create.return_value = ParseResult(
-                original_artist="Test Artist",
+                artist="Test Artist",
                 song_title="Test Song",
                 confidence=0.8,
                 method="learned_channel_test_channel",

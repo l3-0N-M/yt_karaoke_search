@@ -683,7 +683,7 @@ class EnhancedWebSearchPass(ParsingPass):
 
         for result in parsed_results:
             key = (
-                result.original_artist.lower() if result.original_artist else "",
+                result.artist.lower() if result.artist else "",
                 result.song_title.lower() if result.song_title else "",
             )
             result_groups[key].append(result)

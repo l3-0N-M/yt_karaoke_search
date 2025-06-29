@@ -302,7 +302,7 @@ class EnhancedChannelTemplatePass(ParsingPass):
                     match.group(pattern.artist_group)
                 )
                 if self.advanced_parser._is_valid_artist_name(artist):
-                    result.original_artist = artist
+                    result.artist = artist
 
             if pattern.title_group and pattern.title_group <= len(match.groups()):
                 song_title = self.advanced_parser._clean_extracted_text(
@@ -313,9 +313,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
 
             # Calculate confidence based on pattern history and extraction success
             base_confidence = pattern.confidence
-            if result.original_artist and result.song_title:
+            if result.artist and result.song_title:
                 result.confidence = base_confidence
-            elif result.original_artist or result.song_title:
+            elif result.artist or result.song_title:
                 result.confidence = base_confidence * 0.7
             else:
                 result.confidence = 0
@@ -356,7 +356,7 @@ class EnhancedChannelTemplatePass(ParsingPass):
         stats.last_updated = datetime.now()
 
         # Track format patterns
-        if result.original_artist and result.song_title:
+        if result.artist and result.song_title:
             # Try to generalize the successful pattern
             generalized_pattern = self._generalize_pattern(title, result)
             if generalized_pattern:
@@ -365,7 +365,7 @@ class EnhancedChannelTemplatePass(ParsingPass):
     def _generalize_pattern(self, title: str, result: ParseResult) -> Optional[str]:
         """Generalize a successful parse into a reusable pattern."""
 
-        if not result.original_artist or not result.song_title:
+        if not result.artist or not result.song_title:
             return None
 
         # Escape the extracted parts for regex
@@ -373,7 +373,7 @@ class EnhancedChannelTemplatePass(ParsingPass):
         pattern = title
 
         # Replace artist with group 1
-        pattern = pattern.replace(result.original_artist, "([^-–—\"']+?)")
+        pattern = pattern.replace(result.artist, "([^-–—\"']+?)")
 
         # Replace title with group 2
         pattern = pattern.replace(result.song_title, r"([^(\[]+?)")
