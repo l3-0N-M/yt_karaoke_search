@@ -6,7 +6,7 @@ import unicodedata
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 from .validation_corrector import ValidationResult
 
@@ -19,6 +19,7 @@ except ImportError:
 
 try:
     from .passes.web_search_pass import FillerWordProcessor
+
     HAS_FILLER_PROCESSOR = True
 except ImportError:
     FillerWordProcessor = None  # type: ignore
@@ -70,7 +71,7 @@ class AdvancedTitleParser:
         else:
             self.fuzzy_matcher = None
             logger.info("FuzzyMatcher not available, using basic fuzzy matching")
-        
+
         # Initialize filler word processor for enhanced cleaning
         if HAS_FILLER_PROCESSOR and FillerWordProcessor is not None:
             self.filler_processor = FillerWordProcessor()
@@ -436,7 +437,7 @@ class AdvancedTitleParser:
         if not self.filler_processor:
             # Remove large ID numbers (fallback)
             cleaned = re.sub(r"\b\d{4,}\b", "", cleaned)
-            # Remove quality indicators (fallback)  
+            # Remove quality indicators (fallback)
             cleaned = re.sub(r"\b(?:HD|HQ|4K|1080p|720p|480p)\b", "", cleaned, flags=re.IGNORECASE)
 
         # Normalize separators
@@ -884,7 +885,7 @@ class AdvancedTitleParser:
         # Remove quotes and brackets
         cleaned = re.sub(r'^["\'`]+|["\'`]+$', "", text.strip())
         cleaned = re.sub(r"^\([^)]*\)|^\[[^\]]*\]", "", cleaned).strip()
-        
+
         # Remove leading "Karaoke" prefix
         cleaned = re.sub(r"^[Kk]araoke\s+", "", cleaned).strip()
 

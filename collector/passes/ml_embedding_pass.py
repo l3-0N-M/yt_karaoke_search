@@ -9,6 +9,7 @@ import numpy as np
 
 from ..advanced_parser import AdvancedTitleParser, ParseResult
 from ..search.fuzzy_matcher import FuzzyMatcher
+from .base import ParsingPass, PassType
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class SemanticCandidate:
     aliases: Set[str] = field(default_factory=set)
 
 
-class EnhancedMLEmbeddingPass:
+class EnhancedMLEmbeddingPass(ParsingPass):
     """Pass 2: Enhanced ML/embedding similarity with semantic understanding."""
 
     def __init__(
@@ -132,6 +133,10 @@ class EnhancedMLEmbeddingPass:
                 r"\([^)]*(?:key|tempo|bpm)[^)]*\)",
             ],
         }
+
+    @property
+    def pass_type(self) -> PassType:
+        return PassType.ML_EMBEDDING
 
     async def parse(
         self,

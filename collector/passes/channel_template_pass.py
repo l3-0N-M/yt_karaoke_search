@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from ..advanced_parser import AdvancedTitleParser, ParseResult
+from .base import ParsingPass, PassType
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class ChannelStats:
     drift_threshold: float = 0.5
 
 
-class EnhancedChannelTemplatePass:
+class EnhancedChannelTemplatePass(ParsingPass):
     """Enhanced Pass 0: Channel-template matching with learning and drift detection."""
 
     def __init__(self, advanced_parser: AdvancedTitleParser, db_manager=None):
@@ -66,7 +67,11 @@ class EnhancedChannelTemplatePass:
         # Load existing patterns if available
         self._load_channel_patterns()
 
-    def parse(
+    @property
+    def pass_type(self) -> PassType:
+        return PassType.CHANNEL_TEMPLATE
+
+    async def parse(
         self,
         title: str,
         description: str = "",

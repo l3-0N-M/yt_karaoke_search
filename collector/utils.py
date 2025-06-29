@@ -1,7 +1,9 @@
 """Utilities and helper functions."""
 
 import logging
+import re
 import sys
+import unicodedata
 from logging.handlers import RotatingFileHandler
 
 
@@ -49,3 +51,143 @@ def setup_logging(
     logging.getLogger("yt_dlp").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+
+def parse_duration(duration_str: str) -> int:
+    """Parse a duration string (e.g., 'PT1M30S', '1:30') into seconds."""
+    if not duration_str:
+        return 0
+
+    if duration_str.startswith("PT"):
+        # ISO 8601 format (e.g., PT1H2M3S)
+        import isodate  # type: ignore
+
+        try:
+            duration = isodate.parse_duration(duration_str)
+            return int(duration.total_seconds())
+        except isodate.ISO8601Error:
+            return 0
+    elif ":" in duration_str:
+        # HH:MM:SS or MM:SS format
+        parts = list(map(int, duration_str.split(":")))
+        if len(parts) == 3:  # HH:MM:SS
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        elif len(parts) == 2:  # MM:SS
+            return parts[0] * 60 + parts[1]
+        else:
+            return 0
+    else:
+        # Assume it's already in seconds
+        try:
+            return int(duration_str)
+        except ValueError:
+            return 0
+
+
+def format_duration(seconds: int) -> str:
+    """Format seconds into a human-readable string (HH:MM:SS)."""
+    if seconds < 0:
+        return "00:00"
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours:02}:{minutes:02}:{seconds:02}"
+    else:
+        return f"{minutes:02}:{seconds:02}"
+
+
+def get_project_root() -> str:
+    """Get the project root directory."""
+    from pathlib import Path
+
+    return str(Path(__file__).parent.parent.resolve())
+
+
+def load_config(config_path: str) -> dict:
+    """Load YAML configuration file."""
+    import yaml
+
+    try:
+        with open(config_path, "r") as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        logging.error("Configuration file not found at %s", config_path)
+        return {}
+    except yaml.YAMLError as e:
+        logging.error("Error parsing YAML configuration: %s", e)
+        return {}
+
+
+def merge_configs(base_config: dict, override_config: dict) -> dict:
+    """Merge two configurations, with the override taking precedence."""
+    merged = base_config.copy()
+    for key, value in override_config.items():
+        if isinstance(value, dict) and key in merged and isinstance(merged[key], dict):
+            merged[key] = merge_configs(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+# Normalization patterns for artist and song titles
+ARTIST_NORMALIZATIONS = {
+    # Articles
+    r"^the\s+": "",
+    r"^a\s+": "",
+    r"^an\s+": "",
+    # Punctuation and symbols
+    r"[&]": "and",
+    r"[\\.,\\-_]": " ",
+    r"['\"\"]": "",
+    r"\\s+": " ",
+    # Common abbreviations
+    r"\\bft\\.?\\b": "featuring",
+    r"\\bfeat\\.?\\b": "featuring",
+    r"\\bvs\\.?\\b": "versus",
+    r"\\bw/\\b": "with",
+}
+
+SONG_NORMALIZATIONS = {
+    # Remove parentheticals that don't affect matching
+    r"\\s*\\([^)]*(?:remix|edit|version|mix|remaster)[^)]*\\)": "",
+    r"\\s*\\([^)]*(?:live|acoustic|demo|instrumental)[^)]*\\)": "",
+    r"\\s*\[[^\]]*(?:remix|edit|version|mix|remaster)[^\]]*\]": "",
+    # Normalize punctuation
+    r"['\"\"]": "",
+    r"[\\-_]": " ",
+    r"\\s+": " ",
+}
+
+_NORMALIZATION_CACHE = {}
+
+
+def normalize_text(text: str, text_type: str = "general") -> str:
+    """Normalize text for better matching."""
+    if not isinstance(text, str):
+        text = str(text)
+
+    cache_key = (text_type, text)
+    if cache_key in _NORMALIZATION_CACHE:
+        return _NORMALIZATION_CACHE[cache_key]
+
+    # Unicode normalization
+    normalized = unicodedata.normalize("NFKD", text.lower().strip())
+
+    # Remove accents
+    normalized = "".join(c for c in normalized if not unicodedata.combining(c))
+
+    # Apply type-specific normalizations
+    patterns = {}
+    if text_type == "artist":
+        patterns = ARTIST_NORMALIZATIONS
+    elif text_type == "song":
+        patterns = SONG_NORMALIZATIONS
+    else:
+        patterns = {**ARTIST_NORMALIZATIONS, **SONG_NORMALIZATIONS}
+
+    for pattern, replacement in patterns.items():
+        normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
+
+    normalized = normalized.strip()
+    _NORMALIZATION_CACHE[cache_key] = normalized
+    return normalized

@@ -939,7 +939,7 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
             # Create channel record from video data
             channel_url = f"https://www.youtube.com/channel/{channel_id}"
             channel_name = video_data.get("uploader", "Unknown Channel")
-            
+
             cursor.execute(
                 """
                 INSERT INTO channels (

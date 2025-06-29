@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from ..advanced_parser import AdvancedTitleParser, ParseResult
+from .base import ParsingPass, PassType
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class ChannelTrend:
     successful_recent_parses: int = 0
 
 
-class AutoRetemplatePass:
+class AutoRetemplatePass(ParsingPass):
     """Pass 1: Auto-re-template on recent uploads with intelligent pattern evolution."""
 
     def __init__(self, advanced_parser: AdvancedTitleParser, db_manager=None):
@@ -62,6 +63,10 @@ class AutoRetemplatePass:
 
         # Load existing trends
         self._load_channel_trends()
+
+    @property
+    def pass_type(self) -> PassType:
+        return PassType.AUTO_RETEMPLATE
 
     async def parse(
         self,

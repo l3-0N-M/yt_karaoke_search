@@ -2,10 +2,11 @@
 
 import logging
 import re
-import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Tuple
+
+from collector.utils import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -59,87 +60,9 @@ class FuzzyMatcher:
         self.min_phonetic_threshold = fuzzy_config.get("min_phonetic", 0.8)
         self.max_edit_distance = fuzzy_config.get("max_edit_distance", 3)
 
-        # Known normalization patterns
-        self._load_normalization_patterns()
-
         # Cache for expensive operations
-        self._normalization_cache = {}
         self._soundex_cache = {}
         self._metaphone_cache = {}
-
-    def _load_normalization_patterns(self):
-        """Load patterns for text normalization."""
-
-        # Common artist name variations
-        self.artist_normalizations = {
-            # Articles
-            r"^the\s+": "",
-            r"^a\s+": "",
-            r"^an\s+": "",
-            # Punctuation and symbols
-            r"[&]": "and",
-            r"[\.,\-_]": " ",
-            r'[\'\""]': "",
-            r"\s+": " ",
-            # Common abbreviations
-            r"\bft\.?\b": "featuring",
-            r"\bfeat\.?\b": "featuring",
-            r"\bvs\.?\b": "versus",
-            r"\bw/\b": "with",
-        }
-
-        # Common song title variations
-        self.song_normalizations = {
-            # Remove parentheticals that don't affect matching
-            r"\s*\([^)]*(?:remix|edit|version|mix|remaster)[^)]*\)": "",
-            r"\s*\([^)]*(?:live|acoustic|demo|instrumental)[^)]*\)": "",
-            r"\s*\[[^\]]*(?:remix|edit|version|mix|remaster)[^\]]*\]": "",
-            # Normalize punctuation
-            r'[\'\""]': "",
-            r"[\-_]": " ",
-            r"\s+": " ",
-        }
-
-        # Phonetically similar replacements
-        self.phonetic_replacements = {
-            "ph": "f",
-            "ck": "k",
-            "qu": "kw",
-            "tion": "shun",
-            "sion": "shun",
-            "c": "k",  # context-dependent
-        }
-
-    def normalize_text(self, text: str, text_type: str = "general") -> str:
-        """Normalize text for better matching."""
-        if not isinstance(text, str):
-            text = str(text)
-
-        cache_key = (text_type, text)
-        if cache_key in self._normalization_cache:
-            return self._normalization_cache[cache_key]
-
-        # Unicode normalization
-        normalized = unicodedata.normalize("NFKD", text.lower().strip())
-
-        # Remove accents
-        normalized = "".join(c for c in normalized if not unicodedata.combining(c))
-
-        # Apply type-specific normalizations
-        patterns = {}
-        if text_type == "artist":
-            patterns = self.artist_normalizations
-        elif text_type == "song":
-            patterns = self.song_normalizations
-        else:
-            patterns = {**self.artist_normalizations, **self.song_normalizations}
-
-        for pattern, replacement in patterns.items():
-            normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
-
-        normalized = normalized.strip()
-        self._normalization_cache[cache_key] = normalized
-        return normalized
 
     def calculate_similarity(self, text1: str, text2: str) -> float:
         """Calculate string similarity using multiple methods."""
@@ -151,8 +74,8 @@ class FuzzyMatcher:
             return 1.0
 
         # Normalize both texts
-        norm1 = self.normalize_text(text1)
-        norm2 = self.normalize_text(text2)
+        norm1 = normalize_text(text1)
+        norm2 = normalize_text(text2)
 
         if norm1 == norm2:
             return 0.95
@@ -221,8 +144,8 @@ class FuzzyMatcher:
         Falls back to simplified algorithms when :mod:`jellyfish` is unavailable.
         """
 
-        norm1 = self.normalize_text(text1)
-        norm2 = self.normalize_text(text2)
+        norm1 = normalize_text(text1)
+        norm2 = normalize_text(text2)
 
         similarities = []
 
@@ -364,8 +287,8 @@ class FuzzyMatcher:
                     matched=candidate,
                     score=combined_score,
                     method=method,
-                    normalized_original=self.normalize_text(query, text_type),
-                    normalized_matched=self.normalize_text(candidate, text_type),
+                    normalized_original=normalize_text(query, text_type),
+                    normalized_matched=normalize_text(candidate, text_type),
                 )
 
         return best_match
@@ -399,8 +322,8 @@ class FuzzyMatcher:
                     matched=candidate,
                     score=combined_score,
                     method=method,
-                    normalized_original=self.normalize_text(query, text_type),
-                    normalized_matched=self.normalize_text(candidate, text_type),
+                    normalized_original=normalize_text(query, text_type),
+                    normalized_matched=normalize_text(candidate, text_type),
                 )
                 matches.append(match)
 
@@ -457,6 +380,5 @@ class FuzzyMatcher:
 
     def clear_caches(self):
         """Clear all internal caches."""
-        self._normalization_cache.clear()
         self._soundex_cache.clear()
         self._metaphone_cache.clear()
