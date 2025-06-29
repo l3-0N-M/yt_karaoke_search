@@ -6,6 +6,7 @@ import random
 import re
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple, cast
 from urllib.parse import quote_plus
 
@@ -164,11 +165,12 @@ class VideoProcessor:
             return 0
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    async def process_video(self, video_url: str) -> ProcessingResult:
+    async def process_video(self, video_info: Dict) -> ProcessingResult:
         """Process a single video comprehensively."""
         start_time = time.time()
         errors = []
         warnings = []
+        video_url = video_info.get("url")
 
         try:
             # Rotate UA for each video extraction to stay under radar
@@ -181,6 +183,10 @@ class VideoProcessor:
                     {}, 0.0, time.time() - start_time, ["Failed to extract basic metadata"], []
                 )
 
+            # Preserve channel_id from the initial scan
+            if "channel_id" in video_info:
+                video_data["channel_id"] = video_info["channel_id"]
+
             # Extract artist/song using multi-pass controller if enabled
             parse_result = None
             if self.multi_pass_controller and self.config.search.multi_pass.enabled:
@@ -191,7 +197,7 @@ class VideoProcessor:
                         description=video_data.get("description", ""),
                         tags=" ".join(video_data.get("tags", [])),
                         channel_name=video_data.get("uploader", ""),
-                        channel_id=video_data.get("uploader_id", ""),
+                        channel_id=video_data.get("channel_id", ""),
                     )
                     parse_result = mp_res.final_result
                 except Exception as e:
@@ -201,12 +207,29 @@ class VideoProcessor:
             features = self._extract_karaoke_features(video_data, parse_result)
             video_data["features"] = features
 
+            # Promote key features to top-level video_data for database storage
+            if features.get("original_artist"):
+                video_data["artist"] = features["original_artist"]
+            if features.get("song_title"):
+                video_data["song_title"] = features["song_title"]
+            if features.get("featured_artists"):
+                video_data["featured_artists"] = features["featured_artists"]
+            if features.get("artist_confidence"):
+                video_data["parse_confidence"] = features["artist_confidence"]
+            if features.get("release_year"):
+                video_data["release_year"] = features["release_year"]
+
             # Enhance with external data (uses extracted features)
             await self._enhance_with_external_data(video_data, errors, warnings)
 
             # Calculate quality scores
             quality_scores = self._calculate_quality_scores(video_data)
             video_data["quality_scores"] = quality_scores
+
+            # Calculate engagement ratio
+            engagement_ratio = self._calculate_engagement_ratio(video_data)
+            if engagement_ratio is not None:
+                video_data["engagement_ratio"] = engagement_ratio
 
             # Calculate confidence
             confidence = self._calculate_confidence_score(video_data, errors, warnings)
@@ -295,6 +318,10 @@ class VideoProcessor:
                         features["song_title"],
                         validation,
                     )
+            else:
+                # Fallback if MusicBrainz lookup fails
+                warnings.append("MusicBrainz lookup failed, using parsed data only.")
+                video_data["parse_confidence"] = features.get("artist_confidence", 0.0)
 
     async def _get_ryd_data(self, video_id: str) -> Dict:
         """Get Return YouTube Dislike data with confidence scoring."""
@@ -393,7 +420,7 @@ class VideoProcessor:
                         )
 
         except Exception as e:
-            logger.debug(f"MusicBrainz lookup failed for {artist} - {song}: {e}")
+            logger.warning(f"MusicBrainz lookup failed for {artist} - {song}: {e}")
 
         return {"parse_confidence": 0.0}, None
 
@@ -405,7 +432,7 @@ class VideoProcessor:
             return None
 
         best_recording = None
-        best_score = 0
+        best_score = -1
 
         for recording in recordings:
             score = 0
@@ -441,7 +468,7 @@ class VideoProcessor:
                 best_score = score
                 best_recording = recording
 
-        return best_recording if best_score > 30 else None  # Minimum threshold
+        return best_recording if best_score >= 50 else None
 
     def _fuzzy_match(self, str1: str, str2: str) -> bool:
         """Simple fuzzy string matching."""
@@ -688,6 +715,11 @@ class VideoProcessor:
             features[feat] = bool(hits)
             features[f"{feat}_confidence"] = min(0.6 + 0.1 * (hits - 1), 1.0) if hits else 0.0
 
+        # Extract release year from titles/descriptions (fallback when MusicBrainz unavailable)
+        release_year = self._extract_release_year_fallback(video_data.get("title", ""), video_data.get("description", ""))
+        if release_year:
+            features["release_year"] = release_year
+
         # Extract artist and song info
         if parse_result is None and self.advanced_parser:
             uploader = video_data.get("uploader", "")
@@ -745,7 +777,7 @@ class VideoProcessor:
                 parts = re.split(r"\s*&\s*|\s+and\s+|,\s*", cleaned)
                 for part in parts:
                     artist = part.strip()
-                    if artist and 2 < len(artist) < 50:
+                    if artist and 2 < len(artist) < 50 and self._is_valid_featured_artist(artist):
                         featured.append(artist.title())
 
         # Remove duplicates while preserving order
@@ -755,6 +787,95 @@ class VideoProcessor:
                 unique_featured.append(artist)
 
         return ", ".join(unique_featured) if unique_featured else None
+
+    def _is_valid_featured_artist(self, artist: str) -> bool:
+        """Validate that a featured artist name is legitimate and not metadata noise."""
+        artist_lower = artist.lower().strip()
+        
+        # Filter out common metadata terms that shouldn't be featured artists
+        invalid_terms = {
+            "rights holders",
+            "rights holder", 
+            "copyright",
+            "all rights reserved",
+            "record label",
+            "music group",
+            "publishing",
+            "records",
+            "entertainment",
+            "distribution",
+            "ltd",
+            "inc",
+            "corp",
+            "llc",
+            "gmbh",
+            "karaoke version",
+            "instrumental",
+            "melody",
+            "backing track",
+            "original artist",
+            "various artists",
+            "soundtrack",
+            "compilation",
+            "unknown artist",
+            "remix",
+            "edit",
+            "version",
+            "remaster",
+        }
+        
+        # Check if the artist name is just an invalid term
+        if artist_lower in invalid_terms:
+            return False
+            
+        # Check if the artist name contains invalid terms (more flexible)
+        for term in invalid_terms:
+            if term in artist_lower:
+                return False
+        
+        # Additional validation: check for reasonable artist name patterns
+        # Reject if it's all numbers or special characters
+        if re.match(r'^[\d\s\-_\.]+$', artist):
+            return False
+            
+        # Reject single letters or too short names
+        if len(artist.strip()) < 2:
+            return False
+            
+        return True
+
+    def _extract_release_year_fallback(self, title: str, description: str) -> Optional[int]:
+        """Extract release year from title and description using pattern matching."""
+        combined_text = f"{title} {description}"
+        current_year = datetime.now().year
+        
+        # Year patterns (prioritized by reliability)
+        year_patterns = [
+            r'\((\d{4})\)',           # (1985) - most reliable
+            r'\[(\d{4})\]',           # [1985] - second most reliable
+            r'\b(\d{4})\b',           # standalone year - less reliable
+            r'from\s+(\d{4})',        # "from 1985"
+            r'released\s+(\d{4})',    # "released 1985"
+            r'(\d{4})\s+version',     # "1985 version"
+            r'circa\s+(\d{4})',       # "circa 1985"
+            r'(\d{4})s',              # "1980s" -> extract 1980
+        ]
+        
+        found_years = []
+        
+        for pattern in year_patterns:
+            matches = re.findall(pattern, combined_text, re.IGNORECASE)
+            for match in matches:
+                try:
+                    year = int(match)
+                    # Validate reasonable year range (1900 to current year + 2)
+                    if 1900 <= year <= current_year + 2:
+                        found_years.append(year)
+                except ValueError:
+                    continue
+        
+        # Return the earliest valid year found (most likely to be original release)
+        return min(found_years) if found_years else None
 
     def _detect_genre(self, title: str, description: str, tags: str) -> Optional[str]:
         """Detect music genre based on title, description and tags."""
@@ -1124,6 +1245,25 @@ class VideoProcessor:
         )
 
         return scores
+
+    def _calculate_engagement_ratio(self, video_data: Dict) -> Optional[float]:
+        """Calculate engagement ratio as percentage."""
+        view_count = video_data.get("view_count", 0)
+        like_count = video_data.get("like_count", 0)
+        estimated_dislikes = video_data.get("estimated_dislikes", 0)
+        
+        if view_count <= 0 or like_count is None:
+            return None
+        
+        # Use net engagement if we have dislike data
+        if estimated_dislikes > 0:
+            net_engagement = like_count - estimated_dislikes
+            ratio = net_engagement / view_count
+        else:
+            ratio = like_count / view_count
+        
+        # Convert to percentage and round to 3 decimal places
+        return round(ratio * 100, 3)
 
     def _calculate_confidence_score(
         self, video_data: Dict, errors: List[str], warnings: List[str]

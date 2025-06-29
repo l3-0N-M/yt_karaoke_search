@@ -247,7 +247,7 @@ class KaraokeCollector:
 
             async with sem:
                 try:
-                    result = await self.video_processor.process_video(vrow["url"])
+                    result = await self.video_processor.process_video(vrow)
                     if result.is_success:
                         if self.db_manager.save_video_data(result):
                             # Thread-safe updates to shared state (minimized lock time)
@@ -345,6 +345,7 @@ class KaraokeCollector:
             # Save channel data
             self.db_manager.save_channel_data(channel_data)
             channel_id = channel_data["channel_id"]
+            logger.info(f"Extracted Channel ID: {channel_id}")
 
             # Check if incremental and when last processed
             after_date = None
@@ -460,8 +461,8 @@ class KaraokeCollector:
 
         stats = {
             "total_channels": len(channels),
-            "karaoke_focused_channels": sum(1 for c in channels if c["is_karaoke_focused"]),
-            "total_videos_from_channels": sum(c["collected_videos"] for c in channels),
+            "karaoke_focused_channels": sum(1 for c in channels if c.get("is_karaoke_focused")),
+            "total_videos_from_channels": sum(c.get("collected_videos", 0) for c in channels),
             "channels": channels,
         }
 

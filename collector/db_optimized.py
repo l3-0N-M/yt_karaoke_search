@@ -253,6 +253,9 @@ class OptimizedDatabaseManager:
             optimized_result = DataTransformer.transform_video_data_to_optimized(video_data)
 
             with self.get_connection() as conn:
+                # Ensure channel exists before saving video
+                self._ensure_channel_exists(conn, optimized_result)
+
                 # Round values for the optimized schema
                 parse_confidence = optimized_result.get("parse_confidence")
                 engagement_ratio = optimized_result.get("engagement_ratio")
@@ -298,12 +301,46 @@ class OptimizedDatabaseManager:
                 if optimized_result.get("video_features"):
                     self._save_video_features(conn, optimized_result)
 
+                if optimized_result.get("quality_scores"):
+                    self._save_quality_scores(conn, optimized_result)
+
+                if optimized_result.get("ryd_data") or optimized_result.get("estimated_dislikes"):
+                    self._save_ryd_data(conn, optimized_result)
+
                 conn.commit()
                 return True
 
         except Exception as e:
             logger.error(f"Failed to save video data: {e}")
             return False
+
+    def _ensure_channel_exists(self, conn: sqlite3.Connection, video_data: Dict):
+        """Ensure a channel record exists before saving video data."""
+        channel_id = video_data.get("channel_id")
+        if not channel_id:
+            return
+
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM channels WHERE channel_id = ?", (channel_id,))
+            if cursor.fetchone():
+                return
+
+            channel_url = f"https://www.youtube.com/channel/{channel_id}"
+            channel_name = video_data.get("channel_name", "Unknown Channel")
+
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO channels (
+                    channel_id, channel_url, channel_name, updated_at
+                ) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (channel_id, channel_url, channel_name),
+            )
+            logger.debug(f"Created missing channel record: {channel_name} ({channel_id})")
+
+        except Exception as e:
+            logger.error(f"Failed to ensure channel exists for {channel_id}: {e}")
 
     def _save_musicbrainz_data(self, conn: sqlite3.Connection, result: Dict):
         """Save MusicBrainz data to optimized table."""
@@ -346,6 +383,54 @@ class OptimizedDatabaseManager:
                 features.get("is_piano_only", False),
                 features.get("is_acoustic", False),
                 round(features.get("confidence_score", 0), 2),
+            ),
+        )
+
+    def _save_quality_scores(self, conn: sqlite3.Connection, result: Dict):
+        """Save quality scores to optimized table."""
+        quality_scores = result.get("quality_scores", {})
+        
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO quality_scores (
+                video_id, overall_score, technical_score,
+                engagement_score, metadata_score, calculated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            (
+                result["video_id"],
+                round(quality_scores.get("overall_score", 0), 2),
+                round(quality_scores.get("technical_score", 0), 2),
+                round(quality_scores.get("engagement_score", 0), 2),
+                round(quality_scores.get("metadata_score", 0), 2),
+                datetime.now(),
+            ),
+        )
+
+    def _save_ryd_data(self, conn: sqlite3.Connection, result: Dict):
+        """Save Return YouTube Dislike data to optimized table."""
+        ryd_data = result.get("ryd_data", {})
+        
+        # Handle both nested ryd_data and top-level fields
+        estimated_dislikes = ryd_data.get("estimated_dislikes") or result.get("estimated_dislikes", 0)
+        ryd_likes = ryd_data.get("likes") or result.get("ryd_likes", 0)
+        ryd_rating = ryd_data.get("rating") or result.get("ryd_rating", 0.0)
+        ryd_confidence = ryd_data.get("confidence") or result.get("ryd_confidence", 0.0)
+        
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO ryd_data (
+                video_id, estimated_dislikes, ryd_likes,
+                ryd_rating, ryd_confidence, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            (
+                result["video_id"],
+                int(estimated_dislikes),
+                int(ryd_likes),
+                round(float(ryd_rating), 2),
+                round(float(ryd_confidence), 2),
+                datetime.now(),
             ),
         )
 
@@ -413,6 +498,118 @@ class OptimizedDatabaseManager:
         except Exception as e:
             logger.error(f"Failed to get statistics: {e}")
             return {}
+
+    def save_channel_data(self, channel_data: Dict) -> bool:
+        """Save or update channel information."""
+        try:
+            with self.get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO channels (
+                        channel_id, channel_url, channel_name, video_count,
+                        description, is_karaoke_focused, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        channel_data.get("channel_id"),
+                        channel_data.get("channel_url"),
+                        channel_data.get("channel_name"),
+                        channel_data.get("video_count", 0),
+                        channel_data.get("description"),
+                        channel_data.get("is_karaoke_focused", True),
+                    ),
+                )
+                logger.debug(f"Saved channel: {channel_data.get('channel_name')}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to save channel data: {e}")
+            return False
+
+    def get_processed_channels(self) -> list[dict[str, Any]]:
+        """Get list of all processed channels with their stats."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT
+                        c.channel_id, c.channel_name, c.channel_url,
+                        c.video_count, c.is_karaoke_focused,
+                        c.updated_at, COUNT(v.video_id) as collected_videos
+                    FROM channels c
+                    LEFT JOIN videos v ON c.channel_id = v.channel_id
+                    GROUP BY c.channel_id
+                    ORDER BY c.channel_name
+                    """
+                )
+                return [
+                    {
+                        "channel_id": row[0],
+                        "channel_name": row[1],
+                        "channel_url": row[2],
+                        "video_count": row[3],
+                        "is_karaoke_focused": bool(row[4]),
+                        "last_processed_at": row[5],
+                        "collected_videos": row[6],
+                    }
+                    for row in cursor.fetchall()
+                ]
+        except Exception as e:
+            logger.error(f"Failed to get processed channels: {e}")
+            return []
+
+    def get_channel_last_processed(self, channel_id: str) -> str | None:
+        """Get the last processed timestamp for a channel."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT updated_at FROM channels WHERE channel_id = ?", (channel_id,)
+                )
+                result = cursor.fetchone()
+                return result[0] if result and result[0] else None
+        except Exception as e:
+            logger.error(f"Failed to get last processed time for channel {channel_id}: {e}")
+            return None
+
+    def update_channel_processed(self, channel_id: str) -> bool:
+        """Update the last processed timestamp for a channel."""
+        try:
+            with self.get_connection() as conn:
+                conn.execute(
+                    "UPDATE channels SET updated_at = CURRENT_TIMESTAMP WHERE channel_id = ?",
+                    (channel_id,),
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update processed time for channel {channel_id}: {e}")
+            return False
+
+    def video_exists(self, video_id: str) -> bool:
+        """Check if a video already exists in the database."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT 1 FROM videos WHERE video_id = ? LIMIT 1", (video_id,)
+                )
+                return cursor.fetchone() is not None
+        except Exception as e:
+            logger.error(f"Failed to check if video exists {video_id}: {e}")
+            return False
+
+    def get_existing_video_ids_batch(self, video_ids: list[str]) -> set:
+        """Get set of video IDs that already exist in database (batch operation)."""
+        if not video_ids:
+            return set()
+
+        try:
+            with self.get_connection() as conn:
+                placeholders = ",".join(["?"] * len(video_ids))
+                cursor = conn.execute(
+                    f"SELECT video_id FROM videos WHERE video_id IN ({placeholders})", video_ids
+                )
+                return {row[0] for row in cursor.fetchall()}
+        except Exception as e:
+            logger.error(f"Failed to get existing video IDs: {e}")
+            return set()
 
     def cleanup(self):
         """Clean up database connections."""

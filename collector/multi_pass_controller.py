@@ -188,11 +188,10 @@ class MultiPassParsingController:
                 f"Early exit at channel template with confidence {channel_result.confidence:.2f}"
             )
             return
-        elif channel_result and not channel_result.success:  # Early exit on failure
-            logger.warning(
-                f"Early exit due to failed channel template pass: {channel_result.error_message}"
+        elif channel_result and not channel_result.success:  # Continue to other passes instead of early exit
+            logger.debug(
+                f"Channel template pass failed for title '{title}': {channel_result.error_message}. Continuing to other passes."
             )
-            return
 
         # Pass 1: MusicBrainz Search (Validation)
         mb_result = await self._execute_pass_if_enabled(
@@ -207,30 +206,30 @@ class MultiPassParsingController:
         )
 
         if mb_result:
-            if not mb_result.success:  # Early exit on failure
-                logger.warning(
-                    f"Early exit due to failed MusicBrainz search pass: {mb_result.error_message}"
+            if not mb_result.success:  # Continue to other passes instead of early exit
+                logger.debug(
+                    f"MusicBrainz search pass failed for title '{title}': {mb_result.error_message}. Continuing to other passes."
                 )
-                return
-            mb_search_result = mb_result.parse_result
-            mb_confidence = mb_result.confidence
-
-            # If MusicBrainz confidence is high enough, skip web search
-            if mb_confidence >= self.pass_configs[PassType.MUSICBRAINZ_SEARCH].confidence_threshold:
-                result.final_result = mb_search_result
-                result.stopped_at_pass = PassType.MUSICBRAINZ_SEARCH
-                logger.info(f"High MB confidence {mb_confidence:.2f}, skipping web search")
-
-                # Learn from this successful pattern for future efficiency
-                if mb_search_result:
-                    await self._learn_channel_pattern(
-                        channel_name, channel_id, title, mb_search_result
-                    )
-                return
             else:
-                logger.info(
-                    f"MB confidence {mb_confidence:.2f} below threshold, proceeding to web search"
-                )
+                mb_search_result = mb_result.parse_result
+                mb_confidence = mb_result.confidence
+
+                # If MusicBrainz confidence is high enough, skip web search
+                if mb_confidence >= self.pass_configs[PassType.MUSICBRAINZ_SEARCH].confidence_threshold:
+                    result.final_result = mb_search_result
+                    result.stopped_at_pass = PassType.MUSICBRAINZ_SEARCH
+                    logger.info(f"High MB confidence {mb_confidence:.2f}, skipping web search")
+
+                    # Learn from this successful pattern for future efficiency
+                    if mb_search_result:
+                        await self._learn_channel_pattern(
+                            channel_name, channel_id, title, mb_search_result
+                        )
+                    return
+                else:
+                    logger.info(
+                        f"MB confidence {mb_confidence:.2f} below threshold, proceeding to web search"
+                    )
 
         # Pass 2: Web Search (only if MusicBrainz confidence was low)
         web_result = await self._execute_pass_if_enabled(
@@ -245,60 +244,62 @@ class MultiPassParsingController:
         )
 
         if web_result:
-            if not web_result.success:  # Early exit on failure
-                logger.warning(
-                    f"Early exit due to failed Web search pass: {web_result.error_message}"
+            if not web_result.success:  # Continue to fallback passes instead of early exit
+                logger.debug(
+                    f"Web search pass failed for title '{title}': {web_result.error_message}. Continuing to fallback passes."
                 )
-                return
-            web_search_result = web_result.parse_result
+            else:
+                web_search_result = web_result.parse_result
 
-            # Pass 3: MusicBrainz Validation (enrich web search results)
-            validation_metadata = metadata.copy()
-            validation_metadata["web_search_result"] = web_search_result
+                # Pass 3: MusicBrainz Validation (enrich web search results)
+                validation_metadata = metadata.copy()
+                validation_metadata["web_search_result"] = web_search_result
 
-            validation_result = await self._execute_pass_if_enabled(
-                PassType.MUSICBRAINZ_VALIDATION,
-                result,
-                title,
-                description,
-                tags,
-                channel_name,
-                channel_id,
-                validation_metadata,
-            )
+                validation_result = await self._execute_pass_if_enabled(
+                    PassType.MUSICBRAINZ_VALIDATION,
+                    result,
+                    title,
+                    description,
+                    tags,
+                    channel_name,
+                    channel_id,
+                    validation_metadata,
+                )
 
-            if validation_result:
-                if not validation_result.success:  # Early exit on failure
-                    logger.warning(
-                        f"Early exit due to failed MusicBrainz validation pass: {validation_result.error_message}"
-                    )
-                    # If validation failed, but web search was successful, use web search result
+                if validation_result:
+                    if not validation_result.success:  # Continue processing instead of early exit
+                        logger.debug(
+                            f"MusicBrainz validation pass failed for title '{title}': {validation_result.error_message}. Using web search result."
+                        )
+                        # If validation failed, but web search was successful, use web search result
+                        if web_search_result:
+                            result.final_result = web_search_result
+                            result.stopped_at_pass = PassType.WEB_SEARCH
+                            logger.info("Using web search result (validation failed)")
+                            return
+
+                    else:
+                        if validation_result.parse_result:
+                            result.final_result = validation_result.parse_result
+                            result.stopped_at_pass = PassType.MUSICBRAINZ_VALIDATION
+
+                            # Learn from successful web search + validation pattern
+                            if validation_result.confidence >= 0.8:
+                                await self._learn_channel_pattern(
+                                    channel_name, channel_id, title, validation_result.parse_result
+                                )
+
+                            logger.info(
+                                f"Web search + validation completed with confidence {validation_result.confidence:.2f}"
+                            )
+                            return
+                else:
+                    # Use web search result if validation was not even attempted or failed to return a result
                     if web_search_result:
                         result.final_result = web_search_result
                         result.stopped_at_pass = PassType.WEB_SEARCH
-                        logger.info("Using web search result (validation failed)")
-                    return
-
-                if validation_result.parse_result:
-                    result.final_result = validation_result.parse_result
-                    result.stopped_at_pass = PassType.MUSICBRAINZ_VALIDATION
-
-                    # Learn from successful web search + validation pattern
-                    if validation_result.confidence >= 0.8:
-                        await self._learn_channel_pattern(
-                            channel_name, channel_id, title, validation_result.parse_result
-                        )
-
-                    logger.info(
-                        f"Web search + validation completed with confidence {validation_result.confidence:.2f}"
-                    )
-                    return
-            else:
-                # Use web search result if validation was not even attempted or failed to return a result
-                result.final_result = web_search_result
-                result.stopped_at_pass = PassType.WEB_SEARCH
-                logger.info("Using web search result (validation failed)")
-                return
+                        logger.info("Using web search result (validation not attempted)")
+                        return
 
         # Fallback passes if everything above failed
         fallback_passes = [PassType.ML_EMBEDDING, PassType.AUTO_RETEMPLATE]
@@ -309,11 +310,11 @@ class MultiPassParsingController:
             )
 
             if fallback_result:
-                if not fallback_result.success:  # Early exit on failure
-                    logger.warning(
-                        f"Early exit due to failed fallback pass {pass_type.value}: {fallback_result.error_message}"
+                if not fallback_result.success:  # Continue to next fallback pass instead of early exit
+                    logger.debug(
+                        f"Fallback pass {pass_type.value} failed for title '{title}': {fallback_result.error_message}. Continuing to next pass."
                     )
-                    return
+                    continue
 
                 if fallback_result.confidence >= self.pass_configs[pass_type].confidence_threshold:
                     result.final_result = fallback_result.parse_result

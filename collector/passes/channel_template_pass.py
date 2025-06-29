@@ -140,28 +140,81 @@ class EnhancedChannelTemplatePass(ParsingPass):
             key=lambda p: (p.success_count / max(p.total_attempts, 1), p.last_used), reverse=True
         )
 
-        for pattern in patterns:
-            try:
-                match = re.search(pattern.pattern, title, re.IGNORECASE | re.UNICODE)
-                if match:
-                    result = self._create_result_from_pattern_match(
-                        match, pattern, f"learned_channel_{channel_id}", title
-                    )
-                    if result and result.confidence > 0:
-                        pattern.total_attempts += 1
-                        pattern.last_used = datetime.now()
-                        return result
+        # Try both original title and cleaned title
+        titles_to_try = [title, self._clean_title_for_matching(title)]
 
-            except re.error as e:
-                logger.warning(f"Invalid regex pattern for channel {channel_id}: {e}")
-                continue
+        for test_title in titles_to_try:
+            for pattern in patterns:
+                try:
+                    match = re.search(pattern.pattern, test_title, re.IGNORECASE | re.UNICODE)
+                    if match:
+                        result = self._create_result_from_pattern_match(
+                            match, pattern, f"learned_channel_{channel_id}", test_title
+                        )
+                        if result and result.confidence > 0:
+                            pattern.total_attempts += 1
+                            pattern.last_used = datetime.now()
+                            return result
+
+                except re.error as e:
+                    logger.warning(f"Invalid regex pattern for channel {channel_id}: {e}")
+                    continue
 
         return None
+
+    def _clean_title_for_matching(self, title: str) -> str:
+        """Clean title by removing metadata brackets/parentheses while preserving artist names."""
+        cleaned = title
+        
+        # Remove karaoke/technical metadata in brackets/parentheses (but preserve Korean artist names)
+        karaoke_patterns = [
+            r'\[ZZang KARAOKE\]',
+            r'\[짱가라오케/노래방\]',
+            r'\(Karaoke Version\)',
+            r'\(MR/Instrumental\)',
+            r'\(Melody\)',
+            r'\(Instrumental\)',
+            r'\(Karaoke\)',
+            r'\[Karaoke\]',
+            r'\[MR\]',
+            r'\[Instrumental\]',
+            r'\[Melody\]',
+        ]
+        
+        # Remove specific karaoke metadata patterns
+        for pattern in karaoke_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
+        # Remove only parentheses that contain obvious metadata (not Korean names)
+        # Keep parentheses with Korean characters (Hangul) as they're likely artist names
+        def should_keep_parentheses(match):
+            content = match.group(1)
+            # Keep if contains Korean characters (Hangul: \uAC00-\uD7A3)
+            if re.search(r'[\uAC00-\uD7A3]', content):
+                return match.group(0)
+            # Keep if it looks like an artist name (letters, spaces, hyphens)
+            if re.match(r'^[a-zA-Z\s\-]+$', content) and len(content) < 30:
+                return match.group(0)
+            # Remove if it looks like metadata
+            metadata_indicators = ['version', 'remix', 'edit', 'remaster', 'feat', 'ft', 'featuring']
+            if any(indicator in content.lower() for indicator in metadata_indicators):
+                return ''
+            return match.group(0)
+        
+        # Apply selective parentheses removal
+        cleaned = re.sub(r'\(([^)]+)\)', should_keep_parentheses, cleaned)
+        
+        # Clean up extra whitespace
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        return cleaned
 
     def _enhanced_channel_detection(
         self, title: str, description: str, tags: str, channel_name: str, channel_id: str
     ) -> Optional[ParseResult]:
         """Enhanced channel-specific pattern detection."""
+
+        # Try both original title and cleaned title
+        titles_to_try = [title, self._clean_title_for_matching(title)]
 
         # Enhanced patterns based on common karaoke channel formats
         enhanced_patterns = [
@@ -211,24 +264,44 @@ class EnhancedChannelTemplatePass(ParsingPass):
             ),
         ]
 
-        # Try enhanced patterns
-        for pattern, artist_group, title_group, confidence, pattern_name in enhanced_patterns:
-            try:
-                match = re.search(pattern, title, re.IGNORECASE | re.UNICODE)
-                if match:
-                    result = self.advanced_parser._create_result_from_match(
-                        match,
-                        artist_group,
-                        title_group,
-                        confidence,
-                        f"enhanced_channel_{pattern_name}",
-                        pattern,
-                    )
-                    if result and result.confidence > 0:
-                        return result
+        # Try enhanced patterns on both original and cleaned titles
+        for test_title in titles_to_try:
+            for pattern, artist_group, title_group, confidence, pattern_name in enhanced_patterns:
+                try:
+                    match = re.search(pattern, test_title, re.IGNORECASE | re.UNICODE)
+                    if match:
+                        result = self.advanced_parser._create_result_from_match(
+                            match,
+                            artist_group,
+                            title_group,
+                            confidence,
+                            f"enhanced_channel_{pattern_name}",
+                            pattern,
+                        )
+                        if result and result.confidence > 0:
+                            return result
 
-            except re.error:
-                continue
+                except re.error:
+                    continue
+
+            # Simple dash pattern for cleaned titles
+            if test_title != title:  # Only try this on cleaned title
+                try:
+                    # Simple Artist - Title pattern (after cleaning brackets)
+                    match = re.search(r'^([^-–—]+)\s*[-–—]\s*(.+)$', test_title, re.IGNORECASE | re.UNICODE)
+                    if match:
+                        result = self.advanced_parser._create_result_from_match(
+                            match,
+                            1,
+                            2,
+                            0.75,
+                            "enhanced_channel_cleaned_dash",
+                            r'^([^-–—]+)\s*[-–—]\s*(.+)$',
+                        )
+                        if result and result.confidence > 0:
+                            return result
+                except re.error:
+                    continue
 
         return None
 
@@ -525,14 +598,63 @@ class EnhancedChannelTemplatePass(ParsingPass):
 
     def _load_channel_patterns(self):
         """Load existing channel patterns from database."""
-
         if not self.db_manager:
             return
 
         try:
-            # This would load from database in a real implementation
-            # For now, we'll initialize empty
-            logger.info("Channel pattern loading not yet implemented")
+            # Both possible channel IDs for zzangkaraoke
+            zzang_channel_ids = ["UCzv4mCu3YS_9WjAWSt9Xg9Q", "@zzangkaraoke"]
+
+            # More robust patterns for zzangkaraoke based on actual titles
+            zzang_patterns = [
+                # Korean format: Artist(한국이름) - Title
+                ChannelPattern(
+                    pattern=r"\[짱가라오케/노래방\]\s*([^-]+(?:\([^)]*\))?)\s*-\s*(.+?)\s*\((?:Melody|MR/Instrumental)\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # English format with Korean artist: Artist - Title (Karaoke Version)
+                ChannelPattern(
+                    pattern=r"^([^-]+(?:\([^)]*\))?)\s*-\s*(.+?)\s*\((?:Melody|MR/Instrumental)\)\s*\(Karaoke Version\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # Broader Korean format to catch more variations
+                ChannelPattern(
+                    pattern=r"\[짱가라오케/노래방\]\s*(.+?)\s*-\s*(.+?)\s*\((?:Melody|MR/Instrumental)\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.85,
+                ),
+                # Generic pattern: Artist - Title (any karaoke indicator)
+                ChannelPattern(
+                    pattern=r"^([^-–—]+(?:\([^)]*\))?)\s*[-–—]\s*(.+?)\s*\((?:Melody|MR|Instrumental|Karaoke)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.80,
+                ),
+                # After cleaning metadata: Simple Artist - Title
+                ChannelPattern(
+                    pattern=r"^([^-–—]+(?:\([^)]*\))?)\s*[-–—]\s*(.+?)$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.75,
+                ),
+                # Fallback: Any dash-separated format (preserve parentheses in artist names)
+                ChannelPattern(
+                    pattern=r"^([^-–—]+(?:\([^)]*\))?)\s*[-–—]\s*(.+?)(?:\s*\[.*\])?$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.70,
+                ),
+            ]
+
+            # Apply patterns to both channel IDs
+            for channel_id in zzang_channel_ids:
+                self.channel_patterns[channel_id] = zzang_patterns
+            logger.info(f"Loaded {len(zzang_patterns)} hardcoded patterns for zzangkaraoke")
 
         except Exception as e:
             logger.warning(f"Failed to load channel patterns: {e}")

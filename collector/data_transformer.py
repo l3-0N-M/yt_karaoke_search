@@ -87,6 +87,53 @@ class DataTransformer:
             if old_field in transformed:
                 transformed[new_field] = transformed.pop(old_field)
 
+        # Extract artist/song data from features if not already at top level
+        features = transformed.get("features", {})
+        if features:
+            # Promote key feature data to top level if not already there
+            if not transformed.get("artist") and features.get("original_artist"):
+                transformed["artist"] = features["original_artist"]
+            if not transformed.get("song_title") and features.get("song_title"):
+                transformed["song_title"] = features["song_title"]
+            if not transformed.get("featured_artists") and features.get("featured_artists"):
+                transformed["featured_artists"] = features["featured_artists"]
+            if not transformed.get("parse_confidence") and features.get("artist_confidence"):
+                transformed["parse_confidence"] = features["artist_confidence"]
+            if not transformed.get("release_year") and features.get("release_year"):
+                transformed["release_year"] = features["release_year"]
+
+        # Ensure quality scores are properly formatted
+        quality_scores = transformed.get("quality_scores", {})
+        if quality_scores:
+            # Round quality score values
+            for score_field in ["overall_score", "technical_score", "engagement_score", "metadata_score"]:
+                if score_field in quality_scores and quality_scores[score_field] is not None:
+                    quality_scores[score_field] = round(quality_scores[score_field], 2)
+            transformed["quality_scores"] = quality_scores
+
+        # Ensure RYD data is properly formatted
+        ryd_data = transformed.get("ryd_data", {})
+        if ryd_data:
+            # Round RYD values
+            for field in ["ryd_rating", "ryd_confidence"]:
+                if field in ryd_data and ryd_data[field] is not None:
+                    ryd_data[field] = round(ryd_data[field], 2)
+            transformed["ryd_data"] = ryd_data
+
+        # Ensure engagement ratio is properly calculated and formatted
+        if not transformed.get("engagement_ratio"):
+            view_count = transformed.get("view_count", 0)
+            like_count = transformed.get("like_count", 0)
+            estimated_dislikes = transformed.get("estimated_dislikes", 0)
+            
+            if view_count > 0 and like_count is not None:
+                if estimated_dislikes > 0:
+                    net_engagement = like_count - estimated_dislikes
+                    ratio = net_engagement / view_count
+                else:
+                    ratio = like_count / view_count
+                transformed["engagement_ratio"] = round(ratio * 100, 3)
+
         return transformed
 
     @staticmethod

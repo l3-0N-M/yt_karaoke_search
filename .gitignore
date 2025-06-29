@@ -20,3 +20,6 @@ build/
 # IDE files
 .vscode/
 .idea/
+
+# Secrets
+.env
