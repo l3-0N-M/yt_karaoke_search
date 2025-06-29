@@ -673,12 +673,15 @@ INSERT OR REPLACE INTO schema_info(version) VALUES (7);
     def get_recent_video_ids(self, days: int = 7) -> set:
         """Get video IDs from recent days to limit memory usage."""
         try:
+            # Validate input parameter
+            if not isinstance(days, int) or days < 0:
+                raise ValueError(f"Days must be a non-negative integer, got: {days}")
+
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT video_id FROM videos WHERE scraped_at >= date('now', '-{} days')".format(
-                        days
-                    )
+                    "SELECT video_id FROM videos WHERE scraped_at >= date('now', '-' || ? || ' days')",
+                    (days,)
                 )
                 return {row[0] for row in cursor.fetchall()}
         except Exception as e:

@@ -6,5 +6,15 @@ click>=8.1.0
 PyYAML>=6.0
 tenacity>=8.2.0
 tqdm>=4.66.0
-jellyfish==1.0.0
+jellyfish>=1.0.0
 requests>=2.31.0
+
+# MusicBrainz API integration
+musicbrainzngs>=0.7.1
+
+# Core ML/Math dependencies
+numpy>=1.21.0
+
+# Optional ML dependencies (have fallbacks in code)
+# sentence-transformers>=2.0.0
+# scikit-learn>=1.0.0
