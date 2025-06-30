@@ -63,6 +63,7 @@ class YouTubeSearchProvider(SearchProvider):
         self._max_requests_per_hour = 360
         self._backoff_factor = 1.0
         self._max_backoff = 60.0
+        self._consecutive_errors = 0
 
     def _setup_yt_dlp(self) -> Dict:
         """Setup yt-dlp configuration."""
@@ -116,6 +117,8 @@ class YouTubeSearchProvider(SearchProvider):
                     timeout=300.0,
                 )
 
+                # Reset consecutive errors on success
+                self._consecutive_errors = 0
                 self._backoff_factor = max(1.0, self._backoff_factor * 0.9)
                 self._request_count += 1
                 self._last_request_time = time.time()
@@ -123,13 +126,17 @@ class YouTubeSearchProvider(SearchProvider):
                 return result
 
             except asyncio.TimeoutError:
-                self._backoff_factor = min(self._max_backoff, self._backoff_factor * 2.0)
-                self.logger.error("Request timed out after 5 minutes, increasing backoff")
+                self._consecutive_errors += 1
+                # Exponential backoff with jitter
+                self._backoff_factor = min(self._max_backoff, self._backoff_factor * (1.5 + 0.5 * self._consecutive_errors))
+                self.logger.error(f"Request timed out (error #{self._consecutive_errors}), backoff factor: {self._backoff_factor:.2f}")
                 raise
             except Exception as e:
-                self._backoff_factor = min(self._max_backoff, self._backoff_factor * 1.5)
+                self._consecutive_errors += 1
+                # Exponential backoff based on consecutive errors
+                self._backoff_factor = min(self._max_backoff, self._backoff_factor * (1.2 ** self._consecutive_errors))
                 self.logger.warning(
-                    f"Request failed, increasing backoff to {self._backoff_factor:.2f}x: {e}"
+                    f"Request failed (error #{self._consecutive_errors}), backoff factor: {self._backoff_factor:.2f}: {e}"
                 )
                 raise
 

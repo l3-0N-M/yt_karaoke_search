@@ -197,7 +197,7 @@ def normalize_text(text: str, text_type: str = "general") -> str:
 
 
 class DiscogsRateLimiter:
-    """Rate limiter for Discogs API requests following their limits.
+    """Rate limiter for Discogs API requests following their limits with exponential backoff.
     
     Discogs API limits:
     - 60 requests per minute for authenticated requests
@@ -214,12 +214,40 @@ class DiscogsRateLimiter:
         self.last_update = time.time()
         self.lock = asyncio.Lock()
         
+        # Exponential backoff state
+        self.consecutive_429_errors = 0
+        self.backoff_until = 0
+        self.min_backoff = 1.0  # Minimum backoff in seconds
+        self.max_backoff = 300.0  # Maximum backoff in seconds (5 minutes)
+        self.backoff_multiplier = 2.0
+        
+        # Track rate limit headers
+        self.retry_after = None
+        self.rate_limit_remaining = None
+        self.rate_limit_reset = None
+        
         self.logger = logging.getLogger(__name__)
         
     async def wait_for_request(self) -> None:
-        """Wait until a request can be made according to rate limits."""
+        """Wait until a request can be made according to rate limits and backoff."""
         async with self.lock:
             now = time.time()
+            
+            # Check if we're in backoff period
+            if self.backoff_until > now:
+                backoff_wait = self.backoff_until - now
+                self.logger.info(f"In backoff period, waiting {backoff_wait:.1f} seconds")
+                await asyncio.sleep(backoff_wait)
+                now = time.time()
+            
+            # Check if we have a retry-after value from API
+            if self.retry_after and self.retry_after > now:
+                retry_wait = self.retry_after - now
+                self.logger.info(f"Respecting Retry-After header, waiting {retry_wait:.1f} seconds")
+                await asyncio.sleep(retry_wait)
+                self.retry_after = None
+                now = time.time()
+            
             elapsed = now - self.last_update
             
             # Add tokens based on elapsed time
@@ -240,6 +268,44 @@ class DiscogsRateLimiter:
             await asyncio.sleep(wait_time)
             self.tokens = 0.0
     
+    def handle_429_error(self, retry_after_seconds: Optional[int] = None) -> None:
+        """Handle a 429 error response with exponential backoff."""
+        self.consecutive_429_errors += 1
+        
+        if retry_after_seconds:
+            # Use the server-provided retry-after value
+            self.retry_after = time.time() + retry_after_seconds
+            self.logger.warning(f"Got 429 with Retry-After: {retry_after_seconds}s")
+        else:
+            # Calculate exponential backoff
+            backoff_seconds = min(
+                self.max_backoff,
+                self.min_backoff * (self.backoff_multiplier ** (self.consecutive_429_errors - 1))
+            )
+            # Add jitter to prevent thundering herd
+            jitter = backoff_seconds * 0.1 * (0.5 - time.time() % 1)
+            backoff_seconds = backoff_seconds + jitter
+            
+            self.backoff_until = time.time() + backoff_seconds
+            self.logger.warning(
+                f"Got 429 error #{self.consecutive_429_errors}, "
+                f"backing off for {backoff_seconds:.1f} seconds"
+            )
+    
+    def handle_success(self) -> None:
+        """Reset backoff state after a successful request."""
+        if self.consecutive_429_errors > 0:
+            self.logger.info("Successful request after 429 errors, resetting backoff")
+        self.consecutive_429_errors = 0
+        self.backoff_until = 0
+    
+    def update_rate_limit_info(self, remaining: Optional[int], reset_time: Optional[int]) -> None:
+        """Update rate limit information from response headers."""
+        if remaining is not None:
+            self.rate_limit_remaining = remaining
+        if reset_time is not None:
+            self.rate_limit_reset = reset_time
+            
     def get_remaining_tokens(self) -> float:
         """Get the current number of available tokens."""
         now = time.time()
@@ -254,3 +320,6 @@ class DiscogsRateLimiter:
         """Reset the rate limiter to initial state."""
         self.tokens = self.max_tokens
         self.last_update = time.time()
+        self.consecutive_429_errors = 0
+        self.backoff_until = 0
+        self.retry_after = None

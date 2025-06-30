@@ -1,6 +1,7 @@
 """Discogs search pass - API lookup for music metadata as MusicBrainz fallback."""
 
 import asyncio
+import datetime
 import logging
 import os
 import re
@@ -153,6 +154,12 @@ class DiscogsClient:
         """Generate variations of artist name for better matching."""
         variations = [artist]
         
+        # Check if this is a K-pop artist
+        kpop_indicators = ['rosé', 'rose', 'jennie', 'blackpink', 'bts', 'txt', 'nct', 
+                          'stray kids', 'enhypen', 'ateez', 'seventeen', 'twice',
+                          'isegye', 'katseye', 'newjeans', 'aespa', 'itzy']
+        is_kpop = any(indicator in artist.lower() for indicator in kpop_indicators)
+        
         # Handle special characters
         if '$' in artist:
             variations.append(artist.replace('$', 'S'))
@@ -185,15 +192,38 @@ class DiscogsClient:
         
         normalized = artist
         for accented, plain in accent_map.items():
-            if accented in artist:
-                normalized = artist.replace(accented, plain)
+            if accented in artist.upper():
+                normalized = artist.upper().replace(accented, plain)
+                # Preserve original case pattern
+                if artist[0].isupper():
+                    normalized = normalized[0] + normalized[1:].lower()
+                else:
+                    normalized = normalized.lower()
                 if normalized != artist:
                     variations.append(normalized)
         
-        # Handle & vs and
-        if ' & ' in artist:
+        # Special handling for K-pop artists
+        if is_kpop:
+            # ROSÉ specific variations
+            if 'rosé' in artist.lower() or 'rose' in artist.lower():
+                variations.extend(['ROSÉ', 'ROSE', 'Rosé', 'Rose'])
+                # Try with group name
+                variations.append('BLACKPINK ROSÉ')
+                variations.append('ROSÉ (BLACKPINK)')
+            
+            # JENNIE specific variations
+            if 'jennie' in artist.lower():
+                variations.extend(['JENNIE', 'Jennie', 'Jennie Kim'])
+                variations.append('BLACKPINK JENNIE')
+                variations.append('JENNIE (BLACKPINK)')
+            
+            # For all K-pop artists, try uppercase
+            variations.append(artist.upper())
+        
+        # Handle & vs and (avoiding duplicate from above)
+        if ' & ' in artist and artist.replace(' & ', ' and ') not in variations:
             variations.append(artist.replace(' & ', ' and '))
-        elif ' and ' in artist:
+        elif ' and ' in artist and artist.replace(' and ', ' & ') not in variations:
             variations.append(artist.replace(' and ', ' & '))
         
         # Remove duplicates while preserving order
@@ -258,6 +288,17 @@ class DiscogsClient:
                 "query": f"{artist} {normalized_track}",
                 "type": "release"
             })
+        
+        # For recent releases (2024-2025), add more aggressive search strategies
+        current_year = datetime.datetime.now().year
+        if current_year >= 2024:  # This code is being run in 2025
+            # Try searching with just the main artist name (first variation)
+            if artist_variations and len(search_queries) < 8:
+                search_queries.append({
+                    "query": f'"{artist_variations[0]}" "{normalized_track}"',  # Quoted for exact phrase
+                    "type": "release",
+                    "per_page": 30  # Get more results for recent releases
+                })
         
         # Quaternary strategy: Removed artist-only search as it returns too many unrelated results
         # This was causing issues like matching "ROSÉ - Messy" with soundtrack albums
@@ -426,6 +467,18 @@ class DiscogsClient:
                     title = raw_title[len(artist_name + " - "):]
                 else:
                     title = raw_title
+            
+            # Early rejection: Check artist similarity BEFORE proceeding
+            # This prevents wrong matches like "ROSÉ" matching "Andrea Datzman"
+            artist_similarity = self._text_similarity(query_artist.lower(), artist_name.lower(), is_artist=True)
+            if artist_similarity < 0.7:  # Increased threshold from 0.5
+                logger.debug(
+                    f"Rejecting result due to low artist similarity: "
+                    f"'{query_artist}' vs '{artist_name}' (similarity: {artist_similarity:.2f})"
+                )
+                return None
+            
+            # Now safe to extract remaining metadata
             release_id = str(item.get("id", ""))
             master_id = str(item.get("master_id", "")) if item.get("master_id") else None
             
@@ -441,15 +494,6 @@ class DiscogsClient:
             format_info = None
             if item.get("format"):
                 format_info = item["format"][0] if isinstance(item["format"], list) else item["format"]
-            
-            # Early rejection: Check artist similarity before calculating full confidence
-            artist_similarity = self._text_similarity(query_artist.lower(), artist_name.lower(), is_artist=True)
-            if artist_similarity < 0.5:
-                logger.debug(
-                    f"Rejecting result due to low artist similarity: "
-                    f"'{query_artist}' vs '{artist_name}' (similarity: {artist_similarity:.2f})"
-                )
-                return None
             
             # Calculate confidence based on match quality
             confidence = self._calculate_confidence(
@@ -490,36 +534,50 @@ class DiscogsClient:
     ) -> float:
         """Calculate confidence score for a Discogs match."""
         
-        confidence = 0.1  # Lower base confidence to require better matches
+        confidence = 0.0  # Start at zero - must earn confidence
         
-        # Artist name similarity with stricter matching
+        # Artist name similarity with much stricter matching
         artist_similarity = self._text_similarity(query_artist.lower(), result_artist.lower(), is_artist=True)
-        # Penalize non-exact artist matches more heavily
-        if artist_similarity < 0.9:
-            artist_similarity *= 0.5  # Heavily reduce score for non-exact matches
-        if artist_similarity < 0.7:
-            artist_similarity *= 0.3  # Even more penalty for poor matches
-        confidence += artist_similarity * 0.4  # Increased weight for artist
+        
+        # Apply heavy penalties for non-exact artist matches
+        if artist_similarity < 0.95:
+            artist_similarity *= 0.7  # 30% penalty for non-exact matches
+        if artist_similarity < 0.85:
+            artist_similarity *= 0.5  # 50% additional penalty (total 65% reduction)
+        if artist_similarity < 0.75:
+            # Below 75% is likely a wrong artist entirely
+            return 0.0  # Reject completely
+        
+        confidence += artist_similarity * 0.45  # Increased weight for artist
         
         # Track title similarity  
         title_similarity = self._text_similarity(query_track.lower(), result_title.lower())
         confidence += title_similarity * 0.35
         
-        # Only apply bonuses if we have decent core matching
-        core_match_score = artist_similarity * 0.4 + title_similarity * 0.35
-        if core_match_score >= 0.3:  # Require minimum 30% from artist/title match
-            # Bonus factors (reduced when core matching is weak)
-            bonus_multiplier = min(1.0, core_match_score * 2)  # Scale bonuses based on core match
-            
+        # Only apply bonuses if we have strong core matching
+        core_match_score = artist_similarity * 0.45 + title_similarity * 0.35
+        
+        # Calculate bonus multiplier based on core match score
+        if core_match_score >= 0.5:
+            bonus_multiplier = min(1.0, (core_match_score - 0.5) * 2)  # Full bonuses above 50%
+        elif core_match_score >= 0.3:
+            bonus_multiplier = (core_match_score - 0.3) * 0.5  # Reduced bonuses 30-50%
+        else:
+            bonus_multiplier = 0.0  # No bonuses below 30%
+        
+        if core_match_score >= 0.5:  # Apply full bonuses
             if item.get("master_id"):
                 confidence += 0.05 * bonus_multiplier
             if item.get("year"):
                 year = item.get("year")
+                current_year = datetime.datetime.now().year
                 # Special handling for recent releases - they might not have much community data
-                if year and int(year) >= 2024:
-                    confidence += 0.15 * bonus_multiplier  # Higher bonus for very recent releases
-                elif year and int(year) >= 2023:
-                    confidence += 0.1 * bonus_multiplier  # Bonus for recent releases
+                if year and int(year) >= current_year - 1:  # Current year and last year
+                    confidence += 0.20 * bonus_multiplier  # Higher bonus for very recent releases
+                elif year and int(year) >= current_year - 2:
+                    confidence += 0.15 * bonus_multiplier  # Bonus for recent releases
+                elif year and int(year) >= current_year - 3:
+                    confidence += 0.10 * bonus_multiplier
                 else:
                     confidence += 0.05 * bonus_multiplier
             if item.get("genre"):
@@ -536,13 +594,14 @@ class DiscogsClient:
             year = item.get("year", 0)
             
             # Adjust expectations for recent releases
-            if year and int(year) >= 2024:
+            current_year = datetime.datetime.now().year
+            if year and int(year) >= current_year - 1:
                 # Very new releases - any community data is good
                 if have_count > 5 or want_count > 10:
                     confidence += 0.15 * bonus_multiplier
                 elif have_count > 0 or want_count > 0:
                     confidence += 0.1 * bonus_multiplier
-            elif year and int(year) >= 2023:
+            elif year and int(year) >= current_year - 2:
                 if have_count > 10:
                     confidence += 0.1 * bonus_multiplier
                 elif have_count > 0:
@@ -557,15 +616,20 @@ class DiscogsClient:
         if artist_similarity >= 0.95 and title_similarity >= 0.95:
             confidence = min(confidence + 0.2, 1.0)
         
-        # Penalty for compilation albums or various artists
-        if result_artist.lower() in ['various', 'various artists', 'compilation']:
-            confidence *= 0.5
+        # Strong penalty for compilation albums or various artists
+        if result_artist.lower() in ['various', 'various artists', 'compilation', 'soundtrack', 'ost']:
+            confidence *= 0.3  # 70% penalty - these are almost never correct
+        
+        # Check if result title suggests it's from a different context
+        wrong_context_indicators = ['soundtrack', 'ost', 'score', 'theme from', 'music from']
+        if any(indicator in result_title.lower() for indicator in wrong_context_indicators):
+            confidence *= 0.4  # 60% penalty
         
         # Penalty for results that look like karaoke versions
         karaoke_indicators = ['karaoke', 'instrumental', 'backing track', 'sing along']
         result_text = f"{result_artist} {result_title}".lower()
         if any(indicator in result_text for indicator in karaoke_indicators):
-            confidence *= 0.7  # We want original recordings, not karaoke versions
+            confidence *= 0.5  # 50% penalty - we want original recordings
         
         return min(confidence, 1.0)
     
@@ -910,6 +974,7 @@ class DiscogsSearchPass(ParsingPass):
                 "label": best_match.label,
                 "country": best_match.country,
                 "format": best_match.format,
+                "confidence": best_confidence,  # CRITICAL: Include confidence in metadata!
                 **best_match.metadata
             }
             

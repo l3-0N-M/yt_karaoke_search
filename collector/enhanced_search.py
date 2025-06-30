@@ -252,7 +252,12 @@ class MultiStrategySearchEngine:
                         results.append(SearchResult(**result_dict))
                     elif isinstance(result_dict, SearchResult):
                         results.append(result_dict)
+                
+                # Log cache hit for debugging
+                logger.debug(f"Cache hit for query '{query}': {len(results)} results found")
                 return results
+            else:
+                logger.debug(f"Cache miss for query '{query}'")
 
         except Exception as e:
             logger.warning(f"Cache retrieval failed: {e}")
@@ -482,6 +487,12 @@ class MultiStrategySearchEngine:
                     "last_success_time": health["last_success_time"],
                     "is_healthy": health["state"] == "closed",
                 }
+
+            # Log important cache metrics
+            if cache_stats and 'overall' in cache_stats:
+                cache_hit_rate = cache_stats['overall'].get('hit_rate', 0)
+                logger.info(f"Cache performance: hit rate = {cache_hit_rate:.2%}, "
+                           f"total requests = {cache_stats['overall'].get('total_requests', 0)}")
 
             return {
                 "search_engine": self.search_stats,

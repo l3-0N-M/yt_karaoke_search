@@ -361,7 +361,7 @@ class CacheManager:
         }
 
     def _normalize_query_for_cache(self, query: str) -> str:
-        """Normalize query for better cache hits."""
+        """Normalize query for better cache hits while preserving search intent."""
         if not query:
             return ""
         
@@ -382,23 +382,22 @@ class CacheManager:
         normalized = re.sub(r'[""''`´]', '"', normalized)  # Various quotes to standard
         normalized = re.sub(r'[…]', '...', normalized)  # Ellipsis normalization
         
-        # Remove common karaoke-specific noise that doesn't affect search meaning
-        noise_patterns = [
-            r'\b(?:karaoke|instrumental|backing\s*track|sing\s*along|minus\s*one|mr|inst)\b',
-            r'\b(?:hd|hq|4k|1080p|720p|480p|high\s*quality|low\s*quality)\b',
-            r'\b(?:official|music\s*video|audio|clip|song|track)\b',
-            r'\b(?:version|cover|tribute|live|acoustic|studio)\b',
+        # Only remove quality indicators that don't affect search results
+        # Keep karaoke-related terms as they are part of the search intent
+        quality_patterns = [
+            r'\b(?:hd|hq|4k|1080p|720p|480p)\b',
+            r'\b(?:high\s*quality|low\s*quality)\b',
         ]
         
-        for pattern in noise_patterns:
+        for pattern in quality_patterns:
             normalized = re.sub(pattern, '', normalized, flags=re.IGNORECASE)
         
         # Clean up resulting whitespace
         normalized = re.sub(r'\s+', ' ', normalized).strip()
         
-        # Remove brackets with minimal content (often video IDs or quality indicators)
-        normalized = re.sub(r'\[[^\]]{0,10}\]', '', normalized)
-        normalized = re.sub(r'\([^)]{0,10}\)', '', normalized)
+        # Remove brackets with only quality/format indicators
+        normalized = re.sub(r'\[(hd|hq|4k|1080p|720p|480p)\]', '', normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r'\((hd|hq|4k|1080p|720p|480p)\)', '', normalized, flags=re.IGNORECASE)
         
         # Clean up again
         normalized = re.sub(r'\s+', ' ', normalized).strip()
