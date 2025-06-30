@@ -220,22 +220,26 @@ class VideoProcessor:
             if features.get("artist_confidence"):
                 video_data["parse_confidence"] = features["artist_confidence"]
             # Only use fallback release_year if we don't have one from metadata
-            if features.get("release_year") and not video_data.get("metadata", {}).get("release_year") and not video_data.get("metadata", {}).get("year"):
+            if (
+                features.get("release_year")
+                and not video_data.get("metadata", {}).get("release_year")
+                and not video_data.get("metadata", {}).get("year")
+            ):
                 video_data["release_year"] = features["release_year"]
-            
+
             # Promote release_year from metadata if available
             if video_data.get("metadata", {}).get("release_year"):
                 video_data["release_year"] = video_data["metadata"]["release_year"]
             elif video_data.get("metadata", {}).get("year"):
                 video_data["release_year"] = video_data["metadata"]["year"]
-            
+
             # Promote genre from metadata if available
             if video_data.get("metadata", {}).get("genre"):
                 video_data["genre"] = video_data["metadata"]["genre"]
             elif video_data.get("metadata", {}).get("genres"):
                 genres = video_data["metadata"]["genres"]
                 video_data["genre"] = genres[0] if isinstance(genres, list) and genres else genres
-            
+
             # Promote MusicBrainz data from metadata if available
             metadata = video_data.get("metadata", {})
             if metadata.get("musicbrainz_recording_id"):
@@ -246,7 +250,7 @@ class VideoProcessor:
                 video_data["musicbrainz_score"] = metadata["musicbrainz_score"]
             if metadata.get("musicbrainz_confidence"):
                 video_data["musicbrainz_confidence"] = metadata["musicbrainz_confidence"]
-            
+
             # Promote Discogs data from metadata if available
             if metadata.get("discogs_release_id"):
                 video_data["discogs_release_id"] = metadata["discogs_release_id"]
@@ -754,7 +758,9 @@ class VideoProcessor:
             features[f"{feat}_confidence"] = min(0.6 + 0.1 * (hits - 1), 1.0) if hits else 0.0
 
         # Extract release year from titles/descriptions (fallback when MusicBrainz unavailable)
-        release_year = self._extract_release_year_fallback(video_data.get("title", ""), video_data.get("description", ""))
+        release_year = self._extract_release_year_fallback(
+            video_data.get("title", ""), video_data.get("description", "")
+        )
         if release_year:
             features["release_year"] = release_year
 
@@ -829,11 +835,11 @@ class VideoProcessor:
     def _is_valid_featured_artist(self, artist: str) -> bool:
         """Validate that a featured artist name is legitimate and not metadata noise."""
         artist_lower = artist.lower().strip()
-        
+
         # Filter out common metadata terms that shouldn't be featured artists
         invalid_terms = {
             "rights holders",
-            "rights holder", 
+            "rights holder",
             "copyright",
             "all rights reserved",
             "record label",
@@ -861,46 +867,46 @@ class VideoProcessor:
             "version",
             "remaster",
         }
-        
+
         # Check if the artist name is just an invalid term
         if artist_lower in invalid_terms:
             return False
-            
+
         # Check if the artist name contains invalid terms (more flexible)
         for term in invalid_terms:
             if term in artist_lower:
                 return False
-        
+
         # Additional validation: check for reasonable artist name patterns
         # Reject if it's all numbers or special characters
-        if re.match(r'^[\d\s\-_\.]+$', artist):
+        if re.match(r"^[\d\s\-_\.]+$", artist):
             return False
-            
+
         # Reject single letters or too short names
         if len(artist.strip()) < 2:
             return False
-            
+
         return True
 
     def _extract_release_year_fallback(self, title: str, description: str) -> Optional[int]:
         """Extract release year from title and description using pattern matching."""
         combined_text = f"{title} {description}"
         current_year = datetime.now().year
-        
+
         # Year patterns (prioritized by reliability)
         year_patterns = [
-            r'\((\d{4})\)',           # (1985) - most reliable
-            r'\[(\d{4})\]',           # [1985] - second most reliable
-            r'\b(\d{4})\b',           # standalone year - less reliable
-            r'from\s+(\d{4})',        # "from 1985"
-            r'released\s+(\d{4})',    # "released 1985"
-            r'(\d{4})\s+version',     # "1985 version"
-            r'circa\s+(\d{4})',       # "circa 1985"
-            r'(\d{4})s',              # "1980s" -> extract 1980
+            r"\((\d{4})\)",  # (1985) - most reliable
+            r"\[(\d{4})\]",  # [1985] - second most reliable
+            r"\b(\d{4})\b",  # standalone year - less reliable
+            r"from\s+(\d{4})",  # "from 1985"
+            r"released\s+(\d{4})",  # "released 1985"
+            r"(\d{4})\s+version",  # "1985 version"
+            r"circa\s+(\d{4})",  # "circa 1985"
+            r"(\d{4})s",  # "1980s" -> extract 1980
         ]
-        
+
         found_years = []
-        
+
         for pattern in year_patterns:
             matches = re.findall(pattern, combined_text, re.IGNORECASE)
             for match in matches:
@@ -910,10 +916,12 @@ class VideoProcessor:
                     if 1900 <= year <= current_year:
                         found_years.append(year)
                     elif year > current_year:
-                        logger.warning(f"Rejected future year {year} (current year is {current_year})")
+                        logger.warning(
+                            f"Rejected future year {year} (current year is {current_year})"
+                        )
                 except ValueError:
                     continue
-        
+
         # Return the earliest valid year found (most likely to be original release)
         return min(found_years) if found_years else None
 
@@ -1291,17 +1299,17 @@ class VideoProcessor:
         view_count = video_data.get("view_count", 0)
         like_count = video_data.get("like_count", 0)
         estimated_dislikes = video_data.get("estimated_dislikes", 0)
-        
+
         if view_count <= 0 or like_count is None:
             return None
-        
+
         # Use net engagement if we have dislike data
         if estimated_dislikes > 0:
             net_engagement = like_count - estimated_dislikes
             ratio = net_engagement / view_count
         else:
             ratio = like_count / view_count
-        
+
         # Convert to percentage and round to 3 decimal places
         return round(ratio * 100, 3)
 

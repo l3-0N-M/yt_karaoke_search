@@ -110,13 +110,15 @@ class DataTransformer:
         if parse_metadata:
             # Check for release year in multiple possible field names
             if not transformed.get("release_year"):
-                year_value = (parse_metadata.get("release_year") or 
-                             parse_metadata.get("year") or 
-                             parse_metadata.get("release_date"))
+                year_value = (
+                    parse_metadata.get("release_year")
+                    or parse_metadata.get("year")
+                    or parse_metadata.get("release_date")
+                )
                 if year_value:
                     transformed["release_year"] = year_value
                     logger.info(f"DataTransformer found release_year: {year_value}")
-            
+
             # Check for genre in multiple possible field names
             if not transformed.get("genre"):
                 genre_value = parse_metadata.get("genre")
@@ -135,7 +137,12 @@ class DataTransformer:
         quality_scores = transformed.get("quality_scores", {})
         if quality_scores:
             # Round quality score values
-            for score_field in ["overall_score", "technical_score", "engagement_score", "metadata_score"]:
+            for score_field in [
+                "overall_score",
+                "technical_score",
+                "engagement_score",
+                "metadata_score",
+            ]:
                 if score_field in quality_scores and quality_scores[score_field] is not None:
                     quality_scores[score_field] = round(quality_scores[score_field], 2)
             transformed["quality_scores"] = quality_scores
@@ -154,7 +161,7 @@ class DataTransformer:
             view_count = transformed.get("view_count", 0)
             like_count = transformed.get("like_count", 0)
             estimated_dislikes = transformed.get("estimated_dislikes", 0)
-            
+
             if view_count > 0 and like_count is not None:
                 if estimated_dislikes > 0:
                     net_engagement = like_count - estimated_dislikes
@@ -224,23 +231,22 @@ class DataTransformer:
 
     @staticmethod
     def merge_metadata_sources(
-        musicbrainz_data: Dict[str, Any] = None, 
-        discogs_data: Dict[str, Any] = None
+        musicbrainz_data: Dict[str, Any] = None, discogs_data: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """Merge metadata from MusicBrainz and Discogs sources intelligently.
-        
+
         Priority:
         - MusicBrainz takes precedence for core music data (artist, title)
         - Discogs provides additional metadata (genres, year, label)
         - Use highest confidence source for conflicting data
         """
         merged = {}
-        
+
         # Start with base data from the higher confidence source
         if musicbrainz_data and discogs_data:
             mb_confidence = musicbrainz_data.get("confidence", 0.0)
             discogs_confidence = discogs_data.get("confidence", 0.0)
-            
+
             if mb_confidence >= discogs_confidence:
                 merged.update(musicbrainz_data)
                 secondary_data = discogs_data
@@ -255,20 +261,30 @@ class DataTransformer:
             secondary_data = {}
         else:
             return merged
-        
+
         # Merge additional fields from secondary source
         if secondary_data:
             # Fields that Discogs typically provides better data for
             discogs_preferred_fields = [
-                "genres", "styles", "year", "release_year", "label", 
-                "country", "format", "discogs_release_id", "discogs_master_id"
+                "genres",
+                "styles",
+                "year",
+                "release_year",
+                "label",
+                "country",
+                "format",
+                "discogs_release_id",
+                "discogs_master_id",
             ]
-            
+
             # Fields that MusicBrainz typically provides better data for
             musicbrainz_preferred_fields = [
-                "recording_id", "artist_id", "mbid", "musicbrainz_confidence"
+                "recording_id",
+                "artist_id",
+                "mbid",
+                "musicbrainz_confidence",
             ]
-            
+
             for field, value in secondary_data.items():
                 if field not in merged or not merged[field]:
                     # Add missing fields
@@ -276,15 +292,19 @@ class DataTransformer:
                 elif field in discogs_preferred_fields and discogs_data and field in discogs_data:
                     # Prefer Discogs for genre/label/year data
                     merged[field] = discogs_data[field]
-                elif field in musicbrainz_preferred_fields and musicbrainz_data and field in musicbrainz_data:
+                elif (
+                    field in musicbrainz_preferred_fields
+                    and musicbrainz_data
+                    and field in musicbrainz_data
+                ):
                     # Prefer MusicBrainz for core music database fields
                     merged[field] = musicbrainz_data[field]
-        
+
         # Special handling for genres - combine both sources
         if musicbrainz_data and discogs_data:
             mb_genres = musicbrainz_data.get("genres", [])
             discogs_genres = discogs_data.get("genres", [])
-            
+
             if mb_genres and discogs_genres:
                 # Combine and deduplicate genres
                 combined_genres = list(set(mb_genres + discogs_genres))
@@ -293,21 +313,21 @@ class DataTransformer:
                 merged["genres"] = discogs_genres
             elif mb_genres:
                 merged["genres"] = mb_genres
-        
+
         # Set metadata source tags
         sources = []
         if musicbrainz_data:
             sources.append("musicbrainz")
         if discogs_data:
             sources.append("discogs")
-        
+
         merged["metadata_sources"] = sources
-        
+
         # Calculate combined confidence
         if musicbrainz_data and discogs_data:
             mb_conf = musicbrainz_data.get("confidence", 0.0)
             discogs_conf = discogs_data.get("confidence", 0.0)
             # Use weighted average, giving slight preference to MusicBrainz
             merged["confidence"] = round((mb_conf * 0.6 + discogs_conf * 0.4), 2)
-        
+
         return merged

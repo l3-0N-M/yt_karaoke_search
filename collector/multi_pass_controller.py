@@ -153,11 +153,11 @@ class MultiPassParsingController:
         """Check if parse result has complete metadata (genre, release_year)."""
         if not parse_result or not parse_result.metadata:
             return False
-        
+
         metadata = parse_result.metadata
         has_genre = metadata.get("genre") or metadata.get("genres")
         has_year = metadata.get("release_year") or metadata.get("year")
-        
+
         return bool(has_genre and has_year)
 
     async def _execute_parsing_ladder(
@@ -212,7 +212,10 @@ class MultiPassParsingController:
                         f"Early exit at channel template with high confidence {channel_result.confidence:.2f} (metadata not required)"
                     )
                     return
-            elif self._has_complete_metadata(channel_result.parse_result) and not self.config.always_enrich_metadata:
+            elif (
+                self._has_complete_metadata(channel_result.parse_result)
+                and not self.config.always_enrich_metadata
+            ):
                 result.final_result = channel_result.parse_result
                 result.stopped_at_pass = PassType.CHANNEL_TEMPLATE
                 logger.info(
@@ -234,7 +237,9 @@ class MultiPassParsingController:
                 if channel_result.parse_result.artist and channel_result.parse_result.song_title:
                     metadata["parsed_artist"] = channel_result.parse_result.artist
                     metadata["parsed_title"] = channel_result.parse_result.song_title
-        elif channel_result and not channel_result.success:  # Continue to other passes instead of early exit
+        elif (
+            channel_result and not channel_result.success
+        ):  # Continue to other passes instead of early exit
             logger.debug(
                 f"Channel template pass failed for title '{title}': {channel_result.error_message}. Continuing to other passes."
             )
@@ -261,15 +266,20 @@ class MultiPassParsingController:
                 mb_confidence = mb_result.confidence
 
                 # If MusicBrainz confidence is high enough, try Discogs enrichment before skipping web search
-                if mb_confidence >= self.pass_configs[PassType.MUSICBRAINZ_SEARCH].confidence_threshold:
-                    logger.info(f"High MB confidence {mb_confidence:.2f}, attempting Discogs enrichment")
-                    
+                if (
+                    mb_confidence
+                    >= self.pass_configs[PassType.MUSICBRAINZ_SEARCH].confidence_threshold
+                ):
+                    logger.info(
+                        f"High MB confidence {mb_confidence:.2f}, attempting Discogs enrichment"
+                    )
+
                     # Try Discogs enrichment for additional metadata (genre, year)
                     discogs_metadata = metadata.copy()
                     discogs_metadata["musicbrainz_result"] = mb_search_result
                     discogs_metadata["musicbrainz_confidence"] = mb_confidence
                     discogs_metadata["enrichment_mode"] = True
-                    
+
                     discogs_result = await self._execute_pass_if_enabled(
                         PassType.DISCOGS_SEARCH,
                         result,
@@ -280,32 +290,36 @@ class MultiPassParsingController:
                         channel_id,
                         discogs_metadata,
                     )
-                    
+
                     # Merge results if Discogs provided additional metadata
                     if discogs_result and discogs_result.success and discogs_result.parse_result:
                         from .data_transformer import DataTransformer
-                        
+
                         # Pass metadata directly for merging, not nested
                         mb_data = mb_search_result.metadata or {}
                         discogs_data = discogs_result.parse_result.metadata or {}
-                        
+
                         # Merge metadata from both sources
-                        merged_metadata = DataTransformer.merge_metadata_sources(mb_data, discogs_data)
-                        
+                        merged_metadata = DataTransformer.merge_metadata_sources(
+                            mb_data, discogs_data
+                        )
+
                         # Update the MusicBrainz result with enriched metadata
                         if merged_metadata:
                             mb_search_result.metadata = mb_search_result.metadata or {}
                             mb_search_result.metadata.update(merged_metadata)
-                        
+
                         # Check what we actually merged
-                        genre = merged_metadata.get('genre') or merged_metadata.get('genres')
-                        year = merged_metadata.get('release_year') or merged_metadata.get('year')
-                        logger.info(f"Enriched MB result with Discogs metadata: "
-                                   f"genre={genre}, year={year}")
-                    
+                        genre = merged_metadata.get("genre") or merged_metadata.get("genres")
+                        year = merged_metadata.get("release_year") or merged_metadata.get("year")
+                        logger.info(
+                            f"Enriched MB result with Discogs metadata: "
+                            f"genre={genre}, year={year}"
+                        )
+
                     result.final_result = mb_search_result
                     result.stopped_at_pass = PassType.MUSICBRAINZ_SEARCH
-                    logger.info(f"Using enriched MB result, skipping web search")
+                    logger.info("Using enriched MB result, skipping web search")
 
                     # Learn from this successful pattern for future efficiency
                     if mb_search_result:
@@ -319,12 +333,17 @@ class MultiPassParsingController:
                     )
 
         # Pass 1.5: Discogs Search (if MusicBrainz failed or had low confidence)
-        if not (mb_result and mb_result.success and mb_result.confidence >= self.pass_configs[PassType.MUSICBRAINZ_SEARCH].confidence_threshold):
+        if not (
+            mb_result
+            and mb_result.success
+            and mb_result.confidence
+            >= self.pass_configs[PassType.MUSICBRAINZ_SEARCH].confidence_threshold
+        ):
             discogs_metadata = metadata.copy()
             if mb_result and mb_result.parse_result:
                 discogs_metadata["musicbrainz_result"] = mb_result.parse_result
                 discogs_metadata["musicbrainz_confidence"] = mb_result.confidence
-            
+
             discogs_result = await self._execute_pass_if_enabled(
                 PassType.DISCOGS_SEARCH,
                 result,
@@ -335,21 +354,28 @@ class MultiPassParsingController:
                 channel_id,
                 discogs_metadata,
             )
-            
+
             if discogs_result and discogs_result.success:
                 discogs_confidence = discogs_result.confidence
-                
+
                 # If Discogs confidence is high enough, use it and skip web search
-                if discogs_confidence >= self.pass_configs[PassType.DISCOGS_SEARCH].confidence_threshold:
+                if (
+                    discogs_confidence
+                    >= self.pass_configs[PassType.DISCOGS_SEARCH].confidence_threshold
+                ):
                     result.final_result = discogs_result.parse_result
                     result.stopped_at_pass = PassType.DISCOGS_SEARCH
-                    logger.info(f"High Discogs confidence {discogs_confidence:.2f}, skipping web search")
+                    logger.info(
+                        f"High Discogs confidence {discogs_confidence:.2f}, skipping web search"
+                    )
                     return
 
         # Pass 2: Web Search (only if both MusicBrainz and Discogs confidence were low)
         # But only proceed if we don't have a good result from previous passes
         should_try_web_search = True
-        if metadata.get("channel_template_result") and self._has_complete_metadata(metadata["channel_template_result"]):
+        if metadata.get("channel_template_result") and self._has_complete_metadata(
+            metadata["channel_template_result"]
+        ):
             # If channel template had complete metadata, we might skip web search unless confidence is very low
             if metadata["channel_template_result"].confidence > 0.7:
                 should_try_web_search = False
@@ -429,23 +455,30 @@ class MultiPassParsingController:
         # Check if we should use the Channel Template result with any enrichment data
         if metadata.get("channel_template_result") and not result.final_result:
             channel_template_result = metadata["channel_template_result"]
-            
+
             # Try to enrich with any metadata we found from MusicBrainz/Discogs attempts
             enriched_result = channel_template_result
             metadata_enriched = False
-            
+
             # Check if we got any metadata from MusicBrainz or Discogs attempts
             for pass_result in result.passes_attempted:
                 if pass_result.parse_result and pass_result.parse_result.metadata:
                     metadata_found = pass_result.parse_result.metadata
-                    if metadata_found.get("genre") or metadata_found.get("genres") or metadata_found.get("release_year") or metadata_found.get("year"):
+                    if (
+                        metadata_found.get("genre")
+                        or metadata_found.get("genres")
+                        or metadata_found.get("release_year")
+                        or metadata_found.get("year")
+                    ):
                         # Merge the metadata into the channel template result
                         enriched_result.metadata = enriched_result.metadata or {}
                         enriched_result.metadata.update(metadata_found)
                         metadata_enriched = True
-                        logger.info(f"Enriched channel template result with metadata from {pass_result.pass_type.value}")
+                        logger.info(
+                            f"Enriched channel template result with metadata from {pass_result.pass_type.value}"
+                        )
                         break
-            
+
             # If we still don't have complete metadata, try a final metadata enrichment attempt
             if not metadata_enriched and enriched_result.artist and enriched_result.song_title:
                 final_metadata = await self._try_final_metadata_enrichment(
@@ -456,15 +489,17 @@ class MultiPassParsingController:
                     enriched_result.metadata.update(final_metadata)
                     metadata_enriched = True
                     logger.info("Final metadata enrichment successful")
-            
+
             # Boost confidence if we successfully enriched the result
             if metadata_enriched:
                 enriched_result.confidence = min(enriched_result.confidence * 1.1, 0.95)
-            
+
             result.final_result = enriched_result
             result.stopped_at_pass = PassType.CHANNEL_TEMPLATE
             status = "enriched" if metadata_enriched else "fallback"
-            logger.info(f"Using {status} channel template result with confidence {enriched_result.confidence:.2f}")
+            logger.info(
+                f"Using {status} channel template result with confidence {enriched_result.confidence:.2f}"
+            )
             return
 
         # Fallback passes if everything above failed
@@ -476,7 +511,9 @@ class MultiPassParsingController:
             )
 
             if fallback_result:
-                if not fallback_result.success:  # Continue to next fallback pass instead of early exit
+                if (
+                    not fallback_result.success
+                ):  # Continue to next fallback pass instead of early exit
                     logger.debug(
                         f"Fallback pass {pass_type.value} failed for title '{title}': {fallback_result.error_message}. Continuing to next pass."
                     )
@@ -745,22 +782,24 @@ class MultiPassParsingController:
             if mb_pass:
                 simple_query = f"{artist} - {song_title}"
                 logger.debug(f"Trying final MB enrichment with: {simple_query}")
-                
-                mb_result = await mb_pass.parse(
-                    simple_query, "", "", "", "", metadata
-                )
-                
+
+                mb_result = await mb_pass.parse(simple_query, "", "", "", "", metadata)
+
                 if mb_result and mb_result.metadata:
                     mb_metadata = mb_result.metadata
                     extracted_metadata = {}
-                    
+
                     # Extract year and genre if available
                     if mb_metadata.get("release_year") or mb_metadata.get("year"):
-                        extracted_metadata["release_year"] = mb_metadata.get("release_year") or mb_metadata.get("year")
-                    
+                        extracted_metadata["release_year"] = mb_metadata.get(
+                            "release_year"
+                        ) or mb_metadata.get("year")
+
                     if mb_metadata.get("genre") or mb_metadata.get("genres"):
-                        extracted_metadata["genre"] = mb_metadata.get("genre") or mb_metadata.get("genres")
-                    
+                        extracted_metadata["genre"] = mb_metadata.get("genre") or mb_metadata.get(
+                            "genres"
+                        )
+
                     if extracted_metadata:
                         logger.info(f"Final MB enrichment found: {extracted_metadata}")
                         return extracted_metadata
@@ -774,26 +813,30 @@ class MultiPassParsingController:
                 discogs_metadata = {
                     "artist": artist,
                     "song_title": song_title,
-                    "enrichment_mode": True
+                    "enrichment_mode": True,
                 }
-                
+
                 logger.debug(f"Trying final Discogs enrichment for: {artist} - {song_title}")
-                
+
                 discogs_result = await discogs_pass.parse(
                     f"{artist} - {song_title}", "", "", "", "", discogs_metadata
                 )
-                
+
                 if discogs_result and discogs_result.metadata:
                     discogs_data = discogs_result.metadata
                     extracted_metadata = {}
-                    
+
                     # Extract year and genre if available
                     if discogs_data.get("release_year") or discogs_data.get("year"):
-                        extracted_metadata["release_year"] = discogs_data.get("release_year") or discogs_data.get("year")
-                    
+                        extracted_metadata["release_year"] = discogs_data.get(
+                            "release_year"
+                        ) or discogs_data.get("year")
+
                     if discogs_data.get("genre") or discogs_data.get("genres"):
-                        extracted_metadata["genre"] = discogs_data.get("genre") or discogs_data.get("genres")
-                    
+                        extracted_metadata["genre"] = discogs_data.get("genre") or discogs_data.get(
+                            "genres"
+                        )
+
                     if extracted_metadata:
                         logger.info(f"Final Discogs enrichment found: {extracted_metadata}")
                         return extracted_metadata
@@ -806,47 +849,86 @@ class MultiPassParsingController:
 
         except Exception as e:
             logger.warning(f"Final metadata enrichment failed: {e}")
-        
+
         return None
 
     def _estimate_genre_from_artist(self, artist: str) -> Optional[str]:
         """Estimate genre based on known artist patterns."""
         if not artist:
             return None
-        
+
         artist_lower = artist.lower()
-        
+
         # Country/Folk indicators
         country_indicators = [
-            "kenny rogers", "morgan wallen", "chris stapleton", "carrie underwood",
-            "keith urban", "blake shelton", "miranda lambert", "luke bryan",
-            "florida georgia line", "little big town", "lady antebellum"
+            "kenny rogers",
+            "morgan wallen",
+            "chris stapleton",
+            "carrie underwood",
+            "keith urban",
+            "blake shelton",
+            "miranda lambert",
+            "luke bryan",
+            "florida georgia line",
+            "little big town",
+            "lady antebellum",
         ]
-        
-        # Hip Hop indicators  
+
+        # Hip Hop indicators
         hip_hop_indicators = [
-            "kendrick lamar", "drake", "j. cole", "future", "migos", "cardi b",
-            "post malone", "travis scott", "lil", "big sean", "chance the rapper"
+            "kendrick lamar",
+            "drake",
+            "j. cole",
+            "future",
+            "migos",
+            "cardi b",
+            "post malone",
+            "travis scott",
+            "lil",
+            "big sean",
+            "chance the rapper",
         ]
-        
+
         # Rock indicators
         rock_indicators = [
-            "linkin park", "foo fighters", "green day", "red hot chili peppers",
-            "coldplay", "imagine dragons", "one republic", "maroon 5", "fall out boy"
+            "linkin park",
+            "foo fighters",
+            "green day",
+            "red hot chili peppers",
+            "coldplay",
+            "imagine dragons",
+            "one republic",
+            "maroon 5",
+            "fall out boy",
         ]
-        
+
         # Pop indicators
         pop_indicators = [
-            "taylor swift", "ariana grande", "dua lipa", "olivia rodrigo",
-            "billie eilish", "the weeknd", "ed sheeran", "justin bieber", "selena gomez"
+            "taylor swift",
+            "ariana grande",
+            "dua lipa",
+            "olivia rodrigo",
+            "billie eilish",
+            "the weeknd",
+            "ed sheeran",
+            "justin bieber",
+            "selena gomez",
         ]
-        
+
         # R&B/Soul indicators
         rnb_indicators = [
-            "beyonce", "rihanna", "alicia keys", "john legend", "usher",
-            "bruno mars", "the weeknd", "sza", "frank ocean", "miguel"
+            "beyonce",
+            "rihanna",
+            "alicia keys",
+            "john legend",
+            "usher",
+            "bruno mars",
+            "the weeknd",
+            "sza",
+            "frank ocean",
+            "miguel",
         ]
-        
+
         # Check for matches
         for indicators, genre in [
             (country_indicators, "Folk, World, & Country"),
@@ -858,7 +940,7 @@ class MultiPassParsingController:
             for indicator in indicators:
                 if indicator in artist_lower:
                     return genre
-        
+
         # Check for partial matches with common suffixes
         if any(word in artist_lower for word in ["country", "nashville"]):
             return "Folk, World, & Country"
@@ -866,5 +948,5 @@ class MultiPassParsingController:
             return "Hip Hop"
         elif any(word in artist_lower for word in ["rock", "metal", "punk"]):
             return "Rock"
-        
+
         return None
