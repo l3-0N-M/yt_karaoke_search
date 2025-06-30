@@ -63,6 +63,7 @@ class YouTubeSearchProvider(SearchProvider):
         self._max_requests_per_hour = 360
         self._backoff_factor = 1.0
         self._max_backoff = 60.0
+        self._consecutive_errors = 0
 
     def _setup_yt_dlp(self) -> Dict:
         """Setup yt-dlp configuration."""
@@ -116,6 +117,8 @@ class YouTubeSearchProvider(SearchProvider):
                     timeout=300.0,
                 )
 
+                # Reset consecutive errors on success
+                self._consecutive_errors = 0
                 self._backoff_factor = max(1.0, self._backoff_factor * 0.9)
                 self._request_count += 1
                 self._last_request_time = time.time()
@@ -123,13 +126,17 @@ class YouTubeSearchProvider(SearchProvider):
                 return result
 
             except asyncio.TimeoutError:
-                self._backoff_factor = min(self._max_backoff, self._backoff_factor * 2.0)
-                self.logger.error("Request timed out after 5 minutes, increasing backoff")
+                self._consecutive_errors += 1
+                # Exponential backoff with jitter
+                self._backoff_factor = min(self._max_backoff, self._backoff_factor * (1.5 + 0.5 * self._consecutive_errors))
+                self.logger.error(f"Request timed out (error #{self._consecutive_errors}), backoff factor: {self._backoff_factor:.2f}")
                 raise
             except Exception as e:
-                self._backoff_factor = min(self._max_backoff, self._backoff_factor * 1.5)
+                self._consecutive_errors += 1
+                # Exponential backoff based on consecutive errors
+                self._backoff_factor = min(self._max_backoff, self._backoff_factor * (1.2 ** self._consecutive_errors))
                 self.logger.warning(
-                    f"Request failed, increasing backoff to {self._backoff_factor:.2f}x: {e}"
+                    f"Request failed (error #{self._consecutive_errors}), backoff factor: {self._backoff_factor:.2f}: {e}"
                 )
                 raise
 
@@ -317,14 +324,26 @@ class YouTubeSearchProvider(SearchProvider):
             )
 
             if not result or "entries" not in result:
+                logger.warning(f"No entries found in channel extraction for {channel_url}")
                 return []
 
             results = []
             channel_id = result.get("id", "")
             channel_name = result.get("title", "")
+            
+            total_entries = len(result["entries"]) if result["entries"] else 0
+            logger.info(f"Found {total_entries} total entries in channel {channel_name}")
+
+            filtered_counts = {
+                "no_id": 0,
+                "duration_filtered": 0,
+                "date_filtered": 0,
+                "processed": 0
+            }
 
             for entry in result["entries"]:
                 if not entry or not entry.get("id"):
+                    filtered_counts["no_id"] += 1
                     continue
 
                 title = entry.get("title", "")
@@ -334,11 +353,19 @@ class YouTubeSearchProvider(SearchProvider):
                 except (ValueError, TypeError):
                     duration = 0
 
-                if not (30 <= duration <= 1200):
+                # Apply channel-specific duration filters
+                duration_limits = self._get_channel_duration_limits(channel_name.lower())
+                min_duration, max_duration = duration_limits
+                
+                if not (min_duration <= duration <= max_duration):
+                    filtered_counts["duration_filtered"] += 1
+                    # Log detailed info about filtered videos for debugging
+                    logger.info(f"Duration filtered: {title[:50]}... - Duration: {duration}s ({duration//60}:{duration%60:02d}) - Channel: {channel_name} - Limits: {min_duration}-{max_duration}s")
                     continue
 
                 upload_date = entry.get("upload_date")
                 if after_date and not self._is_video_after_date(upload_date, after_date):
+                    filtered_counts["date_filtered"] += 1
                     continue
 
                 result_data = {
@@ -354,7 +381,16 @@ class YouTubeSearchProvider(SearchProvider):
                     "relevance_score": self._calculate_channel_video_score(title),
                 }
                 results.append(self.normalize_result(result_data, channel_url))
+                filtered_counts["processed"] += 1
 
+            # Log filtering statistics
+            logger.info(f"Channel {channel_name} filtering stats: "
+                       f"total={total_entries}, "
+                       f"no_id={filtered_counts['no_id']}, "
+                       f"duration_filtered={filtered_counts['duration_filtered']}, "
+                       f"date_filtered={filtered_counts['date_filtered']}, "
+                       f"processed={filtered_counts['processed']}")
+            
             self.logger.info(f"Extracted {len(results)} videos from channel: {channel_name}")
             return results
         except Exception as e:
@@ -366,9 +402,45 @@ class YouTubeSearchProvider(SearchProvider):
         if yt_dlp is None:
             raise RuntimeError("yt-dlp not available")
 
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(channel_url, download=False)
-            return info or {}
+        try:
+            # Try the main channel URL first
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(channel_url, download=False)
+                if info is None:
+                    logger.warning(f"yt-dlp returned None for channel {channel_url}")
+                    return {}
+                
+                # Check if we got playlist sections instead of videos
+                entries = info.get('entries', [])
+                if entries and len(entries) <= 5:
+                    # Check if these are channel sections (playlists/shorts/live)
+                    section_indicators = ['videos', 'live', 'shorts', 'playlists', 'home']
+                    entries_are_sections = all(
+                        any(indicator in str(entry.get('title', '')).lower() for indicator in section_indicators)
+                        or entry.get('duration') == 0
+                        for entry in entries if entry
+                    )
+                    
+                    if entries_are_sections:
+                        logger.info(f"Channel {channel_url} returned sections, trying /videos tab")
+                        # Try the videos tab specifically
+                        videos_url = channel_url + "/videos"
+                        try:
+                            videos_info = ydl.extract_info(videos_url, download=False)
+                            if videos_info and videos_info.get('entries'):
+                                logger.info(f"Successfully extracted from /videos tab: {len(videos_info.get('entries', []))} entries")
+                                return videos_info
+                        except Exception as e:
+                            logger.warning(f"Failed to extract from /videos tab: {e}")
+                
+                logger.debug(f"yt-dlp extracted info for {channel_url}: {len(entries)} entries")
+                return info
+        except yt_dlp.DownloadError as e:
+            logger.error(f"yt-dlp download error for channel {channel_url}: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"Unexpected error in yt-dlp extraction for {channel_url}: {e}")
+            return {}
 
     def _calculate_channel_video_score(self, title: str) -> float:
         """Simpler relevance scoring for channel videos."""
@@ -394,6 +466,31 @@ class YouTubeSearchProvider(SearchProvider):
                 score += weight
 
         return min(score, 2.0)
+
+    def _get_channel_duration_limits(self, channel_name_lower: str) -> tuple[int, int]:
+        """Get duration limits based on channel characteristics."""
+        # Channel-specific duration limits (min_seconds, max_seconds)
+        channel_patterns = {
+            # High-quality karaoke channels often have longer content
+            "sing king": (10, 2400),  # More relaxed for Sing King - up to 40 minutes
+            "sing karaoke": (10, 2400),  # More relaxed for Sing Karaoke
+            "karafun": (30, 1800),  # KaraFun typically 30s-30min
+            "zzang": (15, 1500),  # ZZang KARAOKE - standard range
+            "let's sing": (15, 1500),  # Let's Sing - standard range
+            
+            # Default patterns for unrecognized channels
+            "karaoke": (15, 1800),  # General karaoke channels
+            "backing": (30, 2400),  # Backing track channels
+            "instrumental": (30, 2400),  # Instrumental channels
+        }
+        
+        # Check for specific channel matches first
+        for pattern, limits in channel_patterns.items():
+            if pattern in channel_name_lower:
+                return limits
+        
+        # Default duration limits for unknown channels
+        return (15, 1500)  # 15 seconds to 25 minutes
 
     def _parse_upload_date(self, upload_date: str) -> Optional[datetime]:
         """Parse upload date string from yt-dlp."""

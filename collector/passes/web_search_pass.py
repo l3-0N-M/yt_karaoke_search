@@ -1,5 +1,6 @@
 """Pass 3: Enhanced web search with filler-stripped query and SERP caching."""
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -61,6 +62,9 @@ class FillerWordProcessor:
                     "inst",
                     "playback",
                     "accompaniment",
+                    "melody",
+                    "노래방",  # Korean: karaoke
+                    "반주",    # Korean: accompaniment
                 },
                 "quality_terms": {
                     "hd",
@@ -173,6 +177,35 @@ class FillerWordProcessor:
     def clean_query(self, query: str, target_language: str = "english") -> QueryCleaningResult:
         """Clean query by removing filler words."""
 
+        # Ensure query is a string with robust error handling
+        if query is None:
+            logger.warning("Query is None, converting to empty string")
+            query = ""
+        elif not isinstance(query, str):
+            try:
+                query = str(query)
+            except Exception as e:
+                logger.warning(f"Failed to convert query to string: {e}")
+                query = ""
+        
+        # Handle potential unicode issues
+        try:
+            # Ensure the string is properly encoded/decoded
+            if isinstance(query, bytes):
+                query = query.decode('utf-8', errors='ignore')
+            # Normalize the string to handle different unicode representations
+            import unicodedata
+            query = unicodedata.normalize('NFKC', query)
+        except Exception as e:
+            logger.warning(f"Unicode normalization failed for query: {e}")
+            # Fallback to basic string conversion
+            query = str(query) if query else ""
+        
+        # Final validation - ensure we have a valid string
+        if not query or not isinstance(query, str):
+            logger.warning("Query validation failed, returning empty result")
+            return QueryCleaningResult("", [], target_language)
+        
         original_query = query
         cleaned = query
         removed_terms = []
@@ -185,21 +218,58 @@ class FillerWordProcessor:
 
         # Remove filler words by category, tracking what's removed
         for category, pattern in language_patterns.items():
-            matches = pattern.findall(cleaned)
-            if matches:
-                removed_terms.extend(matches)
-                cleaned = pattern.sub(" ", cleaned)
+            try:
+                # Ensure cleaned is always a string before regex operations
+                if not isinstance(cleaned, str):
+                    cleaned = str(cleaned) if cleaned is not None else ""
+                
+                # Ensure pattern is properly compiled
+                if not hasattr(pattern, 'findall'):
+                    logger.warning(f"Invalid pattern object for category {category}")
+                    continue
+                
+                # Additional safety check for string content
+                if not isinstance(cleaned, str):
+                    logger.warning(f"Non-string value passed to regex for category {category}: {type(cleaned)}")
+                    cleaned = str(cleaned) if cleaned is not None else ""
+                
+                # Ensure the string is properly encoded
+                try:
+                    cleaned.encode('utf-8')
+                except UnicodeEncodeError:
+                    logger.warning(f"Unicode encoding issue in category {category}, normalizing")
+                    cleaned = cleaned.encode('utf-8', errors='ignore').decode('utf-8')
+                
+                matches = pattern.findall(cleaned)
+                if matches:
+                    removed_terms.extend(matches)
+                    cleaned = pattern.sub(" ", cleaned)
 
-                # Boost confidence based on category
-                if category == "karaoke_terms":
-                    confidence_boost *= 1.2  # Strong boost for karaoke terms
-                elif category == "quality_terms":
-                    confidence_boost *= 1.1  # Medium boost for quality terms
-                else:
-                    confidence_boost *= 1.05  # Small boost for other terms
+                    # Boost confidence based on category
+                    if category == "karaoke_terms":
+                        confidence_boost *= 1.2  # Strong boost for karaoke terms
+                    elif category == "quality_terms":
+                        confidence_boost *= 1.1  # Medium boost for quality terms
+                    else:
+                        confidence_boost *= 1.05  # Small boost for other terms
+            except (TypeError, re.error, AttributeError, UnicodeDecodeError, UnicodeEncodeError) as e:
+                logger.warning(f"Regex operation failed for category {category} with query type {type(cleaned)} '{str(cleaned)[:50]}...': {e}")
+                # Try to recover by ensuring we have a clean string
+                try:
+                    if cleaned is not None:
+                        cleaned = str(cleaned).encode('utf-8', errors='ignore').decode('utf-8')
+                    else:
+                        cleaned = ""
+                except Exception:
+                    cleaned = ""
+                continue
 
         # Clean up whitespace
-        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        try:
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        except (TypeError, re.error) as e:
+            logger.warning(f"Whitespace cleanup failed: {e}")
+            cleaned = " ".join(cleaned.split()) if cleaned else ""
 
         # Additional cleaning
         cleaned = self._additional_cleaning(cleaned, removed_terms)
@@ -215,16 +285,29 @@ class FillerWordProcessor:
     def _additional_cleaning(self, query: str, removed_terms: List[str]) -> str:
         """Additional query cleaning operations with karaoke-specific enhancements."""
 
-        # Remove excessive punctuation
-        query = re.sub(r"[^\w\s\-\'\"&]", " ", query)
+        # Ensure query is a string and handle edge cases
+        if not isinstance(query, str):
+            query = str(query) if query is not None else ""
+        
+        try:
+            # Remove excessive punctuation with error handling
+            query = re.sub(r"[^\w\s\-\'\"&]", " ", query)
+        except (TypeError, re.error) as e:
+            logger.warning(f"Punctuation removal failed: {e}")
+            # Fallback to basic character filtering
+            query = ''.join(c if c.isalnum() or c.isspace() or c in '-\'"&' else ' ' for c in query)
 
-        # Remove large ID numbers (> 1001) that are likely video IDs
-        query = re.sub(r"\b\d{4,}\b", " ", query)
+        try:
+            # Remove large ID numbers (> 1001) that are likely video IDs
+            query = re.sub(r"\b\d{4,}\b", " ", query)
 
-        # Remove smaller standalone numbers but keep years (1900-2099)
-        query = re.sub(r"\b(?:(?:19|20)\d{2})\b", " YEAR ", query)  # Temporarily replace years
-        query = re.sub(r"\b\d{1,3}\b", " ", query)  # Remove other small numbers
-        query = re.sub(r"\bYEAR\b", "", query)  # Remove year placeholder (optional for search)
+            # Remove smaller standalone numbers but keep years (1900-2099)
+            query = re.sub(r"\b(?:(?:19|20)\d{2})\b", " YEAR ", query)  # Temporarily replace years
+            query = re.sub(r"\b\d{1,3}\b", " ", query)  # Remove other small numbers
+            query = re.sub(r"\bYEAR\b", "", query)  # Remove year placeholder (optional for search)
+        except (TypeError, re.error) as e:
+            logger.warning(f"Number removal failed: {e}")
+            # Continue without number removal
 
         # Remove language prefixes at the beginning
         query = re.sub(
@@ -469,6 +552,21 @@ class EnhancedWebSearchPass(ParsingPass):
         try:
             self.search_stats["total_searches"] += 1
 
+            # Early input validation and sanitization
+            if not title:
+                logger.debug("Web search pass: empty title provided")
+                return None
+            
+            # Ensure all inputs are properly converted to strings
+            title = self._safe_string_convert(title, "title")
+            description = self._safe_string_convert(description, "description")
+            tags = self._safe_string_convert(tags, "tags")
+            channel_name = self._safe_string_convert(channel_name, "channel_name")
+            
+            if not title or len(title.strip()) < 3:
+                logger.debug(f"Web search pass: title too short or invalid after conversion: '{title}'")
+                return None
+
             # Step 1: Generate search queries from title
             search_queries = self._generate_search_queries(title, description, tags)
             if not search_queries:
@@ -523,6 +621,11 @@ class EnhancedWebSearchPass(ParsingPass):
     ) -> List[QueryCleaningResult]:
         """Generate multiple search queries with different cleaning strategies."""
 
+        # Use the shared safe string conversion method
+        title = self._safe_string_convert(title, "title")
+        description = self._safe_string_convert(description, "description")
+        tags = self._safe_string_convert(tags, "tags")
+        
         queries = []
 
         # Strategy 1: Clean the original title
@@ -538,34 +641,46 @@ class EnhancedWebSearchPass(ParsingPass):
                 queries.append(desc_cleaning)
 
         # Strategy 3: Extract quoted parts (often song titles)
-        quoted_parts = re.findall(r'["\u201c\u201d]([^"\u201c\u201d]+)["\u201c\u201d]', title)
-        for quoted in quoted_parts:
-            quoted_cleaning = self.filler_processor.clean_query(quoted, "english")
-            if quoted_cleaning.cleaned_query and len(quoted_cleaning.cleaned_query) > 3:
-                quoted_cleaning.cleaning_method = "quoted_extraction"
-                quoted_cleaning.confidence_boost *= 1.1  # Boost for quoted text
-                queries.append(quoted_cleaning)
+        try:
+            quoted_parts = re.findall(r'["\u201c\u201d]([^"\u201c\u201d]+)["\u201c\u201d]', title)
+            for quoted in quoted_parts:
+                quoted = self._safe_string_convert(quoted, "quoted_part")
+                if quoted:
+                    quoted_cleaning = self.filler_processor.clean_query(quoted, "english")
+                    if quoted_cleaning.cleaned_query and len(quoted_cleaning.cleaned_query) > 3:
+                        quoted_cleaning.cleaning_method = "quoted_extraction"
+                        quoted_cleaning.confidence_boost *= 1.1  # Boost for quoted text
+                        queries.append(quoted_cleaning)
+        except (TypeError, re.error) as e:
+            logger.debug(f"Quote extraction failed for title '{title}': {e}")
 
         # Strategy 4: Try language-specific cleaning if non-English characters detected
-        if re.search(r"[^\x00-\x7F]", title):  # Non-ASCII characters
-            for lang in ["spanish", "french", "german", "portuguese"]:
-                lang_cleaning = self.filler_processor.clean_query(title, lang)
-                if lang_cleaning.cleaned_query != base_cleaning.cleaned_query:
-                    lang_cleaning.cleaning_method = f"{lang}_specific"
-                    queries.append(lang_cleaning)
+        try:
+            if re.search(r"[^\x00-\x7F]", title):  # Non-ASCII characters
+                for lang in ["spanish", "french", "german", "portuguese"]:
+                    lang_cleaning = self.filler_processor.clean_query(title, lang)
+                    if lang_cleaning.cleaned_query != base_cleaning.cleaned_query:
+                        lang_cleaning.cleaning_method = f"{lang}_specific"
+                        queries.append(lang_cleaning)
+        except (TypeError, re.error) as e:
+            logger.debug(f"Language-specific cleaning failed for title '{title}': {e}")
 
         # Strategy 5: Minimal cleaning (keep more context)
-        minimal_cleaning = QueryCleaningResult(
-            original_query=title,
-            cleaned_query=re.sub(
+        try:
+            minimal_cleaned = re.sub(
                 r"\b(?:karaoke|instrumental)\b", "", title, flags=re.IGNORECASE
-            ).strip(),
-            removed_terms=["karaoke", "instrumental"],
-            confidence_boost=0.9,  # Lower boost for minimal cleaning
-            cleaning_method="minimal",
-        )
-        if minimal_cleaning.cleaned_query != base_cleaning.cleaned_query:
-            queries.append(minimal_cleaning)
+            ).strip()
+            minimal_cleaning = QueryCleaningResult(
+                original_query=title,
+                cleaned_query=minimal_cleaned,
+                removed_terms=["karaoke", "instrumental"],
+                confidence_boost=0.9,  # Lower boost for minimal cleaning
+                cleaning_method="minimal",
+            )
+            if minimal_cleaning.cleaned_query != base_cleaning.cleaned_query:
+                queries.append(minimal_cleaning)
+        except (TypeError, re.error) as e:
+            logger.debug(f"Minimal cleaning failed for title '{title}': {e}")
 
         # Remove duplicates and sort by confidence boost
         unique_queries = []
@@ -581,36 +696,59 @@ class EnhancedWebSearchPass(ParsingPass):
 
         return unique_queries[:5]  # Limit to top 5 queries
 
-    async def _search_with_engine(self, query: str) -> List[Dict]:
-        """Perform search using the enhanced search engine."""
+    async def _search_with_engine(self, query: str, max_retries: int = 3) -> List[Dict]:
+        """Perform search using the enhanced search engine with retry logic and timeout."""
 
-        try:
-            # Use the existing enhanced search engine
-            search_results = await self.search_engine.search_videos(
-                query, max_results=self.max_search_results, use_cache=True, enable_fallback=True
-            )
+        retry_delay = 1.0  # Start with 1 second delay
+        search_timeout = 8.0  # Timeout for individual search to prevent >12s operations
+        
+        for attempt in range(max_retries):
+            try:
+                # Use the existing enhanced search engine with timeout
+                search_results = await asyncio.wait_for(
+                    self.search_engine.search_videos(
+                        query, 
+                        max_results=min(self.max_search_results, 15),  # Limit results for speed
+                        use_cache=True, 
+                        enable_fallback=False  # Disable fallback for speed
+                    ),
+                    timeout=search_timeout
+                )
 
-            # Convert SearchResult objects to dictionaries
-            results = []
-            for result in search_results:
-                result_dict = {
-                    "video_id": result.video_id,
-                    "title": result.title,
-                    "description": getattr(result, "description", ""),
-                    "channel_name": getattr(result, "channel_name", ""),
-                    "channel_id": getattr(result, "channel_id", ""),
-                    "duration": getattr(result, "duration", 0),
-                    "view_count": getattr(result, "view_count", 0),
-                    "relevance_score": getattr(result, "relevance_score", 0.0),
-                    "final_score": getattr(result, "final_score", 0.0),
-                }
-                results.append(result_dict)
+                # Convert SearchResult objects to dictionaries
+                results = []
+                for result in search_results:
+                    result_dict = {
+                        "video_id": result.video_id,
+                        "title": result.title,
+                        "description": getattr(result, "description", ""),
+                        "channel_name": getattr(result, "channel_name", ""),
+                        "channel_id": getattr(result, "channel_id", ""),
+                        "duration": getattr(result, "duration", 0),
+                        "view_count": getattr(result, "view_count", 0),
+                        "relevance_score": getattr(result, "relevance_score", 0.0),
+                        "final_score": getattr(result, "final_score", 0.0),
+                    }
+                    results.append(result_dict)
 
-            return results
+                return results
 
-        except Exception as e:
-            logger.warning(f"Search engine query failed for '{query}': {e}")
-            return []
+            except asyncio.TimeoutError:
+                logger.warning(f"Search attempt {attempt + 1} timed out after {search_timeout}s for '{query}'")
+                if attempt < max_retries - 1:
+                    search_timeout += 2.0  # Increase timeout for next attempt
+                    continue
+                else:
+                    logger.error(f"All {max_retries} search attempts timed out for '{query}'")
+                    return []
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Search attempt {attempt + 1} failed for '{query}': {e}. Retrying in {retry_delay}s...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error(f"All {max_retries} search attempts failed for '{query}': {e}")
+                    return []
 
     async def _parse_search_results(
         self, results: List[Dict], query_info: QueryCleaningResult, original_title: str
@@ -753,3 +891,59 @@ class EnhancedWebSearchPass(ParsingPass):
     def get_cache_size(self) -> int:
         """Get current cache size."""
         return len(self.serp_cache.cache)
+
+    def _safe_string_convert(self, value, field_name: str) -> str:
+        """Safely convert any value to a string with comprehensive error handling."""
+        if value is None:
+            return ""
+        
+        # If already a string, normalize it
+        if isinstance(value, str):
+            try:
+                # Normalize unicode and handle mixed encodings
+                import unicodedata
+                normalized = unicodedata.normalize('NFKC', value)
+                # Ensure it's valid UTF-8
+                normalized.encode('utf-8')
+                return normalized
+            except (UnicodeError, UnicodeDecodeError, UnicodeEncodeError) as e:
+                logger.debug(f"Unicode normalization/encoding failed for {field_name}: {e}")
+                # Fallback to robust encoding
+                try:
+                    return value.encode('utf-8', errors='ignore').decode('utf-8')
+                except Exception:
+                    return str(value)
+            except Exception as e:
+                logger.debug(f"Unicode normalization failed for {field_name}: {e}")
+                return str(value)
+        
+        # Handle bytes
+        if isinstance(value, (bytes, bytearray)):
+            try:
+                return value.decode('utf-8', errors='ignore')
+            except Exception:
+                return str(value, errors='ignore')
+        
+        # Handle complex data types
+        if isinstance(value, (list, dict, tuple, set)):
+            try:
+                import json
+                return json.dumps(value, ensure_ascii=False, default=str)
+            except Exception:
+                return str(value)
+        
+        # Handle other types
+        try:
+            converted = str(value)
+            # Ensure the converted string is properly encoded
+            converted.encode('utf-8')
+            return converted
+        except UnicodeEncodeError:
+            # Force UTF-8 encoding with error handling
+            try:
+                return str(value).encode('utf-8', errors='ignore').decode('utf-8')
+            except Exception:
+                return ""
+        except Exception as e:
+            logger.warning(f"Failed to convert {field_name} to string: {e}")
+            return ""

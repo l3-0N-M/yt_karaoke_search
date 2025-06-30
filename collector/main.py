@@ -7,6 +7,14 @@ import time
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # python-dotenv not installed, skip loading
+    pass
+
 from .config import CollectorConfig
 from .db_optimized import OptimizedDatabaseManager
 from .enhanced_search import MultiStrategySearchEngine

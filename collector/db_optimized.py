@@ -4,7 +4,9 @@ import contextlib
 import logging
 import sqlite3
 import threading
+import time
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, Generator
 
@@ -12,6 +14,27 @@ from .config import DatabaseConfig
 from .data_transformer import DataTransformer
 
 logger = logging.getLogger(__name__)
+
+
+def retry_on_database_error(max_retries=3, delay=0.1):
+    """Decorator to retry database operations on failure."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.Error as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Database error in {func.__name__} (attempt {attempt + 1}/{max_retries}): {e}")
+                        time.sleep(delay * (2 ** attempt))  # Exponential backoff
+                    else:
+                        logger.error(f"Database error in {func.__name__} after {max_retries} attempts: {e}")
+            raise last_exception
+        return wrapper
+    return decorator
 
 
 class OptimizedDatabaseManager:
@@ -263,6 +286,9 @@ class OptimizedDatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_videos_channel_id ON videos(channel_id)",
             "CREATE INDEX IF NOT EXISTS idx_videos_artist ON videos(artist)",
             "CREATE INDEX IF NOT EXISTS idx_videos_scraped_at ON videos(scraped_at)",
+            "CREATE INDEX IF NOT EXISTS idx_videos_genre ON videos(genre)",
+            "CREATE INDEX IF NOT EXISTS idx_videos_release_year ON videos(release_year)",
+            "CREATE INDEX IF NOT EXISTS idx_videos_upload_date ON videos(upload_date)",
             "CREATE INDEX IF NOT EXISTS idx_musicbrainz_recording ON musicbrainz_data(recording_id)",
             "CREATE INDEX IF NOT EXISTS idx_discogs_release ON discogs_data(release_id)",
             "CREATE INDEX IF NOT EXISTS idx_discogs_artist ON discogs_data(artist_name)",
@@ -287,8 +313,10 @@ class OptimizedDatabaseManager:
         except Exception as e:
             logger.warning(f"Failed to add missing columns: {e}")
 
+    @retry_on_database_error()
     def save_video_data(self, result):
         """Save video data using the optimized schema."""
+        logger.debug("ENHANCED_DB_FIX_V2: save_video_data called")  # Version marker to confirm our code is running
         try:
             # Handle ProcessingResult objects
             if hasattr(result, "video_data"):
@@ -313,41 +341,268 @@ class OptimizedDatabaseManager:
                 if quality_scores and quality_scores.get("overall_score") is not None:
                     quality_score = round(quality_scores["overall_score"], 2)
 
-                # Insert into videos table
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO videos (
-                        video_id, url, title, description, duration_seconds,
-                        view_count, like_count, comment_count, upload_date,
-                        thumbnail_url, channel_name, channel_id,
-                        artist, song_title, featured_artists, release_year, genre,
-                        parse_confidence, quality_score, engagement_ratio, scraped_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        optimized_result["video_id"],
-                        optimized_result["url"],
-                        optimized_result["title"],
-                        optimized_result.get("description", ""),
-                        optimized_result.get("duration_seconds"),
-                        optimized_result.get("view_count", 0),
-                        optimized_result.get("like_count", 0),
-                        optimized_result.get("comment_count", 0),
-                        optimized_result.get("upload_date"),
-                        optimized_result.get("thumbnail_url"),
-                        optimized_result.get("channel_name"),
-                        optimized_result.get("channel_id"),
-                        optimized_result.get("artist"),
-                        optimized_result.get("song_title"),
-                        optimized_result.get("featured_artists"),
-                        optimized_result.get("release_year"),
-                        optimized_result.get("genre"),
-                        parse_confidence,
-                        quality_score,
-                        engagement_ratio,
-                        datetime.now(),
-                    ),
-                )
+                # Log what genre/year values we're about to save
+                release_year = optimized_result.get("release_year")
+                genre = optimized_result.get("genre")
+                video_id = optimized_result["video_id"]
+                
+                if release_year or genre:
+                    logger.info(f"Saving metadata for {video_id}: release_year={release_year}, genre={genre}")
+                
+                # Enhanced safe_convert function with string length limits and better validation
+                def safe_convert(value, default=None, max_length=500):
+                    """Convert value to database-compatible type with comprehensive error handling and length limits."""
+                    try:
+                        if value is None:
+                            return default
+                        
+                        # Handle complex data types that SQLite can't store
+                        if isinstance(value, (list, dict, tuple, set)):
+                            if not value:  # Empty containers
+                                return default
+                            # Convert to JSON string for complex types
+                            import json
+                            try:
+                                json_str = json.dumps(value, ensure_ascii=False, default=str)
+                                # Truncate if too long
+                                if len(json_str) > max_length:
+                                    logger.warning(f"Truncating JSON string from {len(json_str)} to {max_length} chars")
+                                    return json_str[:max_length-3] + "..."
+                                return json_str
+                            except (TypeError, ValueError):
+                                str_value = str(value)
+                                if len(str_value) > max_length:
+                                    logger.warning(f"Truncating complex type string from {len(str_value)} to {max_length} chars")
+                                    return str_value[:max_length-3] + "..."
+                                return str_value
+                        
+                        # Handle boolean types
+                        if isinstance(value, bool):
+                            return int(value)
+                        
+                        # Handle bytes/bytearray
+                        if isinstance(value, (bytes, bytearray)):
+                            try:
+                                decoded = value.decode('utf-8', errors='ignore')
+                                if len(decoded) > max_length:
+                                    logger.warning(f"Truncating decoded bytes from {len(decoded)} to {max_length} chars")
+                                    return decoded[:max_length-3] + "..."
+                                return decoded
+                            except (UnicodeDecodeError, AttributeError):
+                                str_value = str(value)
+                                if len(str_value) > max_length:
+                                    return str_value[:max_length-3] + "..."
+                                return str_value
+                        
+                        # Handle string types with length validation
+                        if isinstance(value, str):
+                            # Check if it's a numeric string that needs conversion
+                            if value.strip() == "":
+                                return default
+                            
+                            # Critical fix: Truncate extremely long strings that cause binding errors
+                            if len(value) > max_length:
+                                logger.warning(f"Truncating string from {len(value)} to {max_length} chars: '{value[:50]}...'")
+                                value = value[:max_length-3] + "..."
+                            
+                            # Ultra-aggressive character cleaning for SQLite compatibility
+                            try:
+                                # First, ensure UTF-8 compatibility
+                                clean_value = value.encode('utf-8', errors='ignore').decode('utf-8')
+                                
+                                # Remove any null bytes that cause SQLite binding issues
+                                clean_value = clean_value.replace('\x00', '')
+                                
+                                # Remove or replace other problematic characters
+                                import re
+                                # Remove control characters except common ones (tab, newline, carriage return)
+                                clean_value = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', '', clean_value)
+                                
+                                # Additional SQLite-specific cleaning
+                                # Remove any potential SQL injection patterns (as extra safety)
+                                clean_value = clean_value.replace("'", "''")  # Escape single quotes
+                                
+                                # Final validation: ensure it's still a valid string
+                                if clean_value != value:
+                                    logger.warning(f"String cleaned for SQLite compatibility: '{value[:50]}...' -> '{clean_value[:50]}...'")
+                                
+                                return clean_value
+                            except Exception as clean_error:
+                                logger.warning(f"String cleaning failed: {clean_error}, using fallback")
+                                # Fallback: create a completely safe string
+                                safe_str = ''.join(c for c in value if c.isprintable() and ord(c) < 128)[:max_length]
+                                logger.warning(f"Fallback string created: '{safe_str[:50]}...'")
+                                return safe_str or default
+                        
+                        # Handle numeric types
+                        if isinstance(value, (int, float)):
+                            # Check for invalid numeric values
+                            if str(value).lower() in ('nan', 'inf', '-inf'):
+                                logger.warning(f"Invalid numeric value: {value}, using default")
+                                return default
+                            # Check for extremely large numbers that might cause issues
+                            if isinstance(value, int) and abs(value) > 2**63-1:
+                                logger.warning(f"Integer too large: {value}, truncating")
+                                return 2**63-1 if value > 0 else -(2**63-1)
+                            return value
+                        
+                        # Handle objects with custom string representations
+                        try:
+                            # Check if it's a custom object/class that might not be SQLite-compatible
+                            if hasattr(value, '__dict__') or hasattr(value, '__class__'):
+                                logger.warning(f"Converting complex object {type(value)} to string")
+                            
+                            str_value = str(value)
+                            # Verify the string is valid and not too long
+                            if str_value and str_value != "None":
+                                if len(str_value) > max_length:
+                                    logger.warning(f"Truncating object string from {len(str_value)} to {max_length} chars")
+                                    return str_value[:max_length-3] + "..."
+                                # Final validation: ensure it's a plain string
+                                return str(str_value)  # Double conversion to ensure plain string
+                            else:
+                                return default
+                        except Exception as e:
+                            logger.warning(f"Failed to convert object to string: {e}")
+                            return default
+                            
+                    except Exception as e:
+                        logger.error(f"safe_convert failed for value {type(value)} '{str(value)[:50] if value else None}': {e}")
+                        return default
+
+                # Prepare and validate all parameters before database insertion
+                # Special handling for problematic featured_artists field (parameter 15)
+                featured_artists_raw = optimized_result.get("featured_artists")
+                if isinstance(featured_artists_raw, str) and len(featured_artists_raw) > 500:
+                    logger.warning(f"Featured artists field extremely long ({len(featured_artists_raw)} chars), truncating: '{featured_artists_raw[:50]}...'")
+                
+                params = [
+                    safe_convert(optimized_result["video_id"], ""),
+                    safe_convert(optimized_result["url"], ""),
+                    safe_convert(optimized_result["title"], ""),
+                    safe_convert(optimized_result.get("description"), "", 2000),  # Increased from 500
+                    safe_convert(optimized_result.get("duration_seconds")),
+                    safe_convert(optimized_result.get("view_count"), 0),
+                    safe_convert(optimized_result.get("like_count"), 0),
+                    safe_convert(optimized_result.get("comment_count"), 0),
+                    safe_convert(optimized_result.get("upload_date")),
+                    safe_convert(optimized_result.get("thumbnail_url")),
+                    safe_convert(optimized_result.get("channel_name")),
+                    safe_convert(optimized_result.get("channel_id")),
+                    safe_convert(optimized_result.get("artist")),
+                    safe_convert(optimized_result.get("song_title")),
+                    safe_convert(optimized_result.get("featured_artists"), "", 500),  # Increased from 200
+                    safe_convert(optimized_result.get("release_year")),
+                    safe_convert(optimized_result.get("genre")),
+                    safe_convert(parse_confidence),
+                    safe_convert(quality_score),
+                    safe_convert(engagement_ratio),
+                    datetime.now(),
+                ]
+                
+                # Enhanced debug logging for all parameters before database insertion
+                logger.debug(f"Attempting to save video {video_id} with {len(params)} parameters")
+                for i, param in enumerate(params):
+                    param_info = f"Param {i+1} ({type(param).__name__})"
+                    if isinstance(param, str) and len(param) > 100:
+                        param_info += f": length={len(param)}, preview='{param[:50]}...'"
+                    elif param is not None:
+                        param_info += f": {repr(param)}"
+                    else:
+                        param_info += ": None"
+                    
+                    # Log all parameters but focus on problematic ones
+                    if i == 14:  # Parameter 15 (featured_artists) - the problematic one
+                        logger.info(f"CRITICAL PARAM 15: {param_info}")
+                        # Deep type inspection for parameter 15
+                        logger.info(f"PARAM 15 DEEP ANALYSIS: type={type(param)}, repr={repr(param)[:100]}, len={len(str(param)) if param else 0}")
+                        if hasattr(param, '__dict__'):
+                            logger.warning(f"PARAM 15 HAS __dict__: {param.__dict__}")
+                        if hasattr(param, '__class__'):
+                            logger.info(f"PARAM 15 CLASS: {param.__class__.__module__}.{param.__class__.__name__}")
+                    elif not isinstance(param, (str, int, float, type(datetime.now()), type(None))):
+                        logger.warning(f"UNEXPECTED TYPE: {param_info}")
+                        # Deep analysis for any unexpected types
+                        if hasattr(param, '__dict__'):
+                            logger.warning(f"UNEXPECTED TYPE __dict__: {param.__dict__}")
+                    else:
+                        logger.debug(param_info)
+
+                # Critical test: Try parameter 15 individually before full INSERT
+                try:
+                    test_cursor = conn.cursor()
+                    test_cursor.execute("SELECT ?", (params[14],))  # Test parameter 15 specifically
+                    logger.debug("Parameter 15 individual test: PASSED")
+                except Exception as param15_error:
+                    logger.error(f"Parameter 15 individual test FAILED: {param15_error}")
+                    logger.error(f"Parameter 15 problematic value: {repr(params[14])}")
+                    # Ultra-aggressive fallback conversion
+                    original_param15 = params[14]
+                    if params[14] is not None:
+                        # Create an ASCII-only, printable-only string
+                        import re
+                        ascii_only = ''.join(c for c in str(params[14]) if ord(c) < 128 and c.isprintable())
+                        # Remove any remaining problematic patterns
+                        ascii_only = re.sub(r'[^\w\s\-.,!?()[\]:;"\'@#$%^&*+=<>/\\|`~]', '', ascii_only)
+                        params[14] = ascii_only[:200] if ascii_only else "CLEANED_STRING"
+                    else:
+                        params[14] = ""
+                    logger.warning(f"Parameter 15 ULTRA-AGGRESSIVE conversion: {repr(original_param15)} -> {repr(params[14])}")
+                    
+                    # Test the cleaned parameter
+                    try:
+                        test_cursor.execute("SELECT ?", (params[14],))
+                        logger.info("Parameter 15 post-cleaning test: PASSED")
+                    except Exception as still_failing:
+                        logger.error(f"Parameter 15 STILL FAILING after cleaning: {still_failing}")
+                        params[14] = "FALLBACK_STRING"  # Ultimate fallback
+
+                # Insert into videos table with enhanced error handling
+                logger.debug("ENHANCED_DB_FIX_V2: About to execute main INSERT statement")
+                try:
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO videos (
+                            video_id, url, title, description, duration_seconds,
+                            view_count, like_count, comment_count, upload_date,
+                            thumbnail_url, channel_name, channel_id,
+                            artist, song_title, featured_artists, release_year, genre,
+                            parse_confidence, quality_score, engagement_ratio, scraped_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        params,
+                    )
+                    logger.debug(f"Successfully inserted video {video_id} into database")
+                except Exception as sql_error:
+                    logger.error(f"SQL INSERT failed for video {video_id}: {sql_error}")
+                    param_summary = []
+                    for i, p in enumerate(params):
+                        if len(str(p)) < 100:
+                            param_summary.append(f'P{i+1}: {type(p).__name__} = {repr(p)}')
+                        else:
+                            param_summary.append(f'P{i+1}: {type(p).__name__} = ({len(str(p))} chars)')
+                    logger.error(f"Failed parameters: {param_summary}")
+                    
+                    # Try to identify the specific problematic parameter
+                    try:
+                        # Test each parameter individually by checking its SQL compatibility
+                        import sqlite3
+                        test_conn = sqlite3.connect(':memory:')
+                        test_conn.execute('CREATE TABLE test (value TEXT)')
+                        
+                        for i, param in enumerate(params):
+                            try:
+                                test_conn.execute('INSERT INTO test VALUES (?)', (param,))
+                                test_conn.execute('DELETE FROM test')
+                            except Exception as param_error:
+                                param_display = repr(param) if len(str(param)) < 200 else f'({len(str(param))} chars)'
+                                logger.error(f"Parameter {i+1} failed individual test: {param_error} | Value: {param_display}")
+                        
+                        test_conn.close()
+                    except Exception as test_error:
+                        logger.error(f"Parameter testing failed: {test_error}")
+                    
+                    raise sql_error
 
                 # Save related data if available
                 if optimized_result.get("musicbrainz_recording_id"):
@@ -363,10 +618,17 @@ class OptimizedDatabaseManager:
                     self._save_ryd_data(conn, optimized_result)
 
                 if optimized_result.get("discogs_release_id"):
-                    discogs_success = self._save_discogs_data(conn, optimized_result)
-                    # Record database save if we have access to monitor
-                    if hasattr(self, '_discogs_monitor') and self._discogs_monitor:
-                        self._discogs_monitor.record_database_save(discogs_success)
+                    try:
+                        discogs_success = self._save_discogs_data(conn, optimized_result)
+                        # Record database save if we have access to monitor
+                        if hasattr(self, '_discogs_monitor') and self._discogs_monitor:
+                            self._discogs_monitor.record_database_save(discogs_success)
+                    except Exception as discogs_error:
+                        logger.error(f"Discogs data save failed for video {optimized_result['video_id']}: {discogs_error}")
+                        logger.warning("Continuing with main video save despite Discogs failure")
+                        # Record the failure if we have access to monitor
+                        if hasattr(self, '_discogs_monitor') and self._discogs_monitor:
+                            self._discogs_monitor.record_database_save(False)
 
                 conn.commit()
                 return True
@@ -518,45 +780,149 @@ class OptimizedDatabaseManager:
         if not discogs_data.get("discogs_release_id"):
             return False  # No Discogs data to save
         
-        # Handle community data
+        # Handle community data with safe type conversion
         community = discogs_data.get("community", {})
-        community_have = community.get("have", 0) if isinstance(community, dict) else 0
-        community_want = community.get("want", 0) if isinstance(community, dict) else 0
+        
+        def safe_int_convert(value, default=0):
+            """Safely convert value to integer."""
+            try:
+                if value is None:
+                    return default
+                if isinstance(value, (int, float)):
+                    return int(value)
+                if isinstance(value, str):
+                    # Try to parse string numbers
+                    if value.strip().isdigit():
+                        return int(value)
+                    return default
+                # For complex objects, log and return default
+                logger.warning(f"Cannot convert community value to int: {type(value)} = {repr(value)}")
+                return default
+            except (ValueError, TypeError, OverflowError) as e:
+                logger.warning(f"Failed to convert community value to int: {e}")
+                return default
+        
+        if isinstance(community, dict):
+            community_have = safe_int_convert(community.get("have", 0))
+            community_want = safe_int_convert(community.get("want", 0))
+        else:
+            logger.warning(f"Community data is not a dict: {type(community)} = {repr(community)}")
+            community_have = 0
+            community_want = 0
         
         # Convert arrays to JSON strings
         genres_json = json.dumps(discogs_data.get("genres", [])) if discogs_data.get("genres") else None
         styles_json = json.dumps(discogs_data.get("styles", [])) if discogs_data.get("styles") else None
         
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO discogs_data (
-                video_id, release_id, master_id, artist_name, song_title,
-                year, genres, styles, label, country, format, confidence,
-                discogs_url, community_have, community_want, barcode, catno,
-                fetched_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-            (
-                result["video_id"],
-                discogs_data.get("discogs_release_id"),
-                discogs_data.get("discogs_master_id"),
-                discogs_artist,
-                discogs_title,
-                discogs_data.get("year"),
-                genres_json,
-                styles_json,
-                discogs_data.get("label"),
-                discogs_data.get("country"),
-                discogs_data.get("format"),
-                round(float(discogs_data.get("confidence", 0)), 2),
-                discogs_data.get("discogs_url"),
-                int(community_have),
-                int(community_want),
-                discogs_data.get("barcode"),
-                discogs_data.get("catno"),
-                datetime.now(),
-            ),
-        )
+        # Prepare Discogs parameters with enhanced validation
+        discogs_params = [
+            result["video_id"],
+            discogs_data.get("discogs_release_id"),
+            discogs_data.get("discogs_master_id"),
+            discogs_artist,
+            discogs_title,
+            discogs_data.get("year"),
+            genres_json,
+            styles_json,
+            discogs_data.get("label"),
+            discogs_data.get("country"),
+            discogs_data.get("format"),
+            round(float(discogs_data.get("confidence", 0)), 2),
+            discogs_data.get("discogs_url"),
+            community_have,  # Parameter 14
+            community_want,  # Parameter 15
+            # Convert list fields to comma-separated strings
+            ", ".join(str(b) for b in discogs_data.get("barcode", [])) if isinstance(discogs_data.get("barcode"), list) else str(discogs_data.get("barcode") or ""),
+            ", ".join(str(c) for c in discogs_data.get("catno", [])) if isinstance(discogs_data.get("catno"), list) else str(discogs_data.get("catno") or ""),
+            datetime.now(),
+        ]
+        
+        # Enhanced Discogs parameter debugging
+        logger.debug(f"DISCOGS: Saving data for video {result['video_id']} with {len(discogs_params)} parameters")
+        for i, param in enumerate(discogs_params):
+            if i in [13, 14]:  # Focus on community parameters (14=have, 15=want)
+                logger.info(f"DISCOGS PARAM {i+1}: {type(param).__name__} = {repr(param)}")
+            elif isinstance(param, str) and len(str(param)) > 100:
+                logger.debug(f"DISCOGS PARAM {i+1}: {type(param).__name__} (length={len(param)})")
+            else:
+                logger.debug(f"DISCOGS PARAM {i+1}: {type(param).__name__} = {repr(param)}")
+        
+        # Retry logic for Discogs save
+        for retry_attempt in range(3):
+            try:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO discogs_data (
+                        video_id, release_id, master_id, artist_name, song_title,
+                        year, genres, styles, label, country, format, confidence,
+                        discogs_url, community_have, community_want, barcode, catno,
+                        fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                    discogs_params,
+                )
+                logger.debug(f"DISCOGS: Successfully saved data for video {result['video_id']}")
+                break
+            except Exception as discogs_error:
+                if retry_attempt < 2:
+                    logger.warning(f"DISCOGS: Retry {retry_attempt + 1}/3 for video {result['video_id']}: {discogs_error}")
+                    time.sleep(0.1 * (2 ** retry_attempt))
+                    continue
+                # If all retries failed, handle the error
+            logger.error(f"DISCOGS: Failed to save data for video {result['video_id']}: {discogs_error}")
+            # Enhanced error recovery for parameter binding issues
+            if "parameter" in str(discogs_error).lower() and "binding" in str(discogs_error).lower():
+                logger.error(f"DISCOGS PARAMETER BINDING ERROR: {discogs_error}")
+                logger.error(f"Problematic parameters summary:")
+                for i, param in enumerate(discogs_params):
+                    logger.error(f"  Param {i+1}: {type(param).__name__} = {repr(param) if len(str(param)) < 100 else f'({len(str(param))} chars)'}")
+                
+                # Create ultra-safe fallback parameters
+                logger.warning("DISCOGS: Creating ultra-safe fallback parameters")
+                safe_params = [
+                    str(result["video_id"]),              # video_id - force to string
+                    str(discogs_data.get("discogs_release_id", "unknown")),  # release_id
+                    None,                                 # master_id
+                    str(discogs_artist or "unknown"),     # artist_name
+                    str(discogs_title or "unknown"),      # song_title
+                    int(discogs_data.get("year", 0)) if discogs_data.get("year") else None,  # year
+                    genres_json,                          # genres (already JSON)
+                    styles_json,                          # styles (already JSON)
+                    str(discogs_data.get("label", "")) if discogs_data.get("label") else None,  # label
+                    str(discogs_data.get("country", "")) if discogs_data.get("country") else None,  # country
+                    str(discogs_data.get("format", "")) if discogs_data.get("format") else None,  # format
+                    float(discogs_data.get("confidence", 0.0)),  # confidence
+                    str(discogs_data.get("discogs_url", "")) if discogs_data.get("discogs_url") else None,  # discogs_url
+                    0,                                    # community_have - force to 0
+                    0,                                    # community_want - force to 0
+                    str(discogs_data.get("barcode", "")) if discogs_data.get("barcode") else None,  # barcode
+                    str(discogs_data.get("catno", "")) if discogs_data.get("catno") else None,  # catno
+                    datetime.now(),                       # fetched_at
+                ]
+                
+                logger.warning("DISCOGS: Attempting retry with ultra-safe parameters")
+                try:
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO discogs_data (
+                            video_id, release_id, master_id, artist_name, song_title,
+                            year, genres, styles, label, country, format, confidence,
+                            discogs_url, community_have, community_want, barcode, catno,
+                            fetched_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        safe_params,
+                    )
+                    logger.info("DISCOGS: Ultra-safe retry successful")
+                    return True
+                except Exception as retry_error:
+                    logger.error(f"DISCOGS: Ultra-safe retry also failed: {retry_error}")
+                    # At this point, we give up and let the main video save continue
+                    logger.error("DISCOGS: Giving up on Discogs save, but allowing main video save to proceed")
+                    return False
+            else:
+                # Non-parameter binding errors should still be raised
+                raise discogs_error
         return True
 
     def get_existing_video_ids(self) -> set:

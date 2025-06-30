@@ -37,6 +37,11 @@ class DuckDuckGoSearchProvider(SearchProvider):
         # Rate limiting
         self._last_request_time = 0
         self._min_request_interval = 2.0  # 2 seconds between requests (more conservative)
+        
+        # Token caching
+        self._cached_vqd = None
+        self._vqd_cache_time = 0
+        self._vqd_cache_ttl = 300  # 5 minutes
 
     async def is_available(self) -> bool:
         """Check if DuckDuckGo search is available."""
@@ -117,7 +122,6 @@ class DuckDuckGoSearchProvider(SearchProvider):
         import asyncio
 
         try:
-            # First, get the search token
             if not requests:
                 self.logger.error("requests library not available")
                 return []
@@ -125,18 +129,43 @@ class DuckDuckGoSearchProvider(SearchProvider):
             session = requests.Session()
             session.headers.update(self.headers)
 
-            # Get initial page to extract tokens
-            initial_response = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: session.get(self.search_url, timeout=10)
-            )
+            # Check if we have a cached VQD token that's still valid
+            current_time = time.time()
+            if (self._cached_vqd and 
+                current_time - self._vqd_cache_time < self._vqd_cache_ttl):
+                vqd = self._cached_vqd
+                self.logger.debug("Using cached VQD token")
+            else:
+                # Get fresh VQD token
+                initial_response = await asyncio.get_running_loop().run_in_executor(
+                    None, lambda: session.get(self.search_url, timeout=10)
+                )
 
-            # Extract vqd token (needed for video search)
-            vqd_match = re.search(r'vqd=([^&"]+)', initial_response.text)
-            if not vqd_match:
-                self.logger.warning("Could not extract DuckDuckGo search token")
-                return []
+                # Extract vqd token (needed for video search)
+                # Try multiple patterns for VQD token extraction
+                vqd_patterns = [
+                    r'vqd=([^&"]+)',  # Original pattern
+                    r'"vqd":"([^"]+)"',  # JSON format
+                    r'vqd="([^"]+)"',  # HTML attribute format
+                ]
+                
+                vqd_match = None
+                for pattern in vqd_patterns:
+                    vqd_match = re.search(pattern, initial_response.text, re.IGNORECASE)
+                    if vqd_match:
+                        self.logger.debug(f"Extracted VQD token using pattern: {pattern}")
+                        break
+                
+                if not vqd_match:
+                    self.logger.warning("Could not extract DuckDuckGo search token")
+                    return []
 
-            vqd = vqd_match.group(1)
+                vqd = vqd_match.group(1)
+                
+                # Cache the token
+                self._cached_vqd = vqd
+                self._vqd_cache_time = current_time
+                self.logger.debug("Cached new VQD token")
 
             # Perform video search
             params = {

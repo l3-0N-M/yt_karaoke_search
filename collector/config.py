@@ -79,8 +79,8 @@ class DataSourceConfig:
     discogs_requests_per_minute: int = 60
     discogs_use_as_fallback: bool = True
     discogs_min_musicbrainz_confidence: float = 0.6
-    discogs_max_results_per_search: int = 10
-    discogs_confidence_threshold: float = 0.5
+    discogs_max_results_per_search: int = 20  # Increased from 10 for better coverage
+    discogs_confidence_threshold: float = 0.4  # Lowered from 0.5 for better coverage
 
 
 @dataclass
@@ -115,6 +115,8 @@ class MultiPassConfig:
     max_total_retries: int = 5
     global_timeout_seconds: float = 300.0
     stop_on_first_success: bool = True
+    always_enrich_metadata: bool = True  # Continue to enrichment even after successful parsing
+    require_metadata: bool = True  # Whether genre/year metadata is required
 
     # Budget management
     total_cpu_budget: float = 60.0  # seconds per video

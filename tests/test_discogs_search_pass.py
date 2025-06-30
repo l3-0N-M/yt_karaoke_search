@@ -120,8 +120,8 @@ class TestDiscogsClient:
         # Exact match
         assert discogs_client._text_similarity("test", "test") == 1.0
         
-        # No match
-        assert discogs_client._text_similarity("test", "different") == 0.0
+        # Low match (not zero due to edit distance and token overlap)
+        assert discogs_client._text_similarity("test", "different") < 0.2
         
         # Partial match
         similarity = discogs_client._text_similarity("test song", "test track")

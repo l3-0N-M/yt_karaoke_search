@@ -105,6 +105,32 @@ class DataTransformer:
             if not transformed.get("genre") and features.get("genre"):
                 transformed["genre"] = features["genre"]
 
+        # ALSO extract metadata from parse result metadata (for Discogs/MusicBrainz data)
+        parse_metadata = transformed.get("metadata", {})
+        if parse_metadata:
+            # Check for release year in multiple possible field names
+            if not transformed.get("release_year"):
+                year_value = (parse_metadata.get("release_year") or 
+                             parse_metadata.get("year") or 
+                             parse_metadata.get("release_date"))
+                if year_value:
+                    transformed["release_year"] = year_value
+                    logger.info(f"DataTransformer found release_year: {year_value}")
+            
+            # Check for genre in multiple possible field names
+            if not transformed.get("genre"):
+                genre_value = parse_metadata.get("genre")
+                if not genre_value and parse_metadata.get("genres"):
+                    # If genres is a list, take the first one
+                    genres = parse_metadata.get("genres")
+                    if isinstance(genres, list) and genres:
+                        genre_value = genres[0]
+                    elif isinstance(genres, str):
+                        genre_value = genres
+                if genre_value:
+                    transformed["genre"] = genre_value
+                    logger.info(f"DataTransformer found genre: {genre_value}")
+
         # Ensure quality scores are properly formatted
         quality_scores = transformed.get("quality_scores", {})
         if quality_scores:
