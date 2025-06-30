@@ -1,0 +1,78 @@
+{
+  "schema": {
+    "search_cache": {
+      "columns": [
+        {
+          "name": "key",
+          "type": "TEXT",
+          "not_null": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "value",
+          "type": "BLOB",
+          "not_null": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "not_null": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "last_accessed",
+          "type": "TIMESTAMP",
+          "not_null": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "access_count",
+          "type": "INTEGER",
+          "not_null": false,
+          "default": "0",
+          "primary_key": false
+        },
+        {
+          "name": "ttl_seconds",
+          "type": "INTEGER",
+          "not_null": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "size_bytes",
+          "type": "INTEGER",
+          "not_null": false,
+          "default": "0",
+          "primary_key": false
+        },
+        {
+          "name": "metadata",
+          "type": "TEXT",
+          "not_null": false,
+          "default": null,
+          "primary_key": false
+        }
+      ]
+    }
+  },
+  "statistics": {
+    "search_cache": {
+      "row_count": 38,
+      "column_count": 8,
+      "index_count": 3
+    }
+  },
+  "data_quality": {
+    "search_cache": [
+      "Column metadata has 100.0% nulls"
+    ]
+  },
+  "performance": {},
+  "anomalies": []
+}

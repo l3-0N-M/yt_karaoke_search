@@ -360,13 +360,77 @@ class CacheManager:
             "total_puts": 0,
         }
 
+    def _normalize_query_for_cache(self, query: str) -> str:
+        """Normalize query for better cache hits."""
+        if not query:
+            return ""
+        
+        import re
+        import unicodedata
+        
+        # Unicode normalization
+        normalized = unicodedata.normalize('NFKC', query)
+        
+        # Convert to lowercase
+        normalized = normalized.lower()
+        
+        # Remove excessive whitespace
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        
+        # Normalize common punctuation variations
+        normalized = re.sub(r'[–—−]', '-', normalized)  # Various dash types to hyphen
+        normalized = re.sub(r'[""''`´]', '"', normalized)  # Various quotes to standard
+        normalized = re.sub(r'[…]', '...', normalized)  # Ellipsis normalization
+        
+        # Remove common karaoke-specific noise that doesn't affect search meaning
+        noise_patterns = [
+            r'\b(?:karaoke|instrumental|backing\s*track|sing\s*along|minus\s*one|mr|inst)\b',
+            r'\b(?:hd|hq|4k|1080p|720p|480p|high\s*quality|low\s*quality)\b',
+            r'\b(?:official|music\s*video|audio|clip|song|track)\b',
+            r'\b(?:version|cover|tribute|live|acoustic|studio)\b',
+        ]
+        
+        for pattern in noise_patterns:
+            normalized = re.sub(pattern, '', normalized, flags=re.IGNORECASE)
+        
+        # Clean up resulting whitespace
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        
+        # Remove brackets with minimal content (often video IDs or quality indicators)
+        normalized = re.sub(r'\[[^\]]{0,10}\]', '', normalized)
+        normalized = re.sub(r'\([^)]{0,10}\)', '', normalized)
+        
+        # Clean up again
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        
+        return normalized
+
     def _generate_cache_key(self, namespace: str, *args, **kwargs) -> str:
-        """Generate consistent cache key from parameters."""
-        key_data = {
-            "namespace": namespace,
-            "args": args,
-            "kwargs": sorted(kwargs.items()) if kwargs else {},
-        }
+        """Generate consistent cache key from parameters with enhanced normalization."""
+        # Special handling for search queries to improve cache effectiveness
+        if namespace == "search_results" and "query" in kwargs:
+            # Normalize the query for better cache hits
+            original_query = kwargs["query"]
+            normalized_query = self._normalize_query_for_cache(original_query)
+            
+            # Create a copy of kwargs with normalized query
+            normalized_kwargs = kwargs.copy()
+            normalized_kwargs["query"] = normalized_query
+            
+            # Also store the original for debugging
+            normalized_kwargs["_original_query"] = original_query
+            
+            key_data = {
+                "namespace": namespace,
+                "args": args,
+                "kwargs": sorted(normalized_kwargs.items()),
+            }
+        else:
+            key_data = {
+                "namespace": namespace,
+                "args": args,
+                "kwargs": sorted(kwargs.items()) if kwargs else {},
+            }
 
         key_str = json.dumps(key_data, sort_keys=True, default=str)
         return hashlib.sha256(key_str.encode()).hexdigest()[:32]

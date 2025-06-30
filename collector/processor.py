@@ -200,6 +200,9 @@ class VideoProcessor:
                         channel_id=video_data.get("channel_id", ""),
                     )
                     parse_result = mp_res.final_result
+                    # Transfer metadata from parse result to video data
+                    if parse_result and parse_result.metadata:
+                        video_data["metadata"] = parse_result.metadata
                 except Exception as e:
                     warnings.append(f"Multi-pass parsing failed: {e}")
 
@@ -216,8 +219,43 @@ class VideoProcessor:
                 video_data["featured_artists"] = features["featured_artists"]
             if features.get("artist_confidence"):
                 video_data["parse_confidence"] = features["artist_confidence"]
-            if features.get("release_year"):
+            # Only use fallback release_year if we don't have one from metadata
+            if features.get("release_year") and not video_data.get("metadata", {}).get("release_year") and not video_data.get("metadata", {}).get("year"):
                 video_data["release_year"] = features["release_year"]
+            
+            # Promote release_year from metadata if available
+            if video_data.get("metadata", {}).get("release_year"):
+                video_data["release_year"] = video_data["metadata"]["release_year"]
+            elif video_data.get("metadata", {}).get("year"):
+                video_data["release_year"] = video_data["metadata"]["year"]
+            
+            # Promote genre from metadata if available
+            if video_data.get("metadata", {}).get("genre"):
+                video_data["genre"] = video_data["metadata"]["genre"]
+            elif video_data.get("metadata", {}).get("genres"):
+                genres = video_data["metadata"]["genres"]
+                video_data["genre"] = genres[0] if isinstance(genres, list) and genres else genres
+            
+            # Promote MusicBrainz data from metadata if available
+            metadata = video_data.get("metadata", {})
+            if metadata.get("musicbrainz_recording_id"):
+                video_data["musicbrainz_recording_id"] = metadata["musicbrainz_recording_id"]
+            if metadata.get("musicbrainz_artist_id"):
+                video_data["musicbrainz_artist_id"] = metadata["musicbrainz_artist_id"]
+            if metadata.get("musicbrainz_score"):
+                video_data["musicbrainz_score"] = metadata["musicbrainz_score"]
+            if metadata.get("musicbrainz_confidence"):
+                video_data["musicbrainz_confidence"] = metadata["musicbrainz_confidence"]
+            
+            # Promote Discogs data from metadata if available
+            if metadata.get("discogs_release_id"):
+                video_data["discogs_release_id"] = metadata["discogs_release_id"]
+            if metadata.get("discogs_master_id"):
+                video_data["discogs_master_id"] = metadata["discogs_master_id"]
+            if metadata.get("discogs_confidence"):
+                video_data["discogs_confidence"] = metadata["discogs_confidence"]
+            if metadata.get("discogs_url"):
+                video_data["discogs_url"] = metadata["discogs_url"]
 
             # Enhance with external data (uses extracted features)
             await self._enhance_with_external_data(video_data, errors, warnings)
@@ -868,9 +906,11 @@ class VideoProcessor:
             for match in matches:
                 try:
                     year = int(match)
-                    # Validate reasonable year range (1900 to current year + 2)
-                    if 1900 <= year <= current_year + 2:
+                    # Validate reasonable year range (1900 to current year)
+                    if 1900 <= year <= current_year:
                         found_years.append(year)
+                    elif year > current_year:
+                        logger.warning(f"Rejected future year {year} (current year is {current_year})")
                 except ValueError:
                     continue
         

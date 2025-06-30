@@ -172,6 +172,8 @@ class EnhancedChannelTemplatePass(ParsingPass):
             r'\[짱가라오케/노래방\]',
             r'\(Karaoke Version\)',
             r'\(MR/Instrumental\)',
+            r'\(MR/\)',  # Handle incomplete MR pattern
+            r'\(\s*Version\)',  # Handle incomplete Version pattern
             r'\(Melody\)',
             r'\(Instrumental\)',
             r'\(Karaoke\)',
@@ -179,6 +181,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
             r'\[MR\]',
             r'\[Instrumental\]',
             r'\[Melody\]',
+            r'\bMelody\b',  # Remove standalone "Melody" word
+            r'\b노래방\b',  # Korean for karaoke
+            r'\b반주\b',    # Korean for accompaniment
         ]
         
         # Remove specific karaoke metadata patterns
@@ -189,11 +194,12 @@ class EnhancedChannelTemplatePass(ParsingPass):
         # Keep parentheses with Korean characters (Hangul) as they're likely artist names
         def should_keep_parentheses(match):
             content = match.group(1)
-            # Keep if contains Korean characters (Hangul: \uAC00-\uD7A3)
-            if re.search(r'[\uAC00-\uD7A3]', content):
+            # Keep if contains Korean characters (standardized range)
+            if re.search(r'[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]', content):
                 return match.group(0)
-            # Keep if it looks like an artist name (letters, spaces, hyphens)
-            if re.match(r'^[a-zA-Z\s\-]+$', content) and len(content) < 30:
+            # Keep if it looks like an artist name (letters, Korean characters, spaces, hyphens)
+            # Added Unicode ranges for Korean characters: Hangul Syllables (AC00-D7AF), Hangul Jamo (1100-11FF), Hangul Compatibility Jamo (3130-318F)
+            if re.match(r'^[a-zA-Z\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF\s\-\(\)]+$', content) and len(content) < 50:
                 return match.group(0)
             # Remove if it looks like metadata
             metadata_indicators = ['version', 'remix', 'edit', 'remaster', 'feat', 'ft', 'featuring']
@@ -203,6 +209,10 @@ class EnhancedChannelTemplatePass(ParsingPass):
         
         # Apply selective parentheses removal
         cleaned = re.sub(r'\(([^)]+)\)', should_keep_parentheses, cleaned)
+        
+        # Add spaces around dashes that don't have them (but preserve double dashes)
+        # This helps with titles like "Artist-Song" → "Artist - Song"
+        cleaned = re.sub(r'(?<=[a-zA-Z0-9])(?<!-)[-](?!-)(?=[a-zA-Z0-9])', ' - ', cleaned)
         
         # Clean up extra whitespace
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
@@ -393,6 +403,15 @@ class EnhancedChannelTemplatePass(ParsingPass):
             else:
                 result.confidence = 0
 
+            # Boost confidence for Korean content to match English content quality
+            if result.artist and self._contains_korean_characters(result.artist):
+                # Korean artist names in parentheses format are very reliable on ZZang channel
+                if "(" in result.artist and ")" in result.artist:
+                    result.confidence = min(result.confidence * 1.1, 0.95)
+                # General Korean content boost
+                result.confidence = min(result.confidence * 1.05, 0.95)
+                logger.debug(f"Korean content confidence boost applied: {result.artist}")
+
             # Boost confidence based on pattern success history
             if pattern.total_attempts > 0:
                 success_rate = pattern.success_count / pattern.total_attempts
@@ -464,6 +483,13 @@ class EnhancedChannelTemplatePass(ParsingPass):
             return pattern
         except re.error:
             return None
+
+    def _contains_korean_characters(self, text: str) -> bool:
+        """Check if text contains Korean characters."""
+        if not text:
+            return False
+        # Check for Hangul Syllables, Jamo, and Compatibility Jamo
+        return bool(re.search(r'[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]', text))
 
     def _add_or_update_pattern(self, channel_id: str, pattern: str, example: str):
         """Add or update a channel pattern."""

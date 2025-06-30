@@ -4,6 +4,14 @@ import asyncio
 import logging
 import sys
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # python-dotenv not installed, skip loading
+    pass
+
 try:
     import click
 except ImportError:  # pragma: no cover - fallback minimal stub
@@ -333,6 +341,52 @@ def stats(config):
         print("\nTop 10 Artists:")
         for artist, count, avg_views in top_artists:
             print(f"  {artist}: {count} videos (avg {avg_views:,.0f} views)")
+
+
+@cli.command()
+def check_env():
+    """Check environment variables for external services."""
+    import os
+    
+    print("\n" + "=" * 50)
+    print("ENVIRONMENT VARIABLES")
+    print("=" * 50)
+    
+    # Check Discogs token
+    discogs_token = os.getenv("DISCOGS_TOKEN") or os.getenv("DISCOGS-TOKEN")
+    if discogs_token:
+        print(f"✓ DISCOGS_TOKEN: Set (length: {len(discogs_token)} characters)")
+        print(f"  First 8 chars: {discogs_token[:8]}...")
+    else:
+        print("✗ DISCOGS_TOKEN: Not set")
+        print("  Set DISCOGS_TOKEN environment variable to enable Discogs search")
+        print("  Get token from: https://www.discogs.com/settings/developers")
+    
+    # Check other relevant environment variables
+    env_vars = [
+        ("DISCOGS_REQUESTS_PER_MINUTE", "Discogs rate limit"),
+        ("DISCOGS_MAX_RESULTS", "Max Discogs results per search"),
+        ("DISCOGS_ENABLED", "Enable/disable Discogs integration"),
+    ]
+    
+    print("\nOptional environment variables:")
+    for var_name, description in env_vars:
+        value = os.getenv(var_name)
+        if value:
+            print(f"  {var_name}: {value}")
+        else:
+            print(f"  {var_name}: Not set (using default)")
+    
+    # Check if .env file exists
+    from pathlib import Path
+    env_file = Path(".env")
+    if env_file.exists():
+        print(f"\n✓ .env file found: {env_file.absolute()}")
+    else:
+        print(f"\n✗ .env file not found in current directory: {Path.cwd()}")
+        print("  Create a .env file with your environment variables")
+    
+    print("\nEnvironment check complete!")
 
 
 if __name__ == "__main__":

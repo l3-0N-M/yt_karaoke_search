@@ -56,6 +56,76 @@ class DiscogsClient:
         }
         self.logger = logging.getLogger(__name__)
     
+    def _normalize_search_query(self, text: str) -> str:
+        """Normalize search query for better Discogs matching."""
+        # Remove common suffixes that interfere with search
+        suffixes_to_remove = [
+            r'\s*\(karaoke.*?\)',
+            r'\s*\[karaoke.*?\]',
+            r'\s*-\s*karaoke.*$',
+            r'\s*\(instrumental.*?\)',
+            r'\s*\[instrumental.*?\]',
+            r'\s*-\s*instrumental.*$',
+            r'\s*\(backing track.*?\)',
+            r'\s*\[backing track.*?\]',
+            r'\s*-\s*backing track.*$',
+            r'\s*\(official.*?\)',
+            r'\s*\[official.*?\]',
+            r'\s*\(lyrics.*?\)',
+            r'\s*\[lyrics.*?\]',
+        ]
+        
+        normalized = text
+        for pattern in suffixes_to_remove:
+            normalized = re.sub(pattern, '', normalized, flags=re.IGNORECASE)
+        
+        return normalized.strip()
+    
+    def _generate_artist_variations(self, artist: str) -> List[str]:
+        """Generate variations of artist name for better matching."""
+        variations = [artist]
+        
+        # Handle special characters
+        if '$' in artist:
+            variations.append(artist.replace('$', 'S'))
+            variations.append(artist.replace('$', ''))
+        
+        # Handle numbered disambiguations
+        if re.search(r'\s*\(\d+\)\s*$', artist):
+            variations.append(re.sub(r'\s*\(\d+\)\s*$', '', artist))
+        
+        # Handle accented characters
+        accent_map = {
+            'É': 'E', 'È': 'E', 'Ê': 'E', 'Ë': 'E',
+            'À': 'A', 'Á': 'A', 'Â': 'A', 'Ä': 'A',
+            'Ò': 'O', 'Ó': 'O', 'Ô': 'O', 'Ö': 'O',
+            'Ù': 'U', 'Ú': 'U', 'Û': 'U', 'Ü': 'U',
+            'Ç': 'C', 'Ñ': 'N'
+        }
+        
+        normalized = artist
+        for accented, plain in accent_map.items():
+            if accented in artist:
+                normalized = artist.replace(accented, plain)
+                if normalized != artist:
+                    variations.append(normalized)
+        
+        # Handle & vs and
+        if ' & ' in artist:
+            variations.append(artist.replace(' & ', ' and '))
+        elif ' and ' in artist:
+            variations.append(artist.replace(' and ', ' & '))
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_variations = []
+        for v in variations:
+            if v not in seen:
+                seen.add(v)
+                unique_variations.append(v)
+        
+        return unique_variations
+    
     async def search_release(
         self, 
         artist: str, 
@@ -63,79 +133,146 @@ class DiscogsClient:
         max_results: int = 10,
         timeout: int = 10
     ) -> List[DiscogsMatch]:
-        """Search for releases on Discogs."""
+        """Search for releases on Discogs with enhanced query strategies."""
         
         if not HAS_AIOHTTP:
             self.logger.warning("aiohttp not available for Discogs API")
             return []
         
-        # Record rate limiting
-        wait_start = time.time()
-        await self.rate_limiter.wait_for_request()
-        wait_time = (time.time() - wait_start) * 1000  # Convert to ms
+        # Normalize the track title
+        normalized_track = self._normalize_search_query(track)
         
-        if self.monitor:
-            self.monitor.record_rate_limiting(wait_time)
+        # Generate artist variations
+        artist_variations = self._generate_artist_variations(artist)
         
-        params = {
-            "artist": artist,
-            "track": track,
-            "type": "release",
-            "per_page": max_results
-        }
+        # Generate search queries to try
+        search_queries = []
         
-        api_start_time = time.time()
-        success = False
-        timeout_occurred = False
+        # Primary strategy: try each artist variation with normalized track
+        for artist_var in artist_variations:
+            search_queries.append({
+                "artist": artist_var,
+                "track": normalized_track,
+                "type": "release"
+            })
         
-        try:
-            async with aiohttp.ClientSession(
-                headers=self.headers,
-                timeout=aiohttp.ClientTimeout(total=timeout)
-            ) as session:
-                async with session.get(
-                    f"{self.BASE_URL}/database/search",
-                    params=params
-                ) as response:
-                    response.raise_for_status()
-                    data = await response.json()
-                    
-                    results = []
-                    for item in data.get("results", []):
-                        match = self._parse_search_result(item, artist, track)
-                        if match:
-                            results.append(match)
-                    
-                    success = True
-                    return results
-                    
-        except asyncio.TimeoutError:
-            timeout_occurred = True
-            self.logger.warning(f"Discogs search timeout for {artist} - {track}")
-            return []
-        except aiohttp.ClientError as e:
-            self.logger.warning(f"Discogs API error: {e}")
-            return []
-        except Exception as e:
-            self.logger.error(f"Unexpected Discogs API error: {e}")
-            return []
-        finally:
-            # Record API call metrics
-            response_time = (time.time() - api_start_time) * 1000  # Convert to ms
+        # Secondary strategy: if track has parentheses, try without them
+        if '(' in normalized_track and ')' in normalized_track:
+            track_without_parens = re.sub(r'\s*\([^)]*\)', '', normalized_track).strip()
+            if track_without_parens and track_without_parens != normalized_track:
+                for artist_var in artist_variations[:2]:  # Only use top 2 artist variations
+                    search_queries.append({
+                        "artist": artist_var,
+                        "track": track_without_parens,
+                        "type": "release"
+                    })
+        
+        all_results = []
+        
+        # Try each query until we get good results
+        for query_params in search_queries:
+            if len(all_results) >= max_results:
+                break
+                
+            # Record rate limiting
+            wait_start = time.time()
+            await self.rate_limiter.wait_for_request()
+            wait_time = (time.time() - wait_start) * 1000  # Convert to ms
+            
             if self.monitor:
-                self.monitor.record_api_call(
-                    success=success,
-                    response_time_ms=response_time,
-                    timeout=timeout_occurred
-                )
+                self.monitor.record_rate_limiting(wait_time)
+            
+            query_params["per_page"] = max_results
+            
+            api_start_time = time.time()
+            success = False
+            timeout_occurred = False
+            
+            try:
+                async with aiohttp.ClientSession(
+                    headers=self.headers,
+                    timeout=aiohttp.ClientTimeout(total=timeout)
+                ) as session:
+                    async with session.get(
+                        f"{self.BASE_URL}/database/search",
+                        params=query_params
+                    ) as response:
+                        response.raise_for_status()
+                        data = await response.json()
+                        
+                        results = []
+                        for item in data.get("results", []):
+                            match = self._parse_search_result(item, artist, track)
+                            if match:
+                                results.append(match)
+                        
+                        all_results.extend(results)
+                        success = True
+                        
+                        # If we found high confidence matches, stop searching
+                        if any(r.confidence >= 0.8 for r in results):
+                            break
+                            
+            except asyncio.TimeoutError:
+                timeout_occurred = True
+                self.logger.warning(f"Discogs search timeout for {query_params.get('artist')} - {query_params.get('track')}")
+                continue  # Try next query
+            except aiohttp.ClientError as e:
+                self.logger.warning(f"Discogs API error for query {query_params}: {e}")
+                continue  # Try next query
+            except Exception as e:
+                self.logger.error(f"Unexpected Discogs API error: {e}")
+                continue  # Try next query
+            finally:
+                # Record API call metrics
+                response_time = (time.time() - api_start_time) * 1000  # Convert to ms
+                if self.monitor:
+                    self.monitor.record_api_call(
+                        success=success,
+                        response_time_ms=response_time,
+                        timeout=timeout_occurred
+                    )
+        
+        # Remove duplicates and sort by confidence
+        seen_releases = set()
+        unique_results = []
+        for result in sorted(all_results, key=lambda x: x.confidence, reverse=True):
+            release_key = (result.artist_name.lower(), result.song_title.lower())
+            if release_key not in seen_releases:
+                seen_releases.add(release_key)
+                unique_results.append(result)
+                if len(unique_results) >= max_results:
+                    break
+        
+        return unique_results
     
     def _parse_search_result(self, item: Dict, query_artist: str, query_track: str) -> Optional[DiscogsMatch]:
         """Parse a single search result from Discogs API."""
         
         try:
             # Extract basic info
-            artist_name = item.get("artist", "Unknown")
-            title = item.get("title", "Unknown")
+            # Discogs API sometimes returns "Artist - Title" in the title field
+            raw_title = item.get("title", "Unknown")
+            artist_name = item.get("artist", "")
+            
+            # If no artist field or artist is generic, try to parse from title
+            if not artist_name or artist_name.lower() in ["unknown", "various", "various artists"]:
+                # Check if title contains artist - song pattern
+                if " - " in raw_title:
+                    parts = raw_title.split(" - ", 1)
+                    if len(parts) == 2:
+                        artist_name = parts[0].strip()
+                        title = parts[1].strip()
+                    else:
+                        title = raw_title
+                else:
+                    title = raw_title
+            else:
+                # If we have a proper artist, check if it's duplicated in title
+                if raw_title.startswith(artist_name + " - "):
+                    title = raw_title[len(artist_name + " - "):]
+                else:
+                    title = raw_title
             release_id = str(item.get("id", ""))
             master_id = str(item.get("master_id", "")) if item.get("master_id") else None
             
@@ -191,56 +328,129 @@ class DiscogsClient:
     ) -> float:
         """Calculate confidence score for a Discogs match."""
         
-        confidence = 0.4  # Base confidence
+        confidence = 0.3  # Lowered base confidence for better coverage
         
         # Artist name similarity
         artist_similarity = self._text_similarity(query_artist.lower(), result_artist.lower())
-        confidence += artist_similarity * 0.3
+        confidence += artist_similarity * 0.35  # Increased weight
         
         # Track title similarity  
         title_similarity = self._text_similarity(query_track.lower(), result_title.lower())
-        confidence += title_similarity * 0.3
+        confidence += title_similarity * 0.35  # Increased weight
         
         # Bonus factors
         if item.get("master_id"):
-            confidence += 0.1
+            confidence += 0.05  # Reduced bonus
         if item.get("year"):
-            confidence += 0.05
+            year = item.get("year")
+            # Special handling for recent releases - they might not have much community data
+            if year and int(year) >= 2023:
+                confidence += 0.1  # Bonus for recent releases
+            else:
+                confidence += 0.05
         if item.get("genre"):
             confidence += 0.05
         if item.get("style"):
-            confidence += 0.05
+            confidence += 0.03
         
         # Community popularity (more owned = more reliable)
+        # But don't penalize new releases too much
         community = item.get("community", {})
         have_count = community.get("have", 0)
-        if have_count > 100:
-            confidence += 0.1
-        elif have_count > 10:
-            confidence += 0.05
+        year = item.get("year", 0)
+        
+        # Adjust expectations for recent releases
+        if year and int(year) >= 2023:
+            if have_count > 10:
+                confidence += 0.1
+            elif have_count > 0:
+                confidence += 0.05
+        else:
+            if have_count > 100:
+                confidence += 0.1
+            elif have_count > 10:
+                confidence += 0.05
+        
+        # Special boost for exact matches
+        if artist_similarity >= 0.95 and title_similarity >= 0.95:
+            confidence = min(confidence + 0.2, 1.0)
         
         return min(confidence, 1.0)
     
     def _text_similarity(self, text1: str, text2: str) -> float:
-        """Simple text similarity calculation."""
+        """Enhanced text similarity using multiple strategies."""
         if not text1 or not text2:
             return 0.0
         
-        # Remove common variations
-        text1 = re.sub(r'\s*\([^)]*\)', '', text1).strip()
-        text2 = re.sub(r'\s*\([^)]*\)', '', text2).strip()
+        # Normalize texts
+        text1_normalized = text1.lower().strip()
+        text2_normalized = text2.lower().strip()
         
-        # Simple word overlap calculation
-        words1 = set(text1.lower().split())
-        words2 = set(text2.lower().split())
+        # Strategy 1: Exact match (highest confidence)
+        if text1_normalized == text2_normalized:
+            return 1.0
         
-        if not words1 or not words2:
-            return 0.0
+        # Strategy 2: Levenshtein distance-based similarity
+        def levenshtein_distance(s1: str, s2: str) -> int:
+            if len(s1) < len(s2):
+                return levenshtein_distance(s2, s1)
+            
+            if len(s2) == 0:
+                return len(s1)
+            
+            previous_row = range(len(s2) + 1)
+            for i, c1 in enumerate(s1):
+                current_row = [i + 1]
+                for j, c2 in enumerate(s2):
+                    insertions = previous_row[j + 1] + 1
+                    deletions = current_row[j] + 1
+                    substitutions = previous_row[j] + (c1 != c2)
+                    current_row.append(min(insertions, deletions, substitutions))
+                previous_row = current_row
+            
+            return previous_row[-1]
         
-        intersection = len(words1.intersection(words2))
-        union = len(words1.union(words2))
+        # Calculate normalized edit distance
+        max_len = max(len(text1_normalized), len(text2_normalized))
+        if max_len > 0:
+            edit_distance = levenshtein_distance(text1_normalized, text2_normalized)
+            edit_similarity = 1.0 - (edit_distance / max_len)
+        else:
+            edit_similarity = 0.0
         
-        return intersection / union if union > 0 else 0.0
+        # Strategy 3: Token-based similarity (for handling word order differences)
+        # Remove common variations and parentheses
+        text1_clean = re.sub(r'\s*\([^)]*\)', '', text1_normalized).strip()
+        text2_clean = re.sub(r'\s*\([^)]*\)', '', text2_normalized).strip()
+        
+        # Tokenize
+        words1 = set(text1_clean.split())
+        words2 = set(text2_clean.split())
+        
+        if words1 and words2:
+            intersection = len(words1.intersection(words2))
+            union = len(words1.union(words2))
+            token_similarity = intersection / union if union > 0 else 0.0
+        else:
+            token_similarity = 0.0
+        
+        # Strategy 4: Substring matching (for partial matches)
+        substring_similarity = 0.0
+        if len(text1_clean) >= 3 and len(text2_clean) >= 3:
+            if text1_clean in text2_clean or text2_clean in text1_clean:
+                substring_similarity = min(len(text1_clean), len(text2_clean)) / max(len(text1_clean), len(text2_clean))
+        
+        # Combine strategies with weights
+        # Edit distance is most reliable for similar strings
+        # Token similarity helps with word reordering
+        # Substring helps with partial matches
+        combined_similarity = (
+            edit_similarity * 0.5 +
+            token_similarity * 0.3 +
+            substring_similarity * 0.2
+        )
+        
+        return min(combined_similarity, 1.0)
 
 
 class DiscogsSearchPass(ParsingPass):
@@ -310,9 +520,15 @@ class DiscogsSearchPass(ParsingPass):
             logger.debug("Discogs client not initialized (missing token)")
             return None
         
-        # Check if we should use Discogs as fallback
+        # Check if we should use Discogs as fallback or for enrichment
         is_fallback = False
-        if self.config.discogs_use_as_fallback and metadata:
+        is_enrichment = metadata and metadata.get("enrichment_mode", False)
+        
+        if is_enrichment:
+            # Enrichment mode: always run to supplement MusicBrainz data
+            logger.debug("Running Discogs in enrichment mode to supplement MusicBrainz data")
+            self.stats["fallback_activations"] += 1  # Reuse this stat for now
+        elif self.config.discogs_use_as_fallback and metadata:
             musicbrainz_confidence = metadata.get("musicbrainz_confidence", 0.0)
             if musicbrainz_confidence >= self.config.discogs_min_musicbrainz_confidence:
                 logger.debug(
@@ -327,10 +543,32 @@ class DiscogsSearchPass(ParsingPass):
         self.stats["total_searches"] += 1
         
         try:
-            # Parse title to extract artist and song
-            title_candidates = self._extract_search_candidates(title)
+            # In enrichment mode, prefer existing parsed data for search candidates
+            if is_enrichment and metadata.get("musicbrainz_result"):
+                mb_result = metadata["musicbrainz_result"]
+                if mb_result.artist and mb_result.song_title:
+                    title_candidates = [(mb_result.artist, mb_result.song_title)]
+                    logger.info(f"Using MusicBrainz data for Discogs search: {mb_result.artist} - {mb_result.song_title}")
+                else:
+                    title_candidates = self._extract_search_candidates(title)
+            elif metadata.get("parsed_artist") and metadata.get("parsed_title"):
+                # Use parsed artist/title from Channel Template for more accurate searches
+                title_candidates = [(metadata["parsed_artist"], metadata["parsed_title"])]
+                logger.info(f"Using parsed data for Discogs search: {metadata['parsed_artist']} - {metadata['parsed_title']}")
+            elif metadata.get("channel_template_result"):
+                # Fallback to Channel Template result
+                ct_result = metadata["channel_template_result"]
+                if ct_result.artist and ct_result.song_title:
+                    title_candidates = [(ct_result.artist, ct_result.song_title)]
+                    logger.info(f"Using Channel Template data for Discogs search: {ct_result.artist} - {ct_result.song_title}")
+                else:
+                    title_candidates = self._extract_search_candidates(title)
+            else:
+                # Parse title to extract artist and song
+                title_candidates = self._extract_search_candidates(title)
+                
             if not title_candidates:
-                logger.debug(f"No search candidates found for title: {title}")
+                logger.info(f"No search candidates found for title: {title}")
                 return None
             
             best_match = None
@@ -338,7 +576,7 @@ class DiscogsSearchPass(ParsingPass):
             
             # Try each candidate
             for artist, track in title_candidates:
-                logger.debug(f"Searching Discogs for: {artist} - {track}")
+                logger.info(f"Searching Discogs for: {artist} - {track}")
                 
                 matches = await self.client.search_release(
                     artist=artist,
@@ -346,6 +584,8 @@ class DiscogsSearchPass(ParsingPass):
                     max_results=self.config.discogs_max_results_per_search,
                     timeout=self.config.discogs_timeout
                 )
+                
+                logger.info(f"Discogs returned {len(matches)} matches for {artist} - {track}")
                 
                 for match in matches:
                     if match.confidence > best_confidence:
@@ -357,7 +597,7 @@ class DiscogsSearchPass(ParsingPass):
                     break
             
             if not best_match or best_confidence < self.config.discogs_confidence_threshold:
-                logger.debug(
+                logger.info(
                     f"No sufficient Discogs match found. "
                     f"Best confidence: {best_confidence:.2f}, "
                     f"threshold: {self.config.discogs_confidence_threshold}"
@@ -371,22 +611,29 @@ class DiscogsSearchPass(ParsingPass):
                 return None
             
             # Create parse result
+            discogs_metadata = {
+                "source": "discogs",
+                "discogs_release_id": best_match.release_id,
+                "discogs_master_id": best_match.master_id,
+                "year": best_match.year,
+                "release_year": best_match.year,  # Add both field names
+                "genres": best_match.genres,
+                "genre": best_match.genres[0] if best_match.genres else None,  # Use first genre as string
+                "styles": best_match.styles,
+                "label": best_match.label,
+                "country": best_match.country,
+                "format": best_match.format,
+                **best_match.metadata
+            }
+            
+            logger.info(f"Discogs metadata for {best_match.artist_name} - {best_match.song_title}: "
+                       f"year={best_match.year}, genres={best_match.genres}, confidence={best_confidence:.2f}")
+            
             result = ParseResult(
-                original_artist=best_match.artist_name,
+                artist=best_match.artist_name,
                 song_title=best_match.song_title,
                 confidence=best_confidence,
-                metadata={
-                    "source": "discogs",
-                    "discogs_release_id": best_match.release_id,
-                    "discogs_master_id": best_match.master_id,
-                    "year": best_match.year,
-                    "genres": best_match.genres,
-                    "styles": best_match.styles,
-                    "label": best_match.label,
-                    "country": best_match.country,
-                    "format": best_match.format,
-                    **best_match.metadata
-                }
+                metadata=discogs_metadata
             )
             
             self.stats["successful_matches"] += 1
@@ -430,7 +677,10 @@ class DiscogsSearchPass(ParsingPass):
             try:
                 parse_result = self.advanced_parser.parse_title(title)
                 if parse_result and parse_result.original_artist and parse_result.song_title:
-                    candidates.append((parse_result.original_artist, parse_result.song_title))
+                    # Normalize the parsed results
+                    normalized_artist = self._normalize_search_query(parse_result.original_artist)
+                    normalized_title = self._normalize_search_query(parse_result.song_title)
+                    candidates.append((normalized_artist, normalized_title))
             except Exception as e:
                 logger.debug(f"Advanced parser failed: {e}")
         
@@ -438,8 +688,10 @@ class DiscogsSearchPass(ParsingPass):
         patterns = [
             r'^(.+?)\s*-\s*(.+?)(?:\s*\(.*\))?$',  # Artist - Song (optional parentheses)
             r'^(.+?)\s*–\s*(.+?)(?:\s*\[.*\])?$',  # Artist – Song (em dash)
+            r'^(.+?)\s*—\s*(.+?)(?:\s*\[.*\])?$',  # Artist — Song (long dash)
             r'^(.+?)\s*:\s*(.+?)$',                # Artist : Song
             r'^(.+?)\s*\|\s*(.+?)$',               # Artist | Song
+            r'^(.+?)\s*/\s*(.+?)$',                # Artist / Song
         ]
         
         for pattern in patterns:
@@ -449,13 +701,29 @@ class DiscogsSearchPass(ParsingPass):
                 track = match.group(2).strip()
                 
                 # Clean up common karaoke suffixes
-                track = re.sub(r'\s*(karaoke|instrumental|backing track).*$', '', track, flags=re.IGNORECASE)
-                artist = re.sub(r'\s*(karaoke|instrumental|backing track).*$', '', artist, flags=re.IGNORECASE)
+                track = re.sub(r'\s*(karaoke|instrumental|backing track|official|video|audio|hd|4k|lyrics?).*$', '', track, flags=re.IGNORECASE)
+                artist = re.sub(r'\s*(karaoke|instrumental|backing track|official|video|audio|hd|4k).*$', '', artist, flags=re.IGNORECASE)
                 
+                # Handle "feat." or "ft." in artist name
+                if ' feat.' in artist.lower() or ' ft.' in artist.lower():
+                    # Try both with and without featured artist
+                    main_artist = re.split(r'\s+(?:feat\.|ft\.)', artist, flags=re.IGNORECASE)[0].strip()
+                    if main_artist and track and len(main_artist) > 1 and len(track) > 1:
+                        candidates.append((main_artist, track))
+                
+                # Also add the full artist name
                 if artist and track and len(artist) > 1 and len(track) > 1:
                     candidates.append((artist, track))
         
-        return candidates
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_candidates = []
+        for candidate in candidates:
+            if candidate not in seen:
+                seen.add(candidate)
+                unique_candidates.append(candidate)
+        
+        return unique_candidates
     
     def get_statistics(self) -> Dict:
         """Return pass statistics."""

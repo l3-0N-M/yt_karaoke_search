@@ -62,6 +62,17 @@ class MultiStrategySearchEngine:
         self.max_fallback_providers = getattr(search_config, "max_fallback_providers", 2)
         self.enable_parallel_search = getattr(search_config, "enable_parallel_search", False)
 
+        # Circuit breaker for provider health monitoring
+        self.provider_health = {}
+        self.circuit_breaker_config = {
+            "failure_threshold": 5,  # Number of consecutive failures before circuit opens
+            "recovery_timeout": 300,  # 5 minutes before trying again
+            "success_threshold": 2,  # Number of successes needed to close circuit
+        }
+        
+        # Initialize circuit breaker state for each provider
+        self._initialize_circuit_breakers()
+
         # Statistics and monitoring
         self.search_stats = {
             "total_searches": 0,
@@ -69,6 +80,7 @@ class MultiStrategySearchEngine:
             "fallback_used": 0,
             "provider_usage": {},
             "average_response_time": 0.0,
+            "circuit_breaker_activations": 0,
         }
 
     def _initialize_providers(self):
@@ -90,6 +102,79 @@ class MultiStrategySearchEngine:
         logger.info(
             f"Initialized {len(self.providers)} search providers: {list(self.providers.keys())}"
         )
+
+    def _initialize_circuit_breakers(self):
+        """Initialize circuit breaker state for all providers."""
+        for provider_name in self.providers.keys():
+            self.provider_health[provider_name] = {
+                "state": "closed",  # closed, open, half_open
+                "failure_count": 0,
+                "success_count": 0,
+                "last_failure_time": 0,
+                "last_success_time": time.time(),
+            }
+    
+    def _is_circuit_open(self, provider_name: str) -> bool:
+        """Check if circuit breaker is open for a provider."""
+        health = self.provider_health.get(provider_name)
+        if not health:
+            return False
+        
+        current_time = time.time()
+        
+        # If circuit is open, check if recovery timeout has passed
+        if health["state"] == "open":
+            if current_time - health["last_failure_time"] >= self.circuit_breaker_config["recovery_timeout"]:
+                # Transition to half-open state
+                health["state"] = "half_open"
+                health["success_count"] = 0
+                logger.info(f"Circuit breaker for {provider_name} transitioned to half-open")
+                return False
+            return True
+        
+        return False
+    
+    def _record_provider_success(self, provider_name: str):
+        """Record a successful provider operation."""
+        health = self.provider_health.get(provider_name)
+        if not health:
+            return
+        
+        health["failure_count"] = 0
+        health["success_count"] += 1
+        health["last_success_time"] = time.time()
+        
+        # If in half-open state, check if we can close the circuit
+        if health["state"] == "half_open":
+            if health["success_count"] >= self.circuit_breaker_config["success_threshold"]:
+                health["state"] = "closed"
+                health["success_count"] = 0
+                logger.info(f"Circuit breaker for {provider_name} closed after successful recovery")
+        elif health["state"] == "open":
+            # Direct transition from open to closed if we get a success
+            health["state"] = "closed"
+            logger.info(f"Circuit breaker for {provider_name} closed after unexpected success")
+    
+    def _record_provider_failure(self, provider_name: str):
+        """Record a failed provider operation."""
+        health = self.provider_health.get(provider_name)
+        if not health:
+            return
+        
+        health["failure_count"] += 1
+        health["success_count"] = 0
+        health["last_failure_time"] = time.time()
+        
+        # Check if we should open the circuit
+        if health["failure_count"] >= self.circuit_breaker_config["failure_threshold"]:
+            if health["state"] != "open":
+                health["state"] = "open"
+                self.search_stats["circuit_breaker_activations"] += 1
+                logger.warning(f"Circuit breaker opened for {provider_name} after {health['failure_count']} failures")
+        elif health["state"] == "half_open":
+            # Failed during half-open, go back to open
+            health["state"] = "open"
+            logger.warning(f"Circuit breaker for {provider_name} returned to open state after half-open failure")
 
     async def search_videos(
         self,
@@ -181,6 +266,11 @@ class MultiStrategySearchEngine:
         if provider_name not in self.providers:
             logger.warning(f"Provider '{provider_name}' not available")
             return []
+        
+        # Check circuit breaker state
+        if self._is_circuit_open(provider_name):
+            logger.info(f"Provider '{provider_name}' circuit breaker is open, skipping")
+            return []
 
         provider = self.providers[provider_name]
 
@@ -188,12 +278,24 @@ class MultiStrategySearchEngine:
             # Check if provider is available
             if not await provider.is_available():
                 logger.warning(f"Provider '{provider_name}' is currently unavailable")
+                self._record_provider_failure(provider_name)
                 return []
 
-            # Perform search
-            results = await provider.search_videos(query, max_results)
+            # Perform search with timeout to prevent long delays
+            timeout = 15.0  # 15 seconds max per provider
+            try:
+                results = await asyncio.wait_for(
+                    provider.search_videos(query, max_results), 
+                    timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Provider '{provider_name}' timed out after {timeout}s for query '{query}'")
+                self._record_provider_failure(provider_name)
+                return []
 
-            # Update usage statistics
+            # Record success and update usage statistics
+            self._record_provider_success(provider_name)
+            
             if provider_name not in self.search_stats["provider_usage"]:
                 self.search_stats["provider_usage"][provider_name] = 0
             self.search_stats["provider_usage"][provider_name] += 1
@@ -203,6 +305,7 @@ class MultiStrategySearchEngine:
 
         except Exception as e:
             logger.error(f"Search failed with provider '{provider_name}': {e}")
+            self._record_provider_failure(provider_name)
             return []
 
     async def _search_with_fallback_providers(
@@ -367,6 +470,18 @@ class MultiStrategySearchEngine:
             provider_stats = {}
             for name, provider in self.providers.items():
                 provider_stats[name] = provider.get_statistics()
+            
+            # Add circuit breaker statistics
+            circuit_breaker_stats = {}
+            for provider_name, health in self.provider_health.items():
+                circuit_breaker_stats[provider_name] = {
+                    "state": health["state"],
+                    "failure_count": health["failure_count"],
+                    "success_count": health["success_count"],
+                    "last_failure_time": health["last_failure_time"],
+                    "last_success_time": health["last_success_time"],
+                    "is_healthy": health["state"] == "closed",
+                }
 
             return {
                 "search_engine": self.search_stats,
@@ -374,6 +489,7 @@ class MultiStrategySearchEngine:
                 "ranking": ranker_stats,
                 "fuzzy_matching": fuzzy_stats,
                 "providers": provider_stats,
+                "circuit_breakers": circuit_breaker_stats,
             }
 
         except Exception as e:
