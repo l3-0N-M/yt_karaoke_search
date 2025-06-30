@@ -22,6 +22,63 @@ except ImportError:
     aiohttp = None
     HAS_AIOHTTP = False
 
+import functools
+
+
+def retry_on_rate_limit(max_retries=3):
+    """Decorator to retry on rate limit errors with exponential backoff."""
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(self, *args, **kwargs):
+            retry_count = 0
+            last_exception = None
+            
+            while retry_count <= max_retries:
+                try:
+                    return await func(self, *args, **kwargs)
+                except Exception as e:
+                    if HAS_AIOHTTP and aiohttp and hasattr(aiohttp, 'ClientResponseError') and isinstance(e, aiohttp.ClientResponseError):
+                        if e.status == 429:
+                            retry_count += 1
+                            if retry_count > max_retries:
+                                raise
+                            
+                            # Extract retry-after if available
+                            retry_after = None
+                            if e.headers:
+                                retry_after_str = e.headers.get('Retry-After')
+                                if retry_after_str:
+                                    try:
+                                        retry_after = int(retry_after_str)
+                                    except ValueError:
+                                        pass
+                            
+                            if hasattr(self, 'rate_limiter'):
+                                self.rate_limiter.handle_429_error(retry_after)
+                            
+                            # Wait for rate limiter before retrying
+                            if hasattr(self, 'rate_limiter'):
+                                await self.rate_limiter.wait_for_request()
+                            else:
+                                # Fallback exponential backoff
+                                wait_time = min(60, (2 ** (retry_count - 1)) * 1.0)
+                                await asyncio.sleep(wait_time)
+                            
+                            last_exception = e
+                            continue
+                        else:
+                            raise
+                    else:
+                        # Don't retry on other exceptions
+                        raise
+            
+            # If we exhausted retries, raise the last exception
+            if last_exception:
+                raise last_exception
+                
+        return wrapper
+    return decorator
+
 
 @dataclass
 class DiscogsMatch:
@@ -73,11 +130,22 @@ class DiscogsClient:
             r'\s*\[official.*?\]',
             r'\s*\(lyrics.*?\)',
             r'\s*\[lyrics.*?\]',
+            r'\s*\(sing.*?\)',
+            r'\s*\[sing.*?\]',
+            r'\s*\(cover.*?\)',
+            r'\s*\[cover.*?\]',
+            r'\s*\(remix.*?\)',
+            r'\s*\[remix.*?\]',
+            r'\s*\(version.*?\)',
+            r'\s*\[version.*?\]',
         ]
         
         normalized = text
         for pattern in suffixes_to_remove:
             normalized = re.sub(pattern, '', normalized, flags=re.IGNORECASE)
+        
+        # Remove multiple spaces
+        normalized = re.sub(r'\s+', ' ', normalized)
         
         return normalized.strip()
     
@@ -90,9 +158,21 @@ class DiscogsClient:
             variations.append(artist.replace('$', 'S'))
             variations.append(artist.replace('$', ''))
         
-        # Handle numbered disambiguations
+        # Handle numbered disambiguations (e.g., "The Click (2)" -> "The Click")
         if re.search(r'\s*\(\d+\)\s*$', artist):
             variations.append(re.sub(r'\s*\(\d+\)\s*$', '', artist))
+        
+        # Handle parenthetical content (e.g., "PLUTO (72)" -> "PLUTO")
+        if '(' in artist and ')' in artist:
+            base = re.sub(r'\s*\([^)]*\)', '', artist).strip()
+            if base and base != artist:
+                variations.append(base)
+        
+        # Handle & vs and
+        if '&' in artist:
+            variations.append(artist.replace('&', 'and'))
+        elif ' and ' in artist:
+            variations.append(artist.replace(' and ', ' & '))
         
         # Handle accented characters
         accent_map = {
@@ -126,6 +206,7 @@ class DiscogsClient:
         
         return unique_variations
     
+    @retry_on_rate_limit(max_retries=3)
     async def search_release(
         self, 
         artist: str, 
@@ -167,7 +248,19 @@ class DiscogsClient:
                         "type": "release"
                     })
         
+        # Initialize results list
         all_results = []
+        
+        # Tertiary strategy: Try searching without year restriction
+        # (useful for very new releases that might not be categorized yet)
+        if len(search_queries) < 6:  # Limit total queries
+            search_queries.append({
+                "query": f"{artist} {normalized_track}",
+                "type": "release"
+            })
+        
+        # Quaternary strategy: Removed artist-only search as it returns too many unrelated results
+        # This was causing issues like matching "ROSÉ - Messy" with soundtrack albums
         
         # Try each query until we get good results
         for query_params in search_queries:
@@ -197,8 +290,26 @@ class DiscogsClient:
                         f"{self.BASE_URL}/database/search",
                         params=query_params
                     ) as response:
+                        # Update rate limit info from headers
+                        if response.headers:
+                            remaining = response.headers.get('X-Discogs-Ratelimit-Remaining')
+                            reset_time = response.headers.get('X-Discogs-Ratelimit-Reset')
+                            if remaining:
+                                try:
+                                    self.rate_limiter.update_rate_limit_info(int(remaining), None)
+                                except ValueError:
+                                    pass
+                            if reset_time:
+                                try:
+                                    self.rate_limiter.update_rate_limit_info(None, int(reset_time))
+                                except ValueError:
+                                    pass
+                        
                         response.raise_for_status()
                         data = await response.json()
+                        
+                        # Record successful request
+                        self.rate_limiter.handle_success()
                         
                         results = []
                         for item in data.get("results", []):
@@ -217,12 +328,33 @@ class DiscogsClient:
                 timeout_occurred = True
                 self.logger.warning(f"Discogs search timeout for {query_params.get('artist')} - {query_params.get('track')}")
                 continue  # Try next query
-            except aiohttp.ClientError as e:
-                self.logger.warning(f"Discogs API error for query {query_params}: {e}")
-                continue  # Try next query
             except Exception as e:
-                self.logger.error(f"Unexpected Discogs API error: {e}")
-                continue  # Try next query
+                if HAS_AIOHTTP and aiohttp and hasattr(aiohttp, 'ClientResponseError') and isinstance(e, aiohttp.ClientResponseError):
+                    if e.status == 429:
+                        # Handle rate limiting
+                        retry_after = None
+                        if e.headers:
+                            retry_after_str = e.headers.get('Retry-After')
+                            if retry_after_str:
+                                try:
+                                    retry_after = int(retry_after_str)
+                                except ValueError:
+                                    retry_after = 60  # Default to 60 seconds
+                        
+                        self.rate_limiter.handle_429_error(retry_after)
+                        self.logger.warning(f"Discogs API rate limit hit (429) for {query_params}. Retry after: {retry_after}s")
+                        
+                        # Don't continue to next query, wait for backoff
+                        break
+                    else:
+                        self.logger.warning(f"Discogs API HTTP error {e.status} for query {query_params}: {e}")
+                        continue  # Try next query
+                elif HAS_AIOHTTP and aiohttp and hasattr(aiohttp, 'ClientError') and isinstance(e, aiohttp.ClientError):
+                    self.logger.warning(f"Discogs API error for query {query_params}: {e}")
+                    continue  # Try next query
+                else:
+                    self.logger.error(f"Unexpected error during Discogs search: {e}")
+                    continue  # Try next query
             finally:
                 # Record API call metrics
                 response_time = (time.time() - api_start_time) * 1000  # Convert to ms
@@ -236,11 +368,32 @@ class DiscogsClient:
         # Remove duplicates and sort by confidence
         seen_releases = set()
         unique_results = []
-        for result in sorted(all_results, key=lambda x: x.confidence, reverse=True):
+        
+        # First pass: Filter out low-quality matches
+        filtered_results = []
+        for result in all_results:
+            # Skip results with very low confidence
+            if result.confidence < 0.3:
+                continue
+                
+            # For popular artists like ROSÉ, be more selective
+            # Require higher confidence if we have many results
+            if len(all_results) > 10 and result.confidence < 0.5:
+                continue
+                
+            filtered_results.append(result)
+        
+        # Second pass: Remove duplicates and get best matches
+        for result in sorted(filtered_results, key=lambda x: x.confidence, reverse=True):
             release_key = (result.artist_name.lower(), result.song_title.lower())
             if release_key not in seen_releases:
                 seen_releases.add(release_key)
                 unique_results.append(result)
+                
+                # For high-match scenarios, stop early if we have good matches
+                if len(unique_results) >= 5 and result.confidence >= 0.8:
+                    break
+                    
                 if len(unique_results) >= max_results:
                     break
         
@@ -289,6 +442,15 @@ class DiscogsClient:
             if item.get("format"):
                 format_info = item["format"][0] if isinstance(item["format"], list) else item["format"]
             
+            # Early rejection: Check artist similarity before calculating full confidence
+            artist_similarity = self._text_similarity(query_artist.lower(), artist_name.lower(), is_artist=True)
+            if artist_similarity < 0.5:
+                logger.debug(
+                    f"Rejecting result due to low artist similarity: "
+                    f"'{query_artist}' vs '{artist_name}' (similarity: {artist_similarity:.2f})"
+                )
+                return None
+            
             # Calculate confidence based on match quality
             confidence = self._calculate_confidence(
                 item, artist_name, title, query_artist, query_track
@@ -328,57 +490,93 @@ class DiscogsClient:
     ) -> float:
         """Calculate confidence score for a Discogs match."""
         
-        confidence = 0.3  # Lowered base confidence for better coverage
+        confidence = 0.1  # Lower base confidence to require better matches
         
-        # Artist name similarity
-        artist_similarity = self._text_similarity(query_artist.lower(), result_artist.lower())
-        confidence += artist_similarity * 0.35  # Increased weight
+        # Artist name similarity with stricter matching
+        artist_similarity = self._text_similarity(query_artist.lower(), result_artist.lower(), is_artist=True)
+        # Penalize non-exact artist matches more heavily
+        if artist_similarity < 0.9:
+            artist_similarity *= 0.5  # Heavily reduce score for non-exact matches
+        if artist_similarity < 0.7:
+            artist_similarity *= 0.3  # Even more penalty for poor matches
+        confidence += artist_similarity * 0.4  # Increased weight for artist
         
         # Track title similarity  
         title_similarity = self._text_similarity(query_track.lower(), result_title.lower())
-        confidence += title_similarity * 0.35  # Increased weight
+        confidence += title_similarity * 0.35
         
-        # Bonus factors
-        if item.get("master_id"):
-            confidence += 0.05  # Reduced bonus
-        if item.get("year"):
-            year = item.get("year")
-            # Special handling for recent releases - they might not have much community data
-            if year and int(year) >= 2023:
-                confidence += 0.1  # Bonus for recent releases
-            else:
-                confidence += 0.05
-        if item.get("genre"):
-            confidence += 0.05
-        if item.get("style"):
-            confidence += 0.03
+        # Only apply bonuses if we have decent core matching
+        core_match_score = artist_similarity * 0.4 + title_similarity * 0.35
+        if core_match_score >= 0.3:  # Require minimum 30% from artist/title match
+            # Bonus factors (reduced when core matching is weak)
+            bonus_multiplier = min(1.0, core_match_score * 2)  # Scale bonuses based on core match
+            
+            if item.get("master_id"):
+                confidence += 0.05 * bonus_multiplier
+            if item.get("year"):
+                year = item.get("year")
+                # Special handling for recent releases - they might not have much community data
+                if year and int(year) >= 2024:
+                    confidence += 0.15 * bonus_multiplier  # Higher bonus for very recent releases
+                elif year and int(year) >= 2023:
+                    confidence += 0.1 * bonus_multiplier  # Bonus for recent releases
+                else:
+                    confidence += 0.05 * bonus_multiplier
+            if item.get("genre"):
+                confidence += 0.05 * bonus_multiplier
+            if item.get("style"):
+                confidence += 0.03 * bonus_multiplier
         
         # Community popularity (more owned = more reliable)
         # But don't penalize new releases too much
-        community = item.get("community", {})
-        have_count = community.get("have", 0)
-        year = item.get("year", 0)
-        
-        # Adjust expectations for recent releases
-        if year and int(year) >= 2023:
-            if have_count > 10:
-                confidence += 0.1
-            elif have_count > 0:
-                confidence += 0.05
-        else:
-            if have_count > 100:
-                confidence += 0.1
-            elif have_count > 10:
-                confidence += 0.05
+        if core_match_score >= 0.3:  # Only apply community bonuses with decent core match
+            community = item.get("community", {})
+            have_count = community.get("have", 0)
+            want_count = community.get("want", 0)
+            year = item.get("year", 0)
+            
+            # Adjust expectations for recent releases
+            if year and int(year) >= 2024:
+                # Very new releases - any community data is good
+                if have_count > 5 or want_count > 10:
+                    confidence += 0.15 * bonus_multiplier
+                elif have_count > 0 or want_count > 0:
+                    confidence += 0.1 * bonus_multiplier
+            elif year and int(year) >= 2023:
+                if have_count > 10:
+                    confidence += 0.1 * bonus_multiplier
+                elif have_count > 0:
+                    confidence += 0.05 * bonus_multiplier
+            else:
+                if have_count > 100:
+                    confidence += 0.1 * bonus_multiplier
+                elif have_count > 10:
+                    confidence += 0.05 * bonus_multiplier
         
         # Special boost for exact matches
         if artist_similarity >= 0.95 and title_similarity >= 0.95:
             confidence = min(confidence + 0.2, 1.0)
         
+        # Penalty for compilation albums or various artists
+        if result_artist.lower() in ['various', 'various artists', 'compilation']:
+            confidence *= 0.5
+        
+        # Penalty for results that look like karaoke versions
+        karaoke_indicators = ['karaoke', 'instrumental', 'backing track', 'sing along']
+        result_text = f"{result_artist} {result_title}".lower()
+        if any(indicator in result_text for indicator in karaoke_indicators):
+            confidence *= 0.7  # We want original recordings, not karaoke versions
+        
         return min(confidence, 1.0)
     
-    def _text_similarity(self, text1: str, text2: str) -> float:
-        """Enhanced text similarity using multiple strategies."""
+    def _text_similarity(self, text1: str, text2: str, is_artist: bool = False) -> float:
+        """Enhanced text similarity using multiple strategies.
+        
+        Args:
+            text1: First text to compare
+            text2: Second text to compare
+            is_artist: If True, use stricter matching suitable for artist names
+        """
         if not text1 or not text2:
             return 0.0
         
@@ -444,11 +642,41 @@ class DiscogsClient:
         # Edit distance is most reliable for similar strings
         # Token similarity helps with word reordering
         # Substring helps with partial matches
-        combined_similarity = (
-            edit_similarity * 0.5 +
-            token_similarity * 0.3 +
-            substring_similarity * 0.2
-        )
+        
+        if is_artist:
+            # For artist names, be much stricter
+            # Require all words from query to be present in result (or very similar)
+            query_words = set(text1_clean.split())
+            result_words = set(text2_clean.split())
+            
+            # Check if all query words are present (or very close)
+            words_found = 0
+            for q_word in query_words:
+                # Check for exact match or very close match
+                found = False
+                for r_word in result_words:
+                    word_sim = 1.0 - (levenshtein_distance(q_word, r_word) / max(len(q_word), len(r_word)))
+                    if word_sim >= 0.8:  # 80% similarity for individual words
+                        found = True
+                        break
+                if found:
+                    words_found += 1
+            
+            word_coverage = words_found / len(query_words) if query_words else 0
+            
+            # For artists, heavily weight exact/near-exact matches
+            combined_similarity = (
+                edit_similarity * 0.5 +      # Overall string similarity
+                word_coverage * 0.4 +         # All words must be present
+                token_similarity * 0.1        # Minor weight for token overlap
+            )
+        else:
+            # Original weights for non-artist text
+            combined_similarity = (
+                edit_similarity * 0.6 +
+                token_similarity * 0.25 +
+                substring_similarity * 0.15
+            )
         
         return min(combined_similarity, 1.0)
 
@@ -489,6 +717,10 @@ class DiscogsSearchPass(ParsingPass):
         if self.client:
             self.client.monitor = self.monitor
         
+        # Failed search cache to avoid repeated API calls for known failures
+        self._failed_cache = {}  # key: (artist, track) -> timestamp
+        self._cache_duration = 3600  # Cache failures for 1 hour
+        
         # Statistics
         self.stats = {
             "total_searches": 0,
@@ -496,6 +728,7 @@ class DiscogsSearchPass(ParsingPass):
             "api_errors": 0,
             "high_confidence_matches": 0,
             "fallback_activations": 0,
+            "cache_hits": 0,
         }
     
     @property
@@ -573,19 +806,60 @@ class DiscogsSearchPass(ParsingPass):
             
             best_match = None
             best_confidence = 0.0
+            rate_limited = False
             
             # Try each candidate
             for artist, track in title_candidates:
+                # Check cache first
+                cache_key = (artist.lower(), track.lower())
+                if cache_key in self._failed_cache:
+                    cache_time = self._failed_cache[cache_key]
+                    if time.time() - cache_time < self._cache_duration:
+                        logger.debug(f"Skipping cached failed search: {artist} - {track}")
+                        self.stats["cache_hits"] += 1
+                        continue
+                    else:
+                        # Cache expired, remove it
+                        del self._failed_cache[cache_key]
+                
                 logger.info(f"Searching Discogs for: {artist} - {track}")
                 
-                matches = await self.client.search_release(
-                    artist=artist,
-                    track=track,
-                    max_results=self.config.discogs_max_results_per_search,
-                    timeout=self.config.discogs_timeout
-                )
+                try:
+                    matches = await self.client.search_release(
+                        artist=artist,
+                        track=track,
+                        max_results=self.config.discogs_max_results_per_search,
+                        timeout=self.config.discogs_timeout
+                    )
+                except Exception as e:
+                    # Check if it was a rate limit error from the client
+                    if "rate limit" in str(e).lower() or "429" in str(e):
+                        rate_limited = True
+                        logger.warning(f"Rate limited during search for {artist} - {track}")
+                        break
+                    else:
+                        logger.error(f"Error searching Discogs: {e}")
+                        continue
                 
                 logger.info(f"Discogs returned {len(matches)} matches for {artist} - {track}")
+                
+                # Log match details for debugging
+                if matches:
+                    logger.debug("Top 3 matches:")
+                    for i, match in enumerate(matches[:3]):
+                        logger.debug(
+                            f"  {i+1}. {match.artist_name} - {match.song_title} "
+                            f"(confidence: {match.confidence:.2f}, year: {match.year})"
+                        )
+                
+                # Special handling for many matches (e.g., popular artists)
+                if len(matches) > 10:
+                    logger.info(f"Many matches found ({len(matches)}), applying stricter filtering")
+                    # Filter to only high-confidence matches
+                    high_conf_matches = [m for m in matches if m.confidence >= 0.6]
+                    if high_conf_matches:
+                        matches = high_conf_matches
+                        logger.info(f"Filtered to {len(matches)} high-confidence matches")
                 
                 for match in matches:
                     if match.confidence > best_confidence:
@@ -597,11 +871,24 @@ class DiscogsSearchPass(ParsingPass):
                     break
             
             if not best_match or best_confidence < self.config.discogs_confidence_threshold:
-                logger.info(
-                    f"No sufficient Discogs match found. "
-                    f"Best confidence: {best_confidence:.2f}, "
-                    f"threshold: {self.config.discogs_confidence_threshold}"
-                )
+                # Don't cache as failed if we were rate limited
+                if rate_limited:
+                    logger.info(
+                        f"Discogs search incomplete due to rate limiting. "
+                        f"Best confidence so far: {best_confidence:.2f}"
+                    )
+                else:
+                    logger.info(
+                        f"No sufficient Discogs match found. "
+                        f"Best confidence: {best_confidence:.2f}, "
+                        f"threshold: {self.config.discogs_confidence_threshold}"
+                    )
+                    
+                    # Cache failed searches to avoid repeated API calls
+                    for artist, track in title_candidates:
+                        cache_key = (artist.lower(), track.lower())
+                        self._failed_cache[cache_key] = time.time()
+                
                 # Record failed search
                 self.monitor.record_search_attempt(
                     success=False, 
