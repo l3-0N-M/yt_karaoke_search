@@ -1,6 +1,6 @@
 import sqlite3
 
-conn = sqlite3.connect('karaoke_videos.db')
+conn = sqlite3.connect("karaoke_videos.db")
 cursor = conn.cursor()
 
 # Get table schema

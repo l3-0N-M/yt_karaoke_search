@@ -69,7 +69,7 @@ class MultiStrategySearchEngine:
             "recovery_timeout": 300,  # 5 minutes before trying again
             "success_threshold": 2,  # Number of successes needed to close circuit
         }
-        
+
         # Initialize circuit breaker state for each provider
         self._initialize_circuit_breakers()
 
@@ -113,37 +113,40 @@ class MultiStrategySearchEngine:
                 "last_failure_time": 0,
                 "last_success_time": time.time(),
             }
-    
+
     def _is_circuit_open(self, provider_name: str) -> bool:
         """Check if circuit breaker is open for a provider."""
         health = self.provider_health.get(provider_name)
         if not health:
             return False
-        
+
         current_time = time.time()
-        
+
         # If circuit is open, check if recovery timeout has passed
         if health["state"] == "open":
-            if current_time - health["last_failure_time"] >= self.circuit_breaker_config["recovery_timeout"]:
+            if (
+                current_time - health["last_failure_time"]
+                >= self.circuit_breaker_config["recovery_timeout"]
+            ):
                 # Transition to half-open state
                 health["state"] = "half_open"
                 health["success_count"] = 0
                 logger.info(f"Circuit breaker for {provider_name} transitioned to half-open")
                 return False
             return True
-        
+
         return False
-    
+
     def _record_provider_success(self, provider_name: str):
         """Record a successful provider operation."""
         health = self.provider_health.get(provider_name)
         if not health:
             return
-        
+
         health["failure_count"] = 0
         health["success_count"] += 1
         health["last_success_time"] = time.time()
-        
+
         # If in half-open state, check if we can close the circuit
         if health["state"] == "half_open":
             if health["success_count"] >= self.circuit_breaker_config["success_threshold"]:
@@ -154,27 +157,31 @@ class MultiStrategySearchEngine:
             # Direct transition from open to closed if we get a success
             health["state"] = "closed"
             logger.info(f"Circuit breaker for {provider_name} closed after unexpected success")
-    
+
     def _record_provider_failure(self, provider_name: str):
         """Record a failed provider operation."""
         health = self.provider_health.get(provider_name)
         if not health:
             return
-        
+
         health["failure_count"] += 1
         health["success_count"] = 0
         health["last_failure_time"] = time.time()
-        
+
         # Check if we should open the circuit
         if health["failure_count"] >= self.circuit_breaker_config["failure_threshold"]:
             if health["state"] != "open":
                 health["state"] = "open"
                 self.search_stats["circuit_breaker_activations"] += 1
-                logger.warning(f"Circuit breaker opened for {provider_name} after {health['failure_count']} failures")
+                logger.warning(
+                    f"Circuit breaker opened for {provider_name} after {health['failure_count']} failures"
+                )
         elif health["state"] == "half_open":
             # Failed during half-open, go back to open
             health["state"] = "open"
-            logger.warning(f"Circuit breaker for {provider_name} returned to open state after half-open failure")
+            logger.warning(
+                f"Circuit breaker for {provider_name} returned to open state after half-open failure"
+            )
 
     async def search_videos(
         self,
@@ -252,7 +259,7 @@ class MultiStrategySearchEngine:
                         results.append(SearchResult(**result_dict))
                     elif isinstance(result_dict, SearchResult):
                         results.append(result_dict)
-                
+
                 # Log cache hit for debugging
                 logger.debug(f"Cache hit for query '{query}': {len(results)} results found")
                 return results
@@ -271,7 +278,7 @@ class MultiStrategySearchEngine:
         if provider_name not in self.providers:
             logger.warning(f"Provider '{provider_name}' not available")
             return []
-        
+
         # Check circuit breaker state
         if self._is_circuit_open(provider_name):
             logger.info(f"Provider '{provider_name}' circuit breaker is open, skipping")
@@ -290,17 +297,18 @@ class MultiStrategySearchEngine:
             timeout = 15.0  # 15 seconds max per provider
             try:
                 results = await asyncio.wait_for(
-                    provider.search_videos(query, max_results), 
-                    timeout=timeout
+                    provider.search_videos(query, max_results), timeout=timeout
                 )
             except asyncio.TimeoutError:
-                logger.warning(f"Provider '{provider_name}' timed out after {timeout}s for query '{query}'")
+                logger.warning(
+                    f"Provider '{provider_name}' timed out after {timeout}s for query '{query}'"
+                )
                 self._record_provider_failure(provider_name)
                 return []
 
             # Record success and update usage statistics
             self._record_provider_success(provider_name)
-            
+
             if provider_name not in self.search_stats["provider_usage"]:
                 self.search_stats["provider_usage"][provider_name] = 0
             self.search_stats["provider_usage"][provider_name] += 1
@@ -475,7 +483,7 @@ class MultiStrategySearchEngine:
             provider_stats = {}
             for name, provider in self.providers.items():
                 provider_stats[name] = provider.get_statistics()
-            
+
             # Add circuit breaker statistics
             circuit_breaker_stats = {}
             for provider_name, health in self.provider_health.items():
@@ -489,10 +497,12 @@ class MultiStrategySearchEngine:
                 }
 
             # Log important cache metrics
-            if cache_stats and 'overall' in cache_stats:
-                cache_hit_rate = cache_stats['overall'].get('hit_rate', 0)
-                logger.info(f"Cache performance: hit rate = {cache_hit_rate:.2%}, "
-                           f"total requests = {cache_stats['overall'].get('total_requests', 0)}")
+            if cache_stats and "overall" in cache_stats:
+                cache_hit_rate = cache_stats["overall"].get("hit_rate", 0)
+                logger.info(
+                    f"Cache performance: hit rate = {cache_hit_rate:.2%}, "
+                    f"total requests = {cache_stats['overall'].get('total_requests', 0)}"
+                )
 
             return {
                 "search_engine": self.search_stats,

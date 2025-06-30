@@ -64,7 +64,7 @@ class FillerWordProcessor:
                     "accompaniment",
                     "melody",
                     "노래방",  # Korean: karaoke
-                    "반주",    # Korean: accompaniment
+                    "반주",  # Korean: accompaniment
                 },
                 "quality_terms": {
                     "hd",
@@ -187,25 +187,26 @@ class FillerWordProcessor:
             except Exception as e:
                 logger.warning(f"Failed to convert query to string: {e}")
                 query = ""
-        
+
         # Handle potential unicode issues
         try:
             # Ensure the string is properly encoded/decoded
             if isinstance(query, bytes):
-                query = query.decode('utf-8', errors='ignore')
+                query = query.decode("utf-8", errors="ignore")
             # Normalize the string to handle different unicode representations
             import unicodedata
-            query = unicodedata.normalize('NFKC', query)
+
+            query = unicodedata.normalize("NFKC", query)
         except Exception as e:
             logger.warning(f"Unicode normalization failed for query: {e}")
             # Fallback to basic string conversion
             query = str(query) if query else ""
-        
+
         # Final validation - ensure we have a valid string
         if not query or not isinstance(query, str):
             logger.warning("Query validation failed, returning empty result")
             return QueryCleaningResult("", [], target_language)
-        
+
         original_query = query
         cleaned = query
         removed_terms = []
@@ -222,24 +223,26 @@ class FillerWordProcessor:
                 # Ensure cleaned is always a string before regex operations
                 if not isinstance(cleaned, str):
                     cleaned = str(cleaned) if cleaned is not None else ""
-                
+
                 # Ensure pattern is properly compiled
-                if not hasattr(pattern, 'findall'):
+                if not hasattr(pattern, "findall"):
                     logger.warning(f"Invalid pattern object for category {category}")
                     continue
-                
+
                 # Additional safety check for string content
                 if not isinstance(cleaned, str):
-                    logger.warning(f"Non-string value passed to regex for category {category}: {type(cleaned)}")
+                    logger.warning(
+                        f"Non-string value passed to regex for category {category}: {type(cleaned)}"
+                    )
                     cleaned = str(cleaned) if cleaned is not None else ""
-                
+
                 # Ensure the string is properly encoded
                 try:
-                    cleaned.encode('utf-8')
+                    cleaned.encode("utf-8")
                 except UnicodeEncodeError:
                     logger.warning(f"Unicode encoding issue in category {category}, normalizing")
-                    cleaned = cleaned.encode('utf-8', errors='ignore').decode('utf-8')
-                
+                    cleaned = cleaned.encode("utf-8", errors="ignore").decode("utf-8")
+
                 matches = pattern.findall(cleaned)
                 if matches:
                     removed_terms.extend(matches)
@@ -252,12 +255,20 @@ class FillerWordProcessor:
                         confidence_boost *= 1.1  # Medium boost for quality terms
                     else:
                         confidence_boost *= 1.05  # Small boost for other terms
-            except (TypeError, re.error, AttributeError, UnicodeDecodeError, UnicodeEncodeError) as e:
-                logger.warning(f"Regex operation failed for category {category} with query type {type(cleaned)} '{str(cleaned)[:50]}...': {e}")
+            except (
+                TypeError,
+                re.error,
+                AttributeError,
+                UnicodeDecodeError,
+                UnicodeEncodeError,
+            ) as e:
+                logger.warning(
+                    f"Regex operation failed for category {category} with query type {type(cleaned)} '{str(cleaned)[:50]}...': {e}"
+                )
                 # Try to recover by ensuring we have a clean string
                 try:
                     if cleaned is not None:
-                        cleaned = str(cleaned).encode('utf-8', errors='ignore').decode('utf-8')
+                        cleaned = str(cleaned).encode("utf-8", errors="ignore").decode("utf-8")
                     else:
                         cleaned = ""
                 except Exception:
@@ -288,14 +299,14 @@ class FillerWordProcessor:
         # Ensure query is a string and handle edge cases
         if not isinstance(query, str):
             query = str(query) if query is not None else ""
-        
+
         try:
             # Remove excessive punctuation with error handling
             query = re.sub(r"[^\w\s\-\'\"&]", " ", query)
         except (TypeError, re.error) as e:
             logger.warning(f"Punctuation removal failed: {e}")
             # Fallback to basic character filtering
-            query = ''.join(c if c.isalnum() or c.isspace() or c in '-\'"&' else ' ' for c in query)
+            query = "".join(c if c.isalnum() or c.isspace() or c in "-'\"&" else " " for c in query)
 
         try:
             # Remove large ID numbers (> 1001) that are likely video IDs
@@ -556,15 +567,17 @@ class EnhancedWebSearchPass(ParsingPass):
             if not title:
                 logger.debug("Web search pass: empty title provided")
                 return None
-            
+
             # Ensure all inputs are properly converted to strings
             title = self._safe_string_convert(title, "title")
             description = self._safe_string_convert(description, "description")
             tags = self._safe_string_convert(tags, "tags")
             channel_name = self._safe_string_convert(channel_name, "channel_name")
-            
+
             if not title or len(title.strip()) < 3:
-                logger.debug(f"Web search pass: title too short or invalid after conversion: '{title}'")
+                logger.debug(
+                    f"Web search pass: title too short or invalid after conversion: '{title}'"
+                )
                 return None
 
             # Step 1: Generate search queries from title
@@ -625,7 +638,7 @@ class EnhancedWebSearchPass(ParsingPass):
         title = self._safe_string_convert(title, "title")
         description = self._safe_string_convert(description, "description")
         tags = self._safe_string_convert(tags, "tags")
-        
+
         queries = []
 
         # Strategy 1: Clean the original title
@@ -701,18 +714,18 @@ class EnhancedWebSearchPass(ParsingPass):
 
         retry_delay = 1.0  # Start with 1 second delay
         search_timeout = 8.0  # Timeout for individual search to prevent >12s operations
-        
+
         for attempt in range(max_retries):
             try:
                 # Use the existing enhanced search engine with timeout
                 search_results = await asyncio.wait_for(
                     self.search_engine.search_videos(
-                        query, 
+                        query,
                         max_results=min(self.max_search_results, 15),  # Limit results for speed
-                        use_cache=True, 
-                        enable_fallback=False  # Disable fallback for speed
+                        use_cache=True,
+                        enable_fallback=False,  # Disable fallback for speed
                     ),
-                    timeout=search_timeout
+                    timeout=search_timeout,
                 )
 
                 # Convert SearchResult objects to dictionaries
@@ -734,7 +747,9 @@ class EnhancedWebSearchPass(ParsingPass):
                 return results
 
             except asyncio.TimeoutError:
-                logger.warning(f"Search attempt {attempt + 1} timed out after {search_timeout}s for '{query}'")
+                logger.warning(
+                    f"Search attempt {attempt + 1} timed out after {search_timeout}s for '{query}'"
+                )
                 if attempt < max_retries - 1:
                     search_timeout += 2.0  # Increase timeout for next attempt
                     continue
@@ -743,7 +758,9 @@ class EnhancedWebSearchPass(ParsingPass):
                     return []
             except Exception as e:
                 if attempt < max_retries - 1:
-                    logger.warning(f"Search attempt {attempt + 1} failed for '{query}': {e}. Retrying in {retry_delay}s...")
+                    logger.warning(
+                        f"Search attempt {attempt + 1} failed for '{query}': {e}. Retrying in {retry_delay}s..."
+                    )
                     await asyncio.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                 else:
@@ -896,52 +913,54 @@ class EnhancedWebSearchPass(ParsingPass):
         """Safely convert any value to a string with comprehensive error handling."""
         if value is None:
             return ""
-        
+
         # If already a string, normalize it
         if isinstance(value, str):
             try:
                 # Normalize unicode and handle mixed encodings
                 import unicodedata
-                normalized = unicodedata.normalize('NFKC', value)
+
+                normalized = unicodedata.normalize("NFKC", value)
                 # Ensure it's valid UTF-8
-                normalized.encode('utf-8')
+                normalized.encode("utf-8")
                 return normalized
             except (UnicodeError, UnicodeDecodeError, UnicodeEncodeError) as e:
                 logger.debug(f"Unicode normalization/encoding failed for {field_name}: {e}")
                 # Fallback to robust encoding
                 try:
-                    return value.encode('utf-8', errors='ignore').decode('utf-8')
+                    return value.encode("utf-8", errors="ignore").decode("utf-8")
                 except Exception:
                     return str(value)
             except Exception as e:
                 logger.debug(f"Unicode normalization failed for {field_name}: {e}")
                 return str(value)
-        
+
         # Handle bytes
         if isinstance(value, (bytes, bytearray)):
             try:
-                return value.decode('utf-8', errors='ignore')
+                return value.decode("utf-8", errors="ignore")
             except Exception:
-                return str(value, errors='ignore')
-        
+                return str(value, errors="ignore")
+
         # Handle complex data types
         if isinstance(value, (list, dict, tuple, set)):
             try:
                 import json
+
                 return json.dumps(value, ensure_ascii=False, default=str)
             except Exception:
                 return str(value)
-        
+
         # Handle other types
         try:
             converted = str(value)
             # Ensure the converted string is properly encoded
-            converted.encode('utf-8')
+            converted.encode("utf-8")
             return converted
         except UnicodeEncodeError:
             # Force UTF-8 encoding with error handling
             try:
-                return str(value).encode('utf-8', errors='ignore').decode('utf-8')
+                return str(value).encode("utf-8", errors="ignore").decode("utf-8")
             except Exception:
                 return ""
         except Exception as e:

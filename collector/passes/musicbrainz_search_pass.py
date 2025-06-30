@@ -14,9 +14,9 @@ from .base import ParsingPass, PassType
 logger = logging.getLogger(__name__)
 
 try:
-    import aiohttp
-    import json
     from urllib.parse import urlencode
+
+    import aiohttp
 
     HAS_AIOHTTP = True
 except ImportError:
@@ -63,107 +63,125 @@ class MusicBrainzSearchPass(ParsingPass):
             # Common stylistic variations
             "pink": ["p!nk", "pink"],
             "p!nk": ["pink", "p!nk"],
-            
             # Band name variations with "The" prefix
             "goo dolls": ["goo goo dolls", "the goo goo dolls"],
             "goo goo dolls": ["goo dolls", "the goo goo dolls"],
             "the goo goo dolls": ["goo dolls", "goo goo dolls"],
-            
             "kentucky headhunters": ["the kentucky headhunters"],
             "the kentucky headhunters": ["kentucky headhunters"],
-            
-            "dave matthews band": ["dave matthews", "dave matthews & friends", "dave matthews & tim reynolds"],
+            "dave matthews band": [
+                "dave matthews",
+                "dave matthews & friends",
+                "dave matthews & tim reynolds",
+            ],
             "dave matthews": ["dave matthews band", "dave matthews & friends"],
             "dave matthews & friends": ["dave matthews", "dave matthews band"],
-            
             # Common abbreviations and expansions
             "mary j blige": ["mary j. blige", "mary blige", "mary jane blige"],
             "mary j. blige": ["mary j blige", "mary blige", "mary jane blige"],
             "mary blige": ["mary j. blige", "mary j blige"],
-            
             # And/& variations
-            "tom petty heartbreakers": ["tom petty & the heartbreakers", "tom petty and the heartbreakers"],
-            "tom petty & the heartbreakers": ["tom petty heartbreakers", "tom petty and the heartbreakers"],
-            "tom petty and the heartbreakers": ["tom petty heartbreakers", "tom petty & the heartbreakers"],
-            
+            "tom petty heartbreakers": [
+                "tom petty & the heartbreakers",
+                "tom petty and the heartbreakers",
+            ],
+            "tom petty & the heartbreakers": [
+                "tom petty heartbreakers",
+                "tom petty and the heartbreakers",
+            ],
+            "tom petty and the heartbreakers": [
+                "tom petty heartbreakers",
+                "tom petty & the heartbreakers",
+            ],
             # The/& variations
-            "gladys knight pips": ["gladys knight & the pips", "gladys knight and the pips", "gladys knight the pips"],
-            "gladys knight & the pips": ["gladys knight pips", "gladys knight and the pips", "gladys knight the pips"],
-            "gladys knight and the pips": ["gladys knight pips", "gladys knight & the pips", "gladys knight the pips"],
-            "gladys knight the pips": ["gladys knight pips", "gladys knight & the pips", "gladys knight and the pips"],
-            
+            "gladys knight pips": [
+                "gladys knight & the pips",
+                "gladys knight and the pips",
+                "gladys knight the pips",
+            ],
+            "gladys knight & the pips": [
+                "gladys knight pips",
+                "gladys knight and the pips",
+                "gladys knight the pips",
+            ],
+            "gladys knight and the pips": [
+                "gladys knight pips",
+                "gladys knight & the pips",
+                "gladys knight the pips",
+            ],
+            "gladys knight the pips": [
+                "gladys knight pips",
+                "gladys knight & the pips",
+                "gladys knight and the pips",
+            ],
             # Common misspellings and truncations
-            "marvin gaye": ["marvin & tammi terrell gaye", "marvin and tammi gaye", "marvin tammi terrell gaye"],
+            "marvin gaye": [
+                "marvin & tammi terrell gaye",
+                "marvin and tammi gaye",
+                "marvin tammi terrell gaye",
+            ],
             "marvin & tammi terrell gaye": ["marvin gaye", "marvin and tammi gaye"],
             "marvin and tammi gaye": ["marvin gaye", "marvin & tammi terrell gaye"],
-            
             "brandy": ["brandy norwood"],
             "brandy norwood": ["brandy"],
-            
             "puddle of mudd": ["puddle"],
             "puddle": ["puddle of mudd"],
-            
-            # Country/Folk variations  
+            # Country/Folk variations
             "tracy lawrence": ["lawrence tracy"],
             "lawrence tracy": ["tracy lawrence"],
-            
             # Missing word issues from parsing
             "jackson browne load": ["jackson browne"],  # Parsing error creates bad query
             "jackson browne": ["jackson browne load"],
-            
             "pink don't let me get": ["pink"],  # Parsing error
             "shenandoah next to you me": ["shenandoah"],  # Parsing error
             "staind for you": ["staind"],  # Parsing error
             "marvelettes": ["the marvelettes"],
             "the marvelettes": ["marvelettes"],
-            
             # Specific artist variations from log analysis
-            "elvis costello": ["elvis costello & the attractions", "elvis costello & the imposters"],
+            "elvis costello": [
+                "elvis costello & the attractions",
+                "elvis costello & the imposters",
+            ],
             "elvis costello & the attractions": ["elvis costello"],
             "elvis costello & the imposters": ["elvis costello"],
-            
             "anne marie": ["anne-marie", "anne marie"],
             "anne-marie": ["anne marie", "anne marie"],
-            
             # Solo/group variants
             "christina perri": ["christina perri & steve kazee"],
             "christina perri & steve kazee": ["christina perri"],
-            
-            # Ed Sheeran variants  
+            # Ed Sheeran variants
             "ed sheeran": ["edward sheeran", "eddie sheeran"],
             "edward sheeran": ["ed sheeran"],
             "eddie sheeran": ["ed sheeran"],
-            
             # Amy Winehouse variants
             "amy winehouse": ["amy jade winehouse"],
             "amy jade winehouse": ["amy winehouse"],
-            
             # Kendrick Lamar variants
             "kendrick lamar": ["k. dot", "kendrick lamar duckworth"],
             "k. dot": ["kendrick lamar"],
             "kendrick lamar duckworth": ["kendrick lamar"],
-            
             # Crash Adams variants
             "crash adams": ["crash & adams"],
             "crash & adams": ["crash adams"],
-            
             # Common featuring variations
             "featuring": ["feat", "ft", "with"],
             "feat": ["featuring", "ft", "with"],
             "ft": ["featuring", "feat", "with"],
             "with": ["featuring", "feat", "ft"],
         }
-        
+
         # Create a normalized lookup for faster searching
         self._normalized_variants = {}
         for canonical, variants in self.artist_variants.items():
             canonical_norm = self._normalize_artist_name(canonical)
-            self._normalized_variants[canonical_norm] = [self._normalize_artist_name(v) for v in variants + [canonical]]
+            self._normalized_variants[canonical_norm] = [
+                self._normalize_artist_name(v) for v in variants + [canonical]
+            ]
 
         # Configuration
         self.max_search_results = 25
         self.min_confidence_threshold = 0.75  # Further increased to filter more bad matches
-        self.fuzzy_match_threshold = 0.85   # Further increased for stricter matching
+        self.fuzzy_match_threshold = 0.85  # Further increased for stricter matching
 
         # Statistics
         self.stats = {
@@ -175,7 +193,7 @@ class MusicBrainzSearchPass(ParsingPass):
             "title_mismatches_detected": 0,
             "title_mismatches_strong_penalty": 0,
         }
-        
+
         # Simple in-memory cache for search results (query -> results)
         self._search_cache = {}
         self._cache_max_size = 1000  # Limit cache size
@@ -207,15 +225,15 @@ class MusicBrainzSearchPass(ParsingPass):
         parsed_title = None
         if metadata and metadata.get("parsed_artist") and metadata.get("parsed_title"):
             # Use the cleaned, parsed version for better results
-            parsed_artist = metadata['parsed_artist']
-            parsed_title = metadata['parsed_title']
+            parsed_artist = metadata["parsed_artist"]
+            parsed_title = metadata["parsed_title"]
             title = f"{parsed_artist} - {parsed_title}"
             logger.debug(f"Using parsed title for MusicBrainz: {title}")
 
         try:
             # Step 1: Generate clean search queries
             search_queries = self._generate_search_queries(title)
-            
+
             # If we have parsed data, add a structured query at the beginning
             if parsed_artist and parsed_title:
                 structured_query = f'artist:"{parsed_artist}" AND recording:"{parsed_title}"'
@@ -276,7 +294,7 @@ class MusicBrainzSearchPass(ParsingPass):
 
         # Add spaces around dashes that don't have them (but preserve double dashes)
         # This helps with titles like "Artist-Song" → "Artist - Song"
-        spaced_query = re.sub(r'(?<=[a-zA-Z0-9])(?<!-)[-](?!-)(?=[a-zA-Z0-9])', ' - ', base_query)
+        spaced_query = re.sub(r"(?<=[a-zA-Z0-9])(?<!-)[-](?!-)(?=[a-zA-Z0-9])", " - ", base_query)
 
         # Strategy 1: Use spaced query first (more likely to be correct)
         if spaced_query != base_query:
@@ -311,7 +329,7 @@ class MusicBrainzSearchPass(ParsingPass):
             r"\b(?:karaoke|instrumental|backing|track|melody)\b", "", title, flags=re.IGNORECASE
         ).strip()
         # Also add spaces to minimal query
-        minimal_spaced = re.sub(r'(?<=[a-zA-Z0-9])(?<!-)[-](?!-)(?=[a-zA-Z0-9])', ' - ', minimal)
+        minimal_spaced = re.sub(r"(?<=[a-zA-Z0-9])(?<!-)[-](?!-)(?=[a-zA-Z0-9])", " - ", minimal)
         if minimal and minimal != base_query and len(minimal) > 3:
             queries.append(minimal)
             if minimal_spaced != minimal:
@@ -327,7 +345,9 @@ class MusicBrainzSearchPass(ParsingPass):
 
         return unique_queries[:5]  # Limit to avoid rate limiting
 
-    async def _search_musicbrainz(self, query: str, timeout: float = 10.0) -> List[MusicBrainzMatch]:
+    async def _search_musicbrainz(
+        self, query: str, timeout: float = 10.0
+    ) -> List[MusicBrainzMatch]:
         """Search MusicBrainz API with the given query using aiohttp."""
 
         # Check cache first
@@ -337,33 +357,26 @@ class MusicBrainzSearchPass(ParsingPass):
             return self._search_cache[query]
 
         search_start_time = time.time()
-        
+
         # Build MusicBrainz API URL
-        params = {
-            'query': query,
-            'limit': self.max_search_results,
-            'fmt': 'json'
-        }
+        params = {"query": query, "limit": self.max_search_results, "fmt": "json"}
         url = f"{self.mb_base_url}/recording?" + urlencode(params)
-        
-        headers = {
-            'User-Agent': self.user_agent,
-            'Accept': 'application/json'
-        }
-        
+
+        headers = {"User-Agent": self.user_agent, "Accept": "application/json"}
+
         # Enhanced retry logic for API rate limiting and server errors
         max_retries = 5  # Increased from 3 to 5
         base_delay = 2.0  # Start with 2 seconds
-        
+
         # Add request throttling to reduce server load
         await asyncio.sleep(self.rate_limit_delay)
-        
+
         result = None
         for attempt in range(max_retries):
             try:
                 # Create timeout configuration
                 timeout_config = aiohttp.ClientTimeout(total=timeout)
-                
+
                 async with aiohttp.ClientSession(timeout=timeout_config) as session:
                     async with session.get(url, headers=headers) as response:
                         if response.status == 200:
@@ -372,49 +385,73 @@ class MusicBrainzSearchPass(ParsingPass):
                         elif response.status == 503:  # Service Unavailable
                             if attempt < max_retries - 1:
                                 # Longer delays for 503 errors since server is overloaded
-                                retry_delay = base_delay * (3 ** attempt)  # More aggressive backoff
-                                logger.warning(f"MusicBrainz API returned 503 (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay}s...")
+                                retry_delay = base_delay * (3**attempt)  # More aggressive backoff
+                                logger.warning(
+                                    f"MusicBrainz API returned 503 (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay}s..."
+                                )
                                 await asyncio.sleep(retry_delay)
                                 continue
                             else:
-                                logger.error(f"MusicBrainz API returned 503 after {max_retries} attempts for query: {query}")
-                                self.stats["api_503_failures"] = self.stats.get("api_503_failures", 0) + 1
+                                logger.error(
+                                    f"MusicBrainz API returned 503 after {max_retries} attempts for query: {query}"
+                                )
+                                self.stats["api_503_failures"] = (
+                                    self.stats.get("api_503_failures", 0) + 1
+                                )
                                 return []
                         elif response.status == 429:  # Rate Limited
                             if attempt < max_retries - 1:
-                                retry_delay = base_delay * (4 ** attempt)  # Even longer delay for rate limits
-                                logger.warning(f"MusicBrainz API rate limited (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay}s...")
+                                retry_delay = base_delay * (
+                                    4**attempt
+                                )  # Even longer delay for rate limits
+                                logger.warning(
+                                    f"MusicBrainz API rate limited (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay}s..."
+                                )
                                 await asyncio.sleep(retry_delay)
                                 continue
                             else:
-                                logger.error(f"MusicBrainz API rate limited after {max_retries} attempts for query: {query}")
-                                self.stats["api_rate_limit_failures"] = self.stats.get("api_rate_limit_failures", 0) + 1
+                                logger.error(
+                                    f"MusicBrainz API rate limited after {max_retries} attempts for query: {query}"
+                                )
+                                self.stats["api_rate_limit_failures"] = (
+                                    self.stats.get("api_rate_limit_failures", 0) + 1
+                                )
                                 return []
                         else:
-                            logger.warning(f"MusicBrainz API returned status {response.status} for query: {query}")
+                            logger.warning(
+                                f"MusicBrainz API returned status {response.status} for query: {query}"
+                            )
                             return []
             except (asyncio.TimeoutError, aiohttp.ServerTimeoutError):
                 if attempt < max_retries - 1:
-                    retry_delay = base_delay * (2 ** attempt)
-                    logger.warning(f"MusicBrainz API timeout (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay}s...")
+                    retry_delay = base_delay * (2**attempt)
+                    logger.warning(
+                        f"MusicBrainz API timeout (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay}s..."
+                    )
                     await asyncio.sleep(retry_delay)
                     continue
                 else:
                     search_time = time.time() - search_start_time
-                    logger.warning(f"MusicBrainz API search timed out after {search_time:.2f}s for '{query}' (limit: {timeout}s)")
+                    logger.warning(
+                        f"MusicBrainz API search timed out after {search_time:.2f}s for '{query}' (limit: {timeout}s)"
+                    )
                     self.stats["api_timeouts"] = self.stats.get("api_timeouts", 0) + 1
                     return []
             except aiohttp.ClientError as e:
                 if attempt < max_retries - 1:
-                    retry_delay = base_delay * (2 ** attempt)
-                    logger.warning(f"MusicBrainz API connection error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {retry_delay}s...")
+                    retry_delay = base_delay * (2**attempt)
+                    logger.warning(
+                        f"MusicBrainz API connection error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {retry_delay}s..."
+                    )
                     await asyncio.sleep(retry_delay)
                     continue
                 else:
                     search_time = time.time() - search_start_time
-                    logger.warning(f"MusicBrainz API connection error for '{query}' after {search_time:.2f}s: {e}")
+                    logger.warning(
+                        f"MusicBrainz API connection error for '{query}' after {search_time:.2f}s: {e}"
+                    )
                     return []
-        
+
         # If we get here without a result, all retries failed
         if result is None:
             logger.error(f"All {max_retries} attempts failed for MusicBrainz query: {query}")
@@ -437,7 +474,7 @@ class MusicBrainzSearchPass(ParsingPass):
             # Handle artist-credit structure in JSON API
             artist_name = ""
             artist_id = ""
-            
+
             if isinstance(artist_credits, list) and len(artist_credits) > 0:
                 first_credit = artist_credits[0]
                 if isinstance(first_credit, dict):
@@ -456,7 +493,7 @@ class MusicBrainzSearchPass(ParsingPass):
             # Pre-filter obvious mismatches before detailed confidence calculation
             if not self._quick_artist_relevance_check(artist_name, query):
                 continue
-            
+
             # Calculate confidence based on MusicBrainz score and other factors
             confidence = self._calculate_confidence(score, title, artist_name, query)
 
@@ -480,7 +517,7 @@ class MusicBrainzSearchPass(ParsingPass):
 
         # Sort by confidence
         matches.sort(key=lambda m: m.confidence, reverse=True)
-        
+
         # Cache the results
         if len(self._search_cache) < self._cache_max_size:
             self._search_cache[query] = matches
@@ -489,7 +526,7 @@ class MusicBrainzSearchPass(ParsingPass):
             if self._search_cache:
                 self._search_cache.pop(next(iter(self._search_cache)))
             self._search_cache[query] = matches
-        
+
         return matches
 
     def _calculate_confidence(self, mb_score: int, title: str, artist: str, query: str) -> float:
@@ -558,68 +595,68 @@ class MusicBrainzSearchPass(ParsingPass):
         """Normalize artist name for variant matching."""
         if not artist_name:
             return ""
-        
+
         # Convert to lowercase and remove common punctuation/formatting
         normalized = artist_name.lower()
-        normalized = re.sub(r'[^\w\s]', '', normalized)  # Remove punctuation
-        normalized = re.sub(r'\s+', ' ', normalized).strip()  # Normalize whitespace
-        
+        normalized = re.sub(r"[^\w\s]", "", normalized)  # Remove punctuation
+        normalized = re.sub(r"\s+", " ", normalized).strip()  # Normalize whitespace
+
         # Remove common words that don't affect artist identity
-        common_words = ['the', 'and', '&', 'feat', 'featuring', 'ft']
+        common_words = ["the", "and", "&", "feat", "featuring", "ft"]
         words = normalized.split()
         words = [w for w in words if w not in common_words]
-        
-        return ' '.join(words)
+
+        return " ".join(words)
 
     def _quick_artist_relevance_check(self, artist_name: str, query: str) -> bool:
         """Quick pre-filter to skip obviously irrelevant artists before detailed analysis."""
         if not artist_name or not query:
             return False
-        
+
         # Normalize for comparison
         artist_lower = artist_name.lower()
         query_lower = query.lower()
-        
+
         # If artist name appears directly in query, it's relevant
         if artist_lower in query_lower:
             return True
-        
+
         # Check for known variants
         artist_normalized = self._normalize_artist_name(artist_name)
         if self._artist_appears_in_variants(artist_normalized, query_lower):
             return True
-        
+
         # Quick similarity check - if completely unrelated, skip
         from difflib import SequenceMatcher
-        
+
         # Extract potential artist from query (first part before separator)
         potential_artist = ""
         for separator in [" - ", " by ", " from ", ":", " | "]:
             if separator in query:
                 potential_artist = query.split(separator, 1)[0].strip()
                 break
-        
+
         if potential_artist:
             similarity = SequenceMatcher(None, artist_lower, potential_artist.lower()).ratio()
             # If similarity is very low, skip this artist entirely
             if similarity < 0.25:
                 return False
-        
+
         # Check if artist has common words with query
         artist_words = set(artist_lower.split())
         query_words = set(query_lower.split())
-        
+
         # Remove common stop words that don't indicate artist relevance
-        stop_words = {'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'a', 'an'}
+        stop_words = {"the", "and", "or", "of", "in", "on", "at", "to", "for", "a", "an"}
         artist_words -= stop_words
         query_words -= stop_words
-        
+
         # If no meaningful words overlap, likely irrelevant
         if len(artist_words & query_words) == 0 and len(artist_words) > 1:
             return False
-        
+
         return True
-    
+
     def _artist_appears_in_variants(self, normalized_artist: str, query_lower: str) -> bool:
         """Check if artist appears in query considering known variants."""
         # Check direct variants
@@ -635,78 +672,92 @@ class MusicBrainzSearchPass(ParsingPass):
         """Check if a query is worth sending to MusicBrainz."""
         if not query or len(query.strip()) < 3:
             return False
-        
+
         # Check for obvious parsing errors
         words = query.lower().split()
-        
+
         # Skip queries with too many noise words
-        noise_words = {'karaoke', 'lyrics', 'instrumental', 'backing', 'track', 'version', 'cover', 'live', 'audio', 'video', 'clip', 'music', 'song'}
+        noise_words = {
+            "karaoke",
+            "lyrics",
+            "instrumental",
+            "backing",
+            "track",
+            "version",
+            "cover",
+            "live",
+            "audio",
+            "video",
+            "clip",
+            "music",
+            "song",
+        }
         noise_count = sum(1 for word in words if word in noise_words)
         if noise_count > len(words) * 0.6:  # More than 60% noise
             return False
-        
+
         # Skip queries that look like parsing errors (too many short fragments)
         short_words = [w for w in words if len(w) <= 2]
         if len(short_words) > len(words) * 0.5:  # More than 50% very short words
             return False
-        
+
         # Skip queries with obvious Korean mixed with fragments
         has_korean = any(ord(char) >= 0xAC00 and ord(char) <= 0xD7AF for char in query)
         if has_korean and len(words) > 5:  # Korean with too many english fragments
             return False
-        
+
         # Skip queries that are just random fragments
-        fragment_indicators = ['load', 'outstay', 'don\'t let me get', 'next to you me', 'for you']
+        fragment_indicators = ["load", "outstay", "don't let me get", "next to you me", "for you"]
         for indicator in fragment_indicators:
             if indicator in query.lower():
                 return False
-        
+
         # Skip queries that are mostly single characters or very short words
         if len([w for w in words if len(w) >= 3]) < 2:  # Need at least 2 meaningful words
             return False
-        
+
         # Skip queries with suspicious patterns (likely parsing errors)
         suspicious_patterns = [
-            r'\b\w{1,2}\s+\w{1,2}\s+\w{1,2}\b',  # Three or more consecutive very short words
-            r'\b\d+\s+\w{1,2}\s+\w{1,2}\b',      # Number followed by short words
-            r'\bthe\s+\w{1,2}\s+\w{1,2}\b',      # "the" followed by short words
+            r"\b\w{1,2}\s+\w{1,2}\s+\w{1,2}\b",  # Three or more consecutive very short words
+            r"\b\d+\s+\w{1,2}\s+\w{1,2}\b",  # Number followed by short words
+            r"\bthe\s+\w{1,2}\s+\w{1,2}\b",  # "the" followed by short words
         ]
-        
+
         for pattern in suspicious_patterns:
             if re.search(pattern, query.lower()):
                 return False
-        
+
         return True
 
     def _are_artist_variants(self, artist1: str, artist2: str) -> bool:
         """Check if two normalized artist names are known variants of each other."""
         if not artist1 or not artist2:
             return False
-        
+
         # Check direct match
         if artist1 == artist2:
             return True
-        
+
         # Check in variants mapping
         for canonical_norm, variants in self._normalized_variants.items():
             if artist1 in variants and artist2 in variants:
                 return True
-        
+
         # Check common patterns that should be considered variants
         # Remove common words and check again
         def remove_common_words(name):
             words = name.split()
-            filtered = [w for w in words if w not in ['the', 'and', 'ft', 'feat', 'featuring']]
-            return ' '.join(filtered)
-        
+            filtered = [w for w in words if w not in ["the", "and", "ft", "feat", "featuring"]]
+            return " ".join(filtered)
+
         artist1_filtered = remove_common_words(artist1)
         artist2_filtered = remove_common_words(artist2)
-        
+
         # If one is a subset of the other after filtering common words
         if artist1_filtered and artist2_filtered:
             if artist1_filtered in artist2_filtered or artist2_filtered in artist1_filtered:
                 return True
-        
+
         return False
 
     def _check_title_artist_mismatch(self, query: str, mb_artist: str) -> float:
@@ -747,7 +798,7 @@ class MusicBrainzSearchPass(ParsingPass):
 
         # Normalize the MusicBrainz artist name
         mb_artist_normalized = self._normalize_artist_name(mb_artist)
-        
+
         # Check similarity between MB artist and each potential artist
         mb_artist_lower = mb_artist.lower()
         max_similarity = 0.0
@@ -763,11 +814,11 @@ class MusicBrainzSearchPass(ParsingPass):
 
             # Check for known artist variants first
             potential_normalized = self._normalize_artist_name(potential)
-            
+
             # Look for exact variant matches
             if self._are_artist_variants(mb_artist_normalized, potential_normalized):
                 return 0.0  # No penalty for known variants
-            
+
             # Regular similarity check
             similarity = SequenceMatcher(None, mb_artist_lower, potential_lower).ratio()
             max_similarity = max(max_similarity, similarity)
@@ -776,7 +827,7 @@ class MusicBrainzSearchPass(ParsingPass):
         if mb_artist_lower in query.lower():
             # Artist name appears in query, likely a good match
             return 0.0
-        
+
         # Calculate penalty based on similarity
         # Be much stricter to reduce false positives
         if max_similarity < 0.3:
@@ -824,7 +875,7 @@ class MusicBrainzSearchPass(ParsingPass):
 
         cache_hits = self.stats.get("cache_hits", 0)
         cache_hit_rate = cache_hits / max(total_searches, 1)
-        
+
         return {
             "total_searches": total_searches,
             "successful_matches": self.stats["successful_matches"],

@@ -165,57 +165,68 @@ class EnhancedChannelTemplatePass(ParsingPass):
     def _clean_title_for_matching(self, title: str) -> str:
         """Clean title by removing metadata brackets/parentheses while preserving artist names."""
         cleaned = title
-        
+
         # Remove karaoke/technical metadata in brackets/parentheses (but preserve Korean artist names)
         karaoke_patterns = [
-            r'\[ZZang KARAOKE\]',
-            r'\[짱가라오케/노래방\]',
-            r'\(Karaoke Version\)',
-            r'\(MR/Instrumental\)',
-            r'\(MR/\)',  # Handle incomplete MR pattern
-            r'\(\s*Version\)',  # Handle incomplete Version pattern
-            r'\(Melody\)',
-            r'\(Instrumental\)',
-            r'\(Karaoke\)',
-            r'\[Karaoke\]',
-            r'\[MR\]',
-            r'\[Instrumental\]',
-            r'\[Melody\]',
-            r'\bMelody\b',  # Remove standalone "Melody" word
-            r'\b노래방\b',  # Korean for karaoke
-            r'\b반주\b',    # Korean for accompaniment
+            r"\[ZZang KARAOKE\]",
+            r"\[짱가라오케/노래방\]",
+            r"\(Karaoke Version\)",
+            r"\(MR/Instrumental\)",
+            r"\(MR/\)",  # Handle incomplete MR pattern
+            r"\(\s*Version\)",  # Handle incomplete Version pattern
+            r"\(Melody\)",
+            r"\(Instrumental\)",
+            r"\(Karaoke\)",
+            r"\[Karaoke\]",
+            r"\[MR\]",
+            r"\[Instrumental\]",
+            r"\[Melody\]",
+            r"\bMelody\b",  # Remove standalone "Melody" word
+            r"\b노래방\b",  # Korean for karaoke
+            r"\b반주\b",  # Korean for accompaniment
         ]
-        
+
         # Remove specific karaoke metadata patterns
         for pattern in karaoke_patterns:
-            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
-        
+            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+
         # Remove only parentheses that contain obvious metadata (not Korean names)
         # Keep parentheses with Korean characters (Hangul) as they're likely artist names
         def should_keep_parentheses(match):
             content = match.group(1)
             # Keep if contains Korean characters (standardized range)
-            if re.search(r'[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]', content):
+            if re.search(r"[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]", content):
                 return match.group(0)
             # Keep if it looks like an artist name (letters, Korean characters, spaces, hyphens)
             # Added Unicode ranges for Korean characters: Hangul Syllables (AC00-D7AF), Hangul Jamo (1100-11FF), Hangul Compatibility Jamo (3130-318F)
-            if re.match(r'^[a-zA-Z\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF\s\-\(\)]+$', content) and len(content) < 50:
+            if (
+                re.match(r"^[a-zA-Z\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF\s\-\(\)]+$", content)
+                and len(content) < 50
+            ):
                 return match.group(0)
             # Remove if it looks like metadata
-            metadata_indicators = ['version', 'remix', 'edit', 'remaster', 'feat', 'ft', 'featuring']
+            metadata_indicators = [
+                "version",
+                "remix",
+                "edit",
+                "remaster",
+                "feat",
+                "ft",
+                "featuring",
+            ]
             if any(indicator in content.lower() for indicator in metadata_indicators):
-                return ''
+                return ""
             return match.group(0)
-        
+
         # Apply selective parentheses removal
-        cleaned = re.sub(r'\(([^)]+)\)', should_keep_parentheses, cleaned)
-        
+        cleaned = re.sub(r"\(([^)]+)\)", should_keep_parentheses, cleaned)
+
         # Add spaces around dashes that don't have them (but preserve double dashes)
         # This helps with titles like "Artist-Song" → "Artist - Song"
-        cleaned = re.sub(r'(?<=[a-zA-Z0-9])(?<!-)[-](?!-)(?=[a-zA-Z0-9])', ' - ', cleaned)
-        
+        cleaned = re.sub(r"(?<=[a-zA-Z0-9])(?<!-)[-](?!-)(?=[a-zA-Z0-9])", " - ", cleaned)
+
         # Clean up extra whitespace
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
         return cleaned
 
     def _enhanced_channel_detection(
@@ -298,7 +309,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
             if test_title != title:  # Only try this on cleaned title
                 try:
                     # Simple Artist - Title pattern (after cleaning brackets)
-                    match = re.search(r'^([^-–—]+)\s*[-–—]\s*(.+)$', test_title, re.IGNORECASE | re.UNICODE)
+                    match = re.search(
+                        r"^([^-–—]+)\s*[-–—]\s*(.+)$", test_title, re.IGNORECASE | re.UNICODE
+                    )
                     if match:
                         result = self.advanced_parser._create_result_from_match(
                             match,
@@ -306,7 +319,7 @@ class EnhancedChannelTemplatePass(ParsingPass):
                             2,
                             0.75,
                             "enhanced_channel_cleaned_dash",
-                            r'^([^-–—]+)\s*[-–—]\s*(.+)$',
+                            r"^([^-–—]+)\s*[-–—]\s*(.+)$",
                         )
                         if result and result.confidence > 0:
                             return result
@@ -489,7 +502,7 @@ class EnhancedChannelTemplatePass(ParsingPass):
         if not text:
             return False
         # Check for Hangul Syllables, Jamo, and Compatibility Jamo
-        return bool(re.search(r'[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]', text))
+        return bool(re.search(r"[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]", text))
 
     def _add_or_update_pattern(self, channel_id: str, pattern: str, example: str):
         """Add or update a channel pattern."""
