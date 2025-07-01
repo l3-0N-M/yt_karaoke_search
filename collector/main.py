@@ -19,6 +19,7 @@ except ImportError:
 from .config import CollectorConfig
 from .db_optimized import OptimizedDatabaseManager
 from .enhanced_search import MultiStrategySearchEngine
+from .multi_pass_controller import MultiPassParsingController
 from .processor import VideoProcessor
 from .search.providers.base import SearchResult
 
@@ -48,7 +49,6 @@ class KaraokeCollector:
         self.multi_pass_controller = None
         if config.search.multi_pass.enabled:
             from .advanced_parser import AdvancedTitleParser
-            from .multi_pass_controller import MultiPassParsingController
             from .passes.auto_retemplate_pass import AutoRetemplatePass
             from .passes.channel_template_pass import EnhancedChannelTemplatePass
             from .passes.discogs_search_pass import DiscogsSearchPass

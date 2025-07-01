@@ -213,7 +213,17 @@ class TestDiscogsSearchPass:
             with patch(
                 "collector.passes.discogs_search_pass.DiscogsClient", return_value=mock_client
             ):
-                pass_instance = DiscogsSearchPass(advanced_parser=Mock(), config={})
+                config = Mock()
+                config.data_sources = Mock()
+                config.data_sources.discogs_enabled = True
+                config.data_sources.discogs_user_agent = "Test/1.0"
+                config.data_sources.discogs_requests_per_minute = 60
+                config.data_sources.discogs_min_musicbrainz_confidence = 0.5
+                config.data_sources.discogs_use_as_fallback = True
+                config.data_sources.discogs_confidence_threshold = 0.5
+                config.data_sources.discogs_max_results_per_search = 10
+                config.data_sources.discogs_timeout = 10
+                pass_instance = DiscogsSearchPass(advanced_parser=Mock(), config=config)
                 pass_instance.client = mock_client
                 pass_instance.monitor = mock_monitor
                 return pass_instance

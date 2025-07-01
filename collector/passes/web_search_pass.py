@@ -205,7 +205,7 @@ class FillerWordProcessor:
         # Final validation - ensure we have a valid string
         if not query or not isinstance(query, str):
             logger.warning("Query validation failed, returning empty result")
-            return QueryCleaningResult("", [], target_language)
+            return QueryCleaningResult("", "", [], 1.0, target_language)
 
         original_query = query
         cleaned = query

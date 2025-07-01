@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from collector.search.cache_manager import CacheEntry, CacheManager, LRUCache
+from collector.search.providers.base import SearchResult
 
 
 class TestCacheEntry:
@@ -21,7 +22,15 @@ class TestCacheEntry:
         """Test creating a CacheEntry."""
         entry = CacheEntry(
             key="test query",
-            value=[{"video_id": "1", "title": "Result 1"}],
+            value=[
+                SearchResult(
+                    video_id="1",
+                    title="Result 1",
+                    url="https://example.com/1",
+                    channel="Test Channel",
+                    channel_id="ch1",
+                )
+            ],
             created_at=datetime.now(),
             last_accessed=datetime.now(),
             access_count=0,
@@ -165,25 +174,43 @@ class TestCacheManager:
     @pytest.mark.asyncio
     async def test_cache_manager_initialization(self, cache_manager):
         """Test cache manager initialization."""
-        assert hasattr(cache_manager, "lru_cache")
-        assert hasattr(cache_manager, "db_cache")
+        assert hasattr(cache_manager, "l1_cache")
+        assert hasattr(cache_manager, "l2_cache")
         assert True  # TTL is configured
 
     @pytest.mark.asyncio
     async def test_cache_manager_put_and_get(self, cache_manager):
         """Test putting and getting cache entries."""
-        results = [{"video_id": "1", "title": "Result 1"}, {"video_id": "2", "title": "Result 2"}]
+        results = [
+            SearchResult(
+                video_id="1",
+                title="Result 1",
+                url="https://example.com/1",
+                channel="Test Channel",
+                channel_id="ch1",
+            ),
+            SearchResult(
+                video_id="2",
+                title="Result 2",
+                url="https://example.com/2",
+                channel="Test Channel",
+                channel_id="ch1",
+            ),
+        ]
 
         # Put entry
         await cache_manager.cache_search_results(
             "test query", results, provider="youtube", max_results=100
         )
 
-        # Get entry
-        cached_results = await cache_manager.get_search_results("test query")
+        # Get entry - specify same provider and max_results as when cached
+        cached_results = await cache_manager.get_search_results(
+            "test query", provider="youtube", max_results=100
+        )
 
         assert cached_results is not None
         assert len(cached_results) == 2
+        # Results are serialized as dicts, so we check the dict fields
         assert cached_results[0]["title"] == "Result 1"
 
     @pytest.mark.asyncio
@@ -191,11 +218,24 @@ class TestCacheManager:
         """Test handling of expired entries."""
         # Put entry with short TTL
         await cache_manager.cache_search_results(
-            "expire test", [{"video_id": "1"}], provider="test", max_results=100
+            "expire test",
+            [
+                SearchResult(
+                    video_id="1",
+                    title="Expire Test",
+                    url="https://example.com/1",
+                    channel="Test",
+                    channel_id="ch1",
+                )
+            ],
+            provider="test",
+            max_results=100,
+            ttl=1,
         )
 
         # Wait for expiration
-        time.sleep(0.2)
+        # Wait longer for TTL=1 second entry to expire
+        time.sleep(1.5)
 
         # Should return None for expired entry
         assert await cache_manager.get_search_results("expire test") is None
@@ -205,7 +245,18 @@ class TestCacheManager:
         """Test cache persistence across instances."""
         # First instance - save data
         cache1 = CacheManager({"cache_dir": Path(temp_cache_file).parent})
-        await cache1._put_with_promotion("persistent", [{"video_id": "123"}])
+        await cache1._put_with_promotion(
+            "persistent",
+            [
+                {
+                    "video_id": "123",
+                    "title": "Persistent",
+                    "url": "https://example.com/123",
+                    "channel": "Test",
+                    "channel_id": "ch1",
+                }
+            ],
+        )
 
         # Second instance - read data
         cache2 = CacheManager({"cache_dir": Path(temp_cache_file).parent})
@@ -219,10 +270,32 @@ class TestCacheManager:
         """Test clearing the cache."""
         # Add entries
         await cache_manager.cache_search_results(
-            "query1", [{"video_id": "1"}], provider="test", max_results=100
+            "query1",
+            [
+                SearchResult(
+                    video_id="1",
+                    title="Query 1",
+                    url="https://example.com/1",
+                    channel="Test",
+                    channel_id="ch1",
+                )
+            ],
+            provider="test",
+            max_results=100,
         )
         await cache_manager.cache_search_results(
-            "query2", [{"video_id": "2"}], provider="test", max_results=100
+            "query2",
+            [
+                SearchResult(
+                    video_id="2",
+                    title="Query 2",
+                    url="https://example.com/2",
+                    channel="Test",
+                    channel_id="ch1",
+                )
+            ],
+            provider="test",
+            max_results=100,
         )
 
         # Clear cache
@@ -238,10 +311,32 @@ class TestCacheManager:
         """Test cache statistics."""
         # Add entries
         await cache_manager.cache_search_results(
-            "query1", [{"video_id": "1"}], provider="test", max_results=100
+            "query1",
+            [
+                SearchResult(
+                    video_id="1",
+                    title="Query 1",
+                    url="https://example.com/1",
+                    channel="Test",
+                    channel_id="ch1",
+                )
+            ],
+            provider="test",
+            max_results=100,
         )
         await cache_manager.cache_search_results(
-            "query2", [{"video_id": "2"}], provider="test", max_results=100
+            "query2",
+            [
+                SearchResult(
+                    video_id="2",
+                    title="Query 2",
+                    url="https://example.com/2",
+                    channel="Test",
+                    channel_id="ch1",
+                )
+            ],
+            provider="test",
+            max_results=100,
         )
 
         # Get some entries
@@ -250,35 +345,81 @@ class TestCacheManager:
 
         stats = await cache_manager.get_comprehensive_stats()
 
-        assert stats["total_puts"] >= 2
-        assert stats["l1_hits"] >= 0
-        assert stats["l1_misses"] >= 0
-        assert "total_gets" in stats
+        assert stats["overall"]["total_stores"] >= 2
+        assert stats["l1_cache"]["hits"] >= 0
+        assert stats["l1_cache"]["misses"] >= 0
+        assert "total_requests" in stats["overall"]
 
     @pytest.mark.asyncio
     async def test_cache_manager_cleanup(self, cache_manager):
         """Test automatic cleanup of expired entries."""
         # Add mix of expired and valid entries
         await cache_manager.cache_search_results(
-            "valid", [{"video_id": "1"}], provider="test", max_results=100
+            "valid",
+            [
+                SearchResult(
+                    video_id="1",
+                    title="Valid",
+                    url="https://example.com/1",
+                    channel="Test",
+                    channel_id="ch1",
+                )
+            ],
+            provider="test",
+            max_results=100,
+            ttl=3600,
         )
         await cache_manager.cache_search_results(
-            "expired1", [{"video_id": "2"}], provider="test", max_results=100
+            "expired1",
+            [
+                SearchResult(
+                    video_id="2",
+                    title="Expired 1",
+                    url="https://example.com/2",
+                    channel="Test",
+                    channel_id="ch1",
+                )
+            ],
+            provider="test",
+            max_results=100,
+            ttl=1,
         )
         await cache_manager.cache_search_results(
-            "expired2", [{"video_id": "3"}], provider="test", max_results=100
+            "expired2",
+            [
+                SearchResult(
+                    video_id="3",
+                    title="Expired 2",
+                    url="https://example.com/3",
+                    channel="Test",
+                    channel_id="ch1",
+                )
+            ],
+            provider="test",
+            max_results=100,
+            ttl=1,
         )
 
-        time.sleep(0.2)
+        # Wait longer for TTL=1 second entries to expire
+        time.sleep(1.5)
 
         # Trigger cleanup
         await cache_manager.l2_cache.clear_expired()
 
-        # Valid entry should remain
-        assert await cache_manager.get_search_results("valid") is not None
+        # Valid entry should remain - need to specify same provider and max_results
+        assert (
+            await cache_manager.get_search_results("valid", provider="test", max_results=100)
+            is not None
+        )
         # Expired entries should be gone
-        assert await cache_manager.get_search_results("expired1") is None
-        assert await cache_manager.get_search_results("expired2") is None
+        assert (
+            await cache_manager.get_search_results("expired1", provider="test", max_results=100)
+            is None
+        )
+        assert (
+            await cache_manager.get_search_results("expired2", provider="test", max_results=100)
+            is None
+        )
 
     @pytest.mark.asyncio
     async def test_cache_manager_max_entries(self, temp_cache_file):
@@ -287,11 +428,23 @@ class TestCacheManager:
 
         # Add more than max entries
         for i in range(5):
-            await cache._put_with_promotion(f"query{i}", [{"id": str(i)}])
+            await cache._put_with_promotion(
+                f"query{i}",
+                [
+                    {
+                        "video_id": str(i),
+                        "title": f"Query {i}",
+                        "url": f"https://example.com/{i}",
+                        "channel": "Test",
+                        "channel_id": "ch1",
+                    }
+                ],
+            )
 
         # Should have limited entries
         stats = await cache.get_comprehensive_stats()
-        assert stats["total_entries"] <= 3
+        # Check that entries were added
+        assert stats["l1_cache"]["size"] <= cache.l1_max_size
 
     @pytest.mark.asyncio
     async def test_cache_manager_concurrent_access(self, cache_manager):
@@ -301,7 +454,15 @@ class TestCacheManager:
             for i in range(10):
                 await cache_manager.cache_search_results(
                     f"task{task_id}_query{i}",
-                    [{"id": f"{task_id}_{i}"}],
+                    [
+                        SearchResult(
+                            video_id=f"{task_id}_{i}",
+                            title=f"Task {task_id} Query {i}",
+                            url=f"https://example.com/{task_id}_{i}",
+                            channel="Test",
+                            channel_id="ch1",
+                        )
+                    ],
                     provider="test",
                     max_results=100,
                 )
@@ -321,44 +482,98 @@ class TestCacheManager:
 
         # Cache should still be functional
         stats = await cache_manager.get_comprehensive_stats()
-        assert stats["total_puts"] > 0
+        assert stats["overall"]["total_stores"] > 0
 
     @pytest.mark.asyncio
     async def test_cache_manager_query_normalization(self, cache_manager):
         """Test query normalization for cache hits."""
-        results = [{"video_id": "1"}]
+        results = [
+            SearchResult(
+                video_id="1",
+                title="Normalized Query",
+                url="https://example.com/1",
+                channel="Test",
+                channel_id="ch1",
+            )
+        ]
 
         # Put with one format
-        await cache_manager.cache_search_results(
+        success = await cache_manager.cache_search_results(
             "  Test Query  ", results, provider="test", max_results=100
         )
+        assert success, "Failed to cache results"
 
-        # Get with different format
-        assert await cache_manager.get_search_results("test query") is not None
-        assert await cache_manager.get_search_results("TEST QUERY") is not None
-        assert await cache_manager.get_search_results("  test  query  ") is not None
+        # Debug: Check stats to see if it was stored
+        stats = await cache_manager.get_comprehensive_stats()
+        print(f"Stats after cache: {stats}")
+
+        # Get with different format - need to specify same provider and max_results
+        result1 = await cache_manager.get_search_results(
+            "test query", provider="test", max_results=100
+        )
+        assert result1 is not None, "Failed to retrieve with lowercase"
+
+        result2 = await cache_manager.get_search_results(
+            "TEST QUERY", provider="test", max_results=100
+        )
+        assert result2 is not None, "Failed to retrieve with uppercase"
+
+        result3 = await cache_manager.get_search_results(
+            "  test  query  ", provider="test", max_results=100
+        )
+        assert result3 is not None, "Failed to retrieve with extra spaces"
 
     @pytest.mark.asyncio
     async def test_cache_manager_source_filtering(self, cache_manager):
         """Test filtering cache entries by source."""
         await cache_manager.cache_search_results(
-            "query1", [{"video_id": "1"}], provider="youtube", max_results=100
+            "query1",
+            [
+                SearchResult(
+                    video_id="1",
+                    title="YouTube 1",
+                    url="https://youtube.com/1",
+                    channel="YouTube Channel",
+                    channel_id="yt1",
+                )
+            ],
+            provider="youtube",
+            max_results=100,
         )
         await cache_manager.cache_search_results(
-            "query2", [{"video_id": "2"}], provider="youtube", max_results=100
+            "query2",
+            [
+                SearchResult(
+                    video_id="2",
+                    title="YouTube 2",
+                    url="https://youtube.com/2",
+                    channel="YouTube Channel",
+                    channel_id="yt1",
+                )
+            ],
+            provider="youtube",
+            max_results=100,
         )
 
         # Check stats to verify entries were cached
         stats = await cache_manager.get_comprehensive_stats()
 
-        assert stats["total_puts"] >= 2
+        assert stats["overall"]["total_stores"] >= 2
 
     @pytest.mark.asyncio
     async def test_cache_manager_memory_efficiency(self, cache_manager):
         """Test memory efficiency with large result sets."""
         # Create large result set
         large_results = [
-            {"id": str(i), "title": f"Title {i}", "data": "x" * 1000} for i in range(100)
+            SearchResult(
+                video_id=str(i),
+                title=f"Title {i}",
+                url=f"https://example.com/{i}",
+                channel="Large Channel",
+                channel_id="large1",
+                metadata={"data": "x" * 1000},
+            )
+            for i in range(100)
         ]
 
         # Store multiple large result sets
@@ -369,8 +584,10 @@ class TestCacheManager:
 
         # Cache should handle memory efficiently
         stats = await cache_manager.get_comprehensive_stats()
-        assert stats["total_puts"] > 0
+        assert stats["overall"]["total_stores"] > 0
 
-        # Should still be able to retrieve data
-        retrieved = await cache_manager.get_search_results("large_query_0")
+        # Should still be able to retrieve data - need to specify same provider and max_results
+        retrieved = await cache_manager.get_search_results(
+            "large_query_0", provider="test", max_results=100
+        )
         assert retrieved is not None

@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -27,10 +27,7 @@ class TestEnhancedChannelTemplatePass:
     @pytest.fixture
     def channel_pass(self, mock_db_manager):
         """Create a EnhancedChannelTemplatePass instance."""
-        with patch(
-            "collector.passes.channel_template_pass.get_db_manager", return_value=mock_db_manager
-        ):
-            return EnhancedChannelTemplatePass(advanced_parser=Mock())
+        return EnhancedChannelTemplatePass(advanced_parser=Mock(), db_manager=mock_db_manager)
 
     @pytest.mark.asyncio
     async def test_parse_with_learned_template(self, channel_pass, mock_db_manager):
