@@ -893,6 +893,9 @@ class VideoProcessor:
         combined_text = f"{title} {description}"
         current_year = datetime.now().year
 
+        # Don't accept current year as it's likely the upload year
+        max_acceptable_year = current_year - 1
+
         # Year patterns (prioritized by reliability)
         year_patterns = [
             r"\((\d{4})\)",  # (1985) - most reliable
@@ -912,12 +915,13 @@ class VideoProcessor:
             for match in matches:
                 try:
                     year = int(match)
-                    # Validate reasonable year range (1900 to current year)
-                    if 1900 <= year <= current_year:
+                    # Validate reasonable year range (1900 to last year)
+                    # Reject current year as it's likely the upload year
+                    if 1900 <= year <= max_acceptable_year:
                         found_years.append(year)
-                    elif year > current_year:
-                        logger.warning(
-                            f"Rejected future year {year} (current year is {current_year})"
+                    elif year >= current_year:
+                        logger.debug(
+                            f"Rejected year {year} as it's current/future year (current year is {current_year})"
                         )
                 except ValueError:
                     continue

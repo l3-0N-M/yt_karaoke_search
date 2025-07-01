@@ -133,6 +133,20 @@ class OptimizedDatabaseManager:
                     parse_confidence REAL,
                     quality_score REAL,
                     engagement_ratio REAL, -- as percentage
+                    -- Discogs metadata
+                    discogs_artist_id TEXT,
+                    discogs_artist_name TEXT,
+                    discogs_release_id TEXT,
+                    discogs_release_title TEXT,
+                    discogs_release_year INTEGER,
+                    discogs_label TEXT,
+                    discogs_genre TEXT,
+                    discogs_style TEXT,
+                    discogs_checked BOOLEAN DEFAULT 0,
+                    -- MusicBrainz metadata
+                    musicbrainz_checked BOOLEAN DEFAULT 0,
+                    -- Web search metadata
+                    web_search_performed BOOLEAN DEFAULT 0,
                     -- Single timestamp
                     scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (channel_id) REFERENCES channels(channel_id)
@@ -309,14 +323,32 @@ class OptimizedDatabaseManager:
     def _add_missing_columns(self, conn: sqlite3.Connection):
         """Add missing columns to existing tables for backwards compatibility."""
         try:
-            # Check if genre column exists in videos table
+            # Check existing columns in videos table
             cursor = conn.cursor()
             cursor.execute("PRAGMA table_info(videos)")
             columns = [col[1] for col in cursor.fetchall()]
 
-            if "genre" not in columns:
-                conn.execute("ALTER TABLE videos ADD COLUMN genre TEXT")
-                logger.info("Added genre column to videos table")
+            # Add missing columns one by one
+            columns_to_add = [
+                ("genre", "TEXT"),
+                ("discogs_artist_id", "TEXT"),
+                ("discogs_artist_name", "TEXT"),
+                ("discogs_release_id", "TEXT"),
+                ("discogs_release_title", "TEXT"),
+                ("discogs_release_year", "INTEGER"),
+                ("discogs_label", "TEXT"),
+                ("discogs_genre", "TEXT"),
+                ("discogs_style", "TEXT"),
+                ("discogs_checked", "BOOLEAN DEFAULT 0"),
+                ("musicbrainz_checked", "BOOLEAN DEFAULT 0"),
+                ("web_search_performed", "BOOLEAN DEFAULT 0"),
+            ]
+
+            for col_name, col_type in columns_to_add:
+                if col_name not in columns:
+                    conn.execute(f"ALTER TABLE videos ADD COLUMN {col_name} {col_type}")
+                    logger.info(f"Added {col_name} column to videos table")
+
         except Exception as e:
             logger.warning(f"Failed to add missing columns: {e}")
 
@@ -350,14 +382,31 @@ class OptimizedDatabaseManager:
                 if quality_scores and quality_scores.get("overall_score") is not None:
                     quality_score = round(quality_scores["overall_score"], 2)
 
+                # Prefer Discogs year over parsed year if available
+                parsed_year = optimized_result.get("release_year")
+                discogs_year = optimized_result.get("discogs_release_year")
+
+                # Use Discogs year if available and valid, otherwise use parsed year
+                release_year = discogs_year if discogs_year and discogs_year > 1900 else parsed_year
+
+                # Additional validation - reject current/future years
+                current_year = datetime.now().year
+                if release_year and release_year >= current_year:
+                    logger.warning(
+                        f"Rejecting release year {release_year} for {optimized_result['video_id']} as it's current/future year"
+                    )
+                    release_year = None
+
+                # Update the result with the validated year
+                optimized_result["release_year"] = release_year
+
                 # Log what genre/year values we're about to save
-                release_year = optimized_result.get("release_year")
                 genre = optimized_result.get("genre")
                 video_id = optimized_result["video_id"]
 
                 if release_year or genre:
                     logger.info(
-                        f"Saving metadata for {video_id}: release_year={release_year}, genre={genre}"
+                        f"Saving metadata for {video_id}: release_year={release_year} (parsed={parsed_year}, discogs={discogs_year}), genre={genre}"
                     )
 
                 # Enhanced safe_convert function with string length limits and better validation
@@ -536,6 +585,18 @@ class OptimizedDatabaseManager:
                     safe_convert(parse_confidence),
                     safe_convert(quality_score),
                     safe_convert(engagement_ratio),
+                    # Discogs fields
+                    safe_convert(optimized_result.get("discogs_artist_id")),
+                    safe_convert(optimized_result.get("discogs_artist_name")),
+                    safe_convert(optimized_result.get("discogs_release_id")),
+                    safe_convert(optimized_result.get("discogs_release_title")),
+                    safe_convert(optimized_result.get("discogs_release_year")),
+                    safe_convert(optimized_result.get("discogs_label")),
+                    safe_convert(optimized_result.get("discogs_genre")),
+                    safe_convert(optimized_result.get("discogs_style")),
+                    safe_convert(optimized_result.get("discogs_checked", 0)),
+                    safe_convert(optimized_result.get("musicbrainz_checked", 0)),
+                    safe_convert(optimized_result.get("web_search_performed", 0)),
                     datetime.now(),
                 ]
 
@@ -550,20 +611,8 @@ class OptimizedDatabaseManager:
                     else:
                         param_info += ": None"
 
-                    # Log all parameters but focus on problematic ones
-                    if i == 14:  # Parameter 15 (featured_artists) - the problematic one
-                        logger.info(f"CRITICAL PARAM 15: {param_info}")
-                        # Deep type inspection for parameter 15
-                        logger.info(
-                            f"PARAM 15 DEEP ANALYSIS: type={type(param)}, repr={repr(param)[:100]}, len={len(str(param)) if param else 0}"
-                        )
-                        if hasattr(param, "__dict__"):
-                            logger.warning(f"PARAM 15 HAS __dict__: {param.__dict__}")
-                        if hasattr(param, "__class__"):
-                            logger.info(
-                                f"PARAM 15 CLASS: {param.__class__.__module__}.{param.__class__.__name__}"
-                            )
-                    elif not isinstance(param, (str, int, float, type(datetime.now()), type(None))):
+                    # Log parameters at debug level
+                    if not isinstance(param, (str, int, float, type(datetime.now()), type(None))):
                         logger.warning(f"UNEXPECTED TYPE: {param_info}")
                         # Deep analysis for any unexpected types
                         if hasattr(param, "__dict__"):
@@ -617,8 +666,12 @@ class OptimizedDatabaseManager:
                             view_count, like_count, comment_count, upload_date,
                             thumbnail_url, channel_name, channel_id,
                             artist, song_title, featured_artists, release_year, genre,
-                            parse_confidence, quality_score, engagement_ratio, scraped_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            parse_confidence, quality_score, engagement_ratio,
+                            discogs_artist_id, discogs_artist_name, discogs_release_id,
+                            discogs_release_title, discogs_release_year, discogs_label,
+                            discogs_genre, discogs_style, discogs_checked,
+                            musicbrainz_checked, web_search_performed, scraped_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         params,
                     )

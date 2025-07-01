@@ -206,13 +206,18 @@ class DiscogsRateLimiter:
     """
 
     def __init__(self, requests_per_minute: int = 60):
-        self.requests_per_minute = requests_per_minute
-        self.requests_per_second = requests_per_minute / 60.0
+        # Be more conservative - use 80% of the allowed rate
+        self.requests_per_minute = int(requests_per_minute * 0.8)
+        self.requests_per_second = self.requests_per_minute / 60.0
 
-        self.tokens = 5.0  # Initial burst tokens
-        self.max_tokens = 5.0  # Maximum burst tokens
+        self.tokens = 3.0  # Reduced initial burst tokens
+        self.max_tokens = 3.0  # Reduced maximum burst tokens
         self.last_update = time.time()
         self.lock = asyncio.Lock()
+
+        # Add minimum delay between requests
+        self.min_request_interval = 1.0  # At least 1 second between requests
+        self.last_request_time = 0
 
         # Exponential backoff state
         self.consecutive_429_errors = 0
@@ -257,6 +262,15 @@ class DiscogsRateLimiter:
             if self.tokens >= 1.0:
                 # We have tokens available
                 self.tokens -= 1.0
+
+                # Enforce minimum interval between requests
+                time_since_last = now - self.last_request_time
+                if time_since_last < self.min_request_interval:
+                    min_wait = self.min_request_interval - time_since_last
+                    self.logger.debug(f"Enforcing minimum interval, waiting {min_wait:.2f} seconds")
+                    await asyncio.sleep(min_wait)
+
+                self.last_request_time = time.time()
                 return
 
             # Need to wait for next token
