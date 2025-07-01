@@ -416,8 +416,8 @@ class CacheManager:
             normalized_kwargs = kwargs.copy()
             normalized_kwargs["query"] = normalized_query
 
-            # Also store the original for debugging
-            normalized_kwargs["_original_query"] = original_query
+            # Don't include original query in key to allow normalization to work
+            # normalized_kwargs["_original_query"] = original_query
 
             key_data = {
                 "namespace": namespace,

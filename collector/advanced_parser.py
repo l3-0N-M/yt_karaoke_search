@@ -209,8 +209,8 @@ class AdvancedTitleParser:
             # Fallback patterns
             (
                 r"^([^-–—]+?)\s*[-–—]\s*([^([\]]+)(?:\s*[\(\[][^)\]]*[Kk]araoke[^)\]]*[\)\]])?",
-                2,
                 1,
+                2,
                 0.6,
                 "basic_dash",
             ),

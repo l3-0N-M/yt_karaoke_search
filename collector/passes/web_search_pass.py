@@ -205,7 +205,7 @@ class FillerWordProcessor:
         # Final validation - ensure we have a valid string
         if not query or not isinstance(query, str):
             logger.warning("Query validation failed, returning empty result")
-            return QueryCleaningResult("", [], target_language)
+            return QueryCleaningResult("", "", [], 1.0, target_language)
 
         original_query = query
         cleaned = query
@@ -339,6 +339,9 @@ class FillerWordProcessor:
         query = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\b", " ", query)
 
         # Remove very short words (often acronyms or noise) but keep important short words
+        # Ensure query is a string before splitting
+        if not isinstance(query, str):
+            query = str(query) if query is not None else ""
         words = query.split()
         important_short_words = {
             "a",
@@ -359,16 +362,22 @@ class FillerWordProcessor:
             "go",
             "no",
         }
-        words = [word for word in words if len(word) >= 2 or word.lower() in important_short_words]
+        # Filter words with null safety
+        words = [
+            word
+            for word in words
+            if word and (len(word) >= 2 or word.lower() in important_short_words)
+        ]
 
         # Remove duplicate words while preserving order
         seen = set()
         unique_words = []
         for word in words:
-            word_lower = word.lower()
-            if word_lower not in seen:
-                seen.add(word_lower)
-                unique_words.append(word)
+            if word:  # Null safety check
+                word_lower = word.lower()
+                if word_lower not in seen:
+                    seen.add(word_lower)
+                    unique_words.append(word)
 
         # Final cleanup - remove excessive whitespace
         cleaned = " ".join(unique_words)
@@ -387,6 +396,9 @@ class SERPCache:
 
     def _get_query_hash(self, query: str) -> str:
         """Generate hash for query caching."""
+        # Ensure query is not None before hashing
+        if not query:
+            query = ""
         return hashlib.md5(query.lower().encode("utf-8")).hexdigest()
 
     def get(self, query: str) -> Optional[List[Dict]]:
