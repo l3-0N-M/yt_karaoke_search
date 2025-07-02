@@ -92,7 +92,6 @@ class TestMultiPassParsingController:
         config.channel_template = pass_config
         config.musicbrainz_search = pass_config
         config.discogs_search = pass_config
-        config.web_search = pass_config
         config.musicbrainz_validation = pass_config
         config.ml_embedding = pass_config
         config.auto_retemplate = pass_config

@@ -17,13 +17,9 @@ try:
 except ImportError:
     HAS_FUZZY_MATCHER = False
 
-try:
-    from .passes.web_search_pass import FillerWordProcessor
-
-    HAS_FILLER_PROCESSOR = True
-except ImportError:
-    FillerWordProcessor = None  # type: ignore
-    HAS_FILLER_PROCESSOR = False
+# FillerWordProcessor was removed with web search pass
+FillerWordProcessor = None  # type: ignore
+HAS_FILLER_PROCESSOR = False
 
 logger = logging.getLogger(__name__)
 

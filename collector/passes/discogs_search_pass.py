@@ -347,6 +347,9 @@ class DiscogsClient:
             timeout_occurred = False
 
             try:
+                if not HAS_AIOHTTP or not aiohttp:
+                    raise RuntimeError("aiohttp is required for Discogs API calls")
+
                 async with aiohttp.ClientSession(
                     headers=self.headers, timeout=aiohttp.ClientTimeout(total=timeout)
                 ) as session:
@@ -888,25 +891,35 @@ class DiscogsSearchPass(ParsingPass):
 
         try:
             # In enrichment mode, prefer existing parsed data for search candidates
-            if is_enrichment and metadata.get("musicbrainz_result"):
+            if is_enrichment and metadata and metadata.get("musicbrainz_result"):
                 mb_result = metadata["musicbrainz_result"]
-                if mb_result.artist and mb_result.song_title:
+                if (
+                    hasattr(mb_result, "artist")
+                    and hasattr(mb_result, "song_title")
+                    and mb_result.artist
+                    and mb_result.song_title
+                ):
                     title_candidates = [(mb_result.artist, mb_result.song_title)]
                     logger.info(
                         f"Using MusicBrainz data for Discogs search: {mb_result.artist} - {mb_result.song_title}"
                     )
                 else:
                     title_candidates = self._extract_search_candidates(title)
-            elif metadata.get("parsed_artist") and metadata.get("parsed_title"):
+            elif metadata and metadata.get("parsed_artist") and metadata.get("parsed_title"):
                 # Use parsed artist/title from Channel Template for more accurate searches
                 title_candidates = [(metadata["parsed_artist"], metadata["parsed_title"])]
                 logger.info(
                     f"Using parsed data for Discogs search: {metadata['parsed_artist']} - {metadata['parsed_title']}"
                 )
-            elif metadata.get("channel_template_result"):
+            elif metadata and metadata.get("channel_template_result"):
                 # Fallback to Channel Template result
                 ct_result = metadata["channel_template_result"]
-                if ct_result.artist and ct_result.song_title:
+                if (
+                    hasattr(ct_result, "artist")
+                    and hasattr(ct_result, "song_title")
+                    and ct_result.artist
+                    and ct_result.song_title
+                ):
                     title_candidates = [(ct_result.artist, ct_result.song_title)]
                     logger.info(
                         f"Using Channel Template data for Discogs search: {ct_result.artist} - {ct_result.song_title}"
@@ -1083,8 +1096,17 @@ class DiscogsSearchPass(ParsingPass):
                 parse_result = self.advanced_parser.parse_title(title)
                 if parse_result and parse_result.original_artist and parse_result.song_title:
                     # Normalize the parsed results
-                    normalized_artist = self._normalize_search_query(parse_result.original_artist)
-                    normalized_title = self._normalize_search_query(parse_result.song_title)
+                    if self.client:
+                        normalized_artist = self.client._normalize_search_query(
+                            parse_result.original_artist
+                        )
+                        normalized_title = self.client._normalize_search_query(
+                            parse_result.song_title
+                        )
+                    else:
+                        # Fallback to simple normalization if client not available
+                        normalized_artist = parse_result.original_artist.strip()
+                        normalized_title = parse_result.song_title.strip()
                     candidates.append((normalized_artist, normalized_title))
             except Exception as e:
                 logger.debug(f"Advanced parser failed: {e}")

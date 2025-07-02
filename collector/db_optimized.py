@@ -37,7 +37,12 @@ def retry_on_database_error(max_retries=3, delay=0.1):
                         logger.error(
                             f"Database error in {func.__name__} after {max_retries} attempts: {e}"
                         )
-            raise last_exception
+            if last_exception:
+                raise last_exception
+            else:
+                raise RuntimeError(
+                    f"Failed after {max_retries} attempts without capturing exception"
+                )
 
         return wrapper
 
@@ -389,12 +394,38 @@ class OptimizedDatabaseManager:
                 parsed_year = optimized_result.get("release_year")
                 discogs_year = optimized_result.get("discogs_release_year")
 
+                # Convert discogs_year to int if it's a string
+                if discogs_year and isinstance(discogs_year, str):
+                    try:
+                        discogs_year = int(discogs_year)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Could not convert discogs_year to int: {discogs_year}")
+                        discogs_year = None
+
                 # Use Discogs year if available and valid, otherwise use parsed year
-                release_year = discogs_year if discogs_year and discogs_year > 1900 else parsed_year
+                release_year = (
+                    discogs_year
+                    if discogs_year
+                    and isinstance(discogs_year, (int, float))
+                    and discogs_year > 1900
+                    else parsed_year
+                )
+
+                # Convert to int if it's a string
+                if release_year and isinstance(release_year, str):
+                    try:
+                        release_year = int(release_year)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Could not convert release_year to int: {release_year}")
+                        release_year = None
 
                 # Additional validation - reject current/future years
                 current_year = datetime.now().year
-                if release_year and release_year >= current_year:
+                if (
+                    release_year
+                    and isinstance(release_year, (int, float))
+                    and release_year >= current_year
+                ):
                     logger.warning(
                         f"Rejecting release year {release_year} for {optimized_result['video_id']} as it's current/future year"
                     )
@@ -410,6 +441,26 @@ class OptimizedDatabaseManager:
                 if release_year or genre:
                     logger.info(
                         f"Saving metadata for {video_id}: release_year={release_year} (parsed={parsed_year}, discogs={discogs_year}), genre={genre}"
+                    )
+
+                # Set API check flags based on metadata sources
+                metadata = optimized_result.get("metadata", {})
+                metadata_sources = metadata.get("metadata_sources", [])
+
+                # Check if Discogs was used
+                if "discogs" in metadata_sources or metadata.get("source") == "discogs":
+                    optimized_result["discogs_checked"] = 1
+                    logger.info(f"Setting discogs_checked=1 for {video_id}")
+                else:
+                    optimized_result["discogs_checked"] = optimized_result.get("discogs_checked", 0)
+
+                # Check if MusicBrainz was used
+                if "musicbrainz" in metadata_sources or metadata.get("source") == "musicbrainz":
+                    optimized_result["musicbrainz_checked"] = 1
+                    logger.info(f"Setting musicbrainz_checked=1 for {video_id}")
+                else:
+                    optimized_result["musicbrainz_checked"] = optimized_result.get(
+                        "musicbrainz_checked", 0
                     )
 
                 # Enhanced safe_convert function with string length limits and better validation
@@ -653,6 +704,7 @@ class OptimizedDatabaseManager:
 
                     # Test the cleaned parameter
                     try:
+                        test_cursor = conn.cursor()
                         test_cursor.execute("SELECT ?", (params[14],))
                         logger.info("Parameter 15 post-cleaning test: PASSED")
                     except Exception as still_failing:
@@ -734,18 +786,16 @@ class OptimizedDatabaseManager:
 
                 if optimized_result.get("discogs_release_id"):
                     try:
-                        discogs_success = self._save_discogs_data(conn, optimized_result)
+                        self._save_discogs_data(conn, optimized_result)
                         # Record database save if we have access to monitor
-                        if hasattr(self, "_discogs_monitor") and self._discogs_monitor:
-                            self._discogs_monitor.record_database_save(discogs_success)
+                        # Note: _discogs_monitor attribute would need to be added to __init__ if Discogs monitoring is required
                     except Exception as discogs_error:
                         logger.error(
                             f"Discogs data save failed for video {optimized_result['video_id']}: {discogs_error}"
                         )
                         logger.warning("Continuing with main video save despite Discogs failure")
                         # Record the failure if we have access to monitor
-                        if hasattr(self, "_discogs_monitor") and self._discogs_monitor:
-                            self._discogs_monitor.record_database_save(False)
+                        # Note: _discogs_monitor attribute would need to be added to __init__ if Discogs monitoring is required
 
                 conn.commit()
                 return True

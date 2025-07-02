@@ -38,19 +38,19 @@ class TestMusicBrainzValidationPass:
             return MusicBrainzValidationPass(advanced_parser, db_manager)
 
     @pytest.mark.asyncio
-    async def test_parse_without_web_search_result(self, validation_pass):
-        """Test parsing without web search result returns None."""
+    async def test_parse_without_parse_result(self, validation_pass):
+        """Test parsing without parse result returns None."""
         result = await validation_pass.parse(title="Test Song", metadata={})
 
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_parse_with_web_search_result(self, validation_pass):
-        """Test parsing with web search result."""
-        web_result = ParseResult(artist="Test Artist", song_title="Test Song", confidence=0.7)
+    async def test_parse_with_parse_result(self, validation_pass):
+        """Test parsing with parse result."""
+        parse_result = ParseResult(artist="Test Artist", song_title="Test Song", confidence=0.7)
 
         result = await validation_pass.parse(
-            title="Test Artist - Test Song", metadata={"web_search_result": web_result}
+            title="Test Artist - Test Song", metadata={"parse_result": parse_result}
         )
 
         assert result is not None
@@ -270,8 +270,6 @@ class TestMusicBrainzValidationPass:
         with patch("collector.passes.musicbrainz_validation_pass.HAS_MUSICBRAINZ", False):
             validation_pass = MusicBrainzValidationPass(Mock(), Mock())
 
-            result = await validation_pass.parse(
-                title="Test", metadata={"web_search_result": Mock()}
-            )
+            result = await validation_pass.parse(title="Test", metadata={"parse_result": Mock()})
 
             assert result is None

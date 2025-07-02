@@ -6,7 +6,6 @@ from .discogs_search_pass import DiscogsSearchPass
 from .ml_embedding_pass import EnhancedMLEmbeddingPass
 from .musicbrainz_search_pass import MusicBrainzSearchPass
 from .musicbrainz_validation_pass import MusicBrainzValidationPass
-from .web_search_pass import EnhancedWebSearchPass
 
 __all__ = [
     "EnhancedChannelTemplatePass",
@@ -15,5 +14,4 @@ __all__ = [
     "EnhancedMLEmbeddingPass",
     "MusicBrainzSearchPass",
     "MusicBrainzValidationPass",
-    "EnhancedWebSearchPass",
 ]

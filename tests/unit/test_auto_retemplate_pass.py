@@ -189,7 +189,7 @@ class TestAutoRetemplatePass:
     def test_should_analyze_patterns(self, retemplate_pass):
         """Test pattern analysis trigger logic."""
         trend = retemplate_pass._get_or_create_trend("UC123", "Test Channel")
-        
+
         # Set last_analysis to more than 1 hour ago
         trend.last_analysis = datetime.now() - timedelta(hours=2)
 
@@ -319,7 +319,7 @@ class TestAutoRetemplatePass:
 
         # The method should have found a match with the recent pattern
         assert result is not None
-        
+
         # The original list order is not modified, but the method internally sorts by recency
         # Let's verify the sorting logic by checking which pattern would match
         sorted_patterns = sorted(

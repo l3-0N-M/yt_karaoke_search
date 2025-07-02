@@ -152,14 +152,6 @@ class MultiPassConfig:
             api_budget_limit=5,
         )
     )
-    web_search: MultiPassPassConfig = field(
-        default_factory=lambda: MultiPassPassConfig(
-            confidence_threshold=0.7,
-            timeout_seconds=120.0,
-            cpu_budget_limit=15.0,
-            api_budget_limit=20,
-        )
-    )
     musicbrainz_validation: MultiPassPassConfig = field(
         default_factory=lambda: MultiPassPassConfig(
             confidence_threshold=0.8,

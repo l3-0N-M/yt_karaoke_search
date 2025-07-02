@@ -1,7 +1,7 @@
 """Data transformation utilities for schema compatibility."""
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,11 @@ class DataTransformer:
                     transformed["genre"] = genre_value
                     logger.info(f"DataTransformer found genre: {genre_value}")
 
+            # Also populate discogs-specific fields for tracking
+            if parse_metadata.get("source") == "discogs":
+                transformed["discogs_genre"] = transformed.get("genre")
+                transformed["discogs_release_year"] = transformed.get("release_year")
+
         # Ensure quality scores are properly formatted
         quality_scores = transformed.get("quality_scores", {})
         if quality_scores:
@@ -231,7 +236,8 @@ class DataTransformer:
 
     @staticmethod
     def merge_metadata_sources(
-        musicbrainz_data: Dict[str, Any] = None, discogs_data: Dict[str, Any] = None
+        musicbrainz_data: Optional[Dict[str, Any]] = None,
+        discogs_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Merge metadata from MusicBrainz and Discogs sources intelligently.
 

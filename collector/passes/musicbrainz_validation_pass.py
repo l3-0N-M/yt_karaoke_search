@@ -1,4 +1,4 @@
-"""Pass 3: MusicBrainz validation and enrichment after web search results."""
+"""Pass 2: MusicBrainz validation and enrichment for parse results."""
 
 import logging
 import time
@@ -75,35 +75,33 @@ class MusicBrainzValidationPass(ParsingPass):
         """
         Validate and enrich a ParseResult that should be passed in metadata.
 
-        This pass expects metadata['web_search_result'] containing the ParseResult
-        from the previous web search pass.
+        This pass expects metadata['parse_result'] containing the ParseResult
+        from a previous parsing pass that needs validation/enrichment.
         """
 
         if not HAS_MUSICBRAINZ:
             logger.warning("MusicBrainz validation not available - dependencies missing")
             return None
 
-        if not metadata or "web_search_result" not in metadata:
-            logger.warning("MusicBrainz validation requires web_search_result in metadata")
+        if not metadata or "parse_result" not in metadata:
+            logger.warning("MusicBrainz validation requires parse_result in metadata")
             return None
 
-        web_search_result = metadata["web_search_result"]
-        if not isinstance(web_search_result, ParseResult):
-            logger.warning("Invalid web_search_result format")
+        parse_result = metadata["parse_result"]
+        if not isinstance(parse_result, ParseResult):
+            logger.warning("Invalid parse_result format")
             return None
 
         start_time = time.time()
         self.stats["total_validations"] += 1
 
         try:
-            # Validate the web search result against MusicBrainz
-            validation_result = await self._validate_against_musicbrainz(web_search_result, title)
+            # Validate the parse result against MusicBrainz
+            validation_result = await self._validate_against_musicbrainz(parse_result, title)
 
             if validation_result.validated:
                 # Apply confidence adjustment and enrichment
-                enhanced_result = self._apply_validation_results(
-                    web_search_result, validation_result
-                )
+                enhanced_result = self._apply_validation_results(parse_result, validation_result)
 
                 self.stats["successful_validations"] += 1
 
@@ -119,20 +117,20 @@ class MusicBrainzValidationPass(ParsingPass):
             else:
                 self.stats["validation_failures"] += 1
                 # Return original result with slight confidence penalty for failed validation
-                web_search_result.confidence *= 0.95
-                web_search_result.metadata = web_search_result.metadata or {}
-                web_search_result.metadata.update(
+                parse_result.confidence *= 0.95
+                parse_result.metadata = parse_result.metadata or {}
+                parse_result.metadata.update(
                     {
                         "musicbrainz_validation": "failed",
                         "validation_method": validation_result.validation_method,
                     }
                 )
-                return web_search_result
+                return parse_result
 
         except Exception as e:
             logger.error(f"MusicBrainz validation failed: {e}")
             self.stats["validation_failures"] += 1
-            return web_search_result  # Return original on error
+            return parse_result  # Return original on error
         finally:
             processing_time = time.time() - start_time
             if processing_time > 10.0:
@@ -238,14 +236,14 @@ class MusicBrainzValidationPass(ParsingPass):
         from difflib import SequenceMatcher
 
         # Compare artist names
-        artist_similarity = SequenceMatcher(
-            None, parse_result.artist.lower(), mb_match.artist_name.lower()
-        ).ratio()
+        parse_artist = parse_result.artist.lower() if parse_result.artist else ""
+        mb_artist = mb_match.artist_name.lower() if mb_match.artist_name else ""
+        artist_similarity = SequenceMatcher(None, parse_artist, mb_artist).ratio()
 
         # Compare song titles
-        song_similarity = SequenceMatcher(
-            None, parse_result.song_title.lower(), mb_match.song_title.lower()
-        ).ratio()
+        parse_title = parse_result.song_title.lower() if parse_result.song_title else ""
+        mb_title = mb_match.song_title.lower() if mb_match.song_title else ""
+        song_similarity = SequenceMatcher(None, parse_title, mb_title).ratio()
 
         # Base confidence from similarities
         base_confidence = (artist_similarity + song_similarity) / 2.0

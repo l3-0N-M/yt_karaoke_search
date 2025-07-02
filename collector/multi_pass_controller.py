@@ -69,7 +69,6 @@ class MultiPassParsingController:
             PassType.CHANNEL_TEMPLATE: config.channel_template,
             PassType.MUSICBRAINZ_SEARCH: config.musicbrainz_search,
             PassType.DISCOGS_SEARCH: config.discogs_search,
-            PassType.WEB_SEARCH: config.web_search,
             PassType.MUSICBRAINZ_VALIDATION: config.musicbrainz_validation,
             PassType.ML_EMBEDDING: config.ml_embedding,
             PassType.AUTO_RETEMPLATE: config.auto_retemplate,
@@ -174,7 +173,6 @@ class MultiPassParsingController:
 
         # Intelligent execution flow based on your strategy
         mb_search_result = None
-        web_search_result = None
 
         # Pass 0: Channel Template (Pattern Extrapolation)
         channel_result = await self._execute_pass_if_enabled(
@@ -234,7 +232,11 @@ class MultiPassParsingController:
                     )
                 metadata["channel_template_result"] = channel_result.parse_result
                 # If channel template found artist/title, use that for subsequent searches
-                if channel_result.parse_result.artist and channel_result.parse_result.song_title:
+                if (
+                    channel_result.parse_result
+                    and channel_result.parse_result.artist
+                    and channel_result.parse_result.song_title
+                ):
                     metadata["parsed_artist"] = channel_result.parse_result.artist
                     metadata["parsed_title"] = channel_result.parse_result.song_title
         elif (
@@ -296,8 +298,12 @@ class MultiPassParsingController:
                         from .data_transformer import DataTransformer
 
                         # Pass metadata directly for merging, not nested
-                        mb_data = mb_search_result.metadata or {}
-                        discogs_data = discogs_result.parse_result.metadata or {}
+                        mb_data = mb_search_result.metadata if mb_search_result else {}
+                        discogs_data = (
+                            discogs_result.parse_result.metadata
+                            if discogs_result.parse_result
+                            else {}
+                        )
 
                         # Merge metadata from both sources
                         merged_metadata = DataTransformer.merge_metadata_sources(
@@ -305,8 +311,9 @@ class MultiPassParsingController:
                         )
 
                         # Update the MusicBrainz result with enriched metadata
-                        if merged_metadata:
-                            mb_search_result.metadata = mb_search_result.metadata or {}
+                        if merged_metadata and mb_search_result:
+                            if mb_search_result.metadata is None:
+                                mb_search_result.metadata = {}
                             mb_search_result.metadata.update(merged_metadata)
 
                         # Check what we actually merged
@@ -319,7 +326,7 @@ class MultiPassParsingController:
 
                     result.final_result = mb_search_result
                     result.stopped_at_pass = PassType.MUSICBRAINZ_SEARCH
-                    logger.info("Using enriched MB result, skipping web search")
+                    logger.info("Using enriched MB result")
 
                     # Learn from this successful pattern for future efficiency
                     if mb_search_result:
@@ -329,7 +336,7 @@ class MultiPassParsingController:
                     return
                 else:
                     logger.info(
-                        f"MB confidence {mb_confidence:.2f} below threshold, proceeding to Discogs then web search"
+                        f"MB confidence {mb_confidence:.2f} below threshold, proceeding to Discogs"
                     )
 
         # Pass 1.5: Discogs Search (if MusicBrainz failed or had low confidence)
@@ -365,92 +372,8 @@ class MultiPassParsingController:
                 ):
                     result.final_result = discogs_result.parse_result
                     result.stopped_at_pass = PassType.DISCOGS_SEARCH
-                    logger.info(
-                        f"High Discogs confidence {discogs_confidence:.2f}, skipping web search"
-                    )
+                    logger.info(f"High Discogs confidence {discogs_confidence:.2f}")
                     return
-
-        # Pass 2: Web Search (only if both MusicBrainz and Discogs confidence were low)
-        # But only proceed if we don't have a good result from previous passes
-        should_try_web_search = True
-        if metadata.get("channel_template_result") and self._has_complete_metadata(
-            metadata["channel_template_result"]
-        ):
-            # If channel template had complete metadata, we might skip web search unless confidence is very low
-            if metadata["channel_template_result"].confidence > 0.7:
-                should_try_web_search = False
-                logger.info("Skipping web search - channel template has good metadata")
-
-        web_result = None
-        if should_try_web_search:
-            web_result = await self._execute_pass_if_enabled(
-                PassType.WEB_SEARCH,
-                result,
-                title,
-                description,
-                tags,
-                channel_name,
-                channel_id,
-                metadata,
-            )
-
-        if web_result:
-            if not web_result.success:  # Continue to fallback passes instead of early exit
-                logger.debug(
-                    f"Web search pass failed for title '{title}': {web_result.error_message}. Continuing to fallback passes."
-                )
-            else:
-                web_search_result = web_result.parse_result
-
-                # Pass 3: MusicBrainz Validation (enrich web search results)
-                validation_metadata = metadata.copy()
-                validation_metadata["web_search_result"] = web_search_result
-
-                validation_result = await self._execute_pass_if_enabled(
-                    PassType.MUSICBRAINZ_VALIDATION,
-                    result,
-                    title,
-                    description,
-                    tags,
-                    channel_name,
-                    channel_id,
-                    validation_metadata,
-                )
-
-                if validation_result:
-                    if not validation_result.success:  # Continue processing instead of early exit
-                        logger.debug(
-                            f"MusicBrainz validation pass failed for title '{title}': {validation_result.error_message}. Using web search result."
-                        )
-                        # If validation failed, but web search was successful, use web search result
-                        if web_search_result:
-                            result.final_result = web_search_result
-                            result.stopped_at_pass = PassType.WEB_SEARCH
-                            logger.info("Using web search result (validation failed)")
-                            return
-
-                    else:
-                        if validation_result.parse_result:
-                            result.final_result = validation_result.parse_result
-                            result.stopped_at_pass = PassType.MUSICBRAINZ_VALIDATION
-
-                            # Learn from successful web search + validation pattern
-                            if validation_result.confidence >= 0.8:
-                                await self._learn_channel_pattern(
-                                    channel_name, channel_id, title, validation_result.parse_result
-                                )
-
-                            logger.info(
-                                f"Web search + validation completed with confidence {validation_result.confidence:.2f}"
-                            )
-                            return
-                else:
-                    # Use web search result if validation was not even attempted or failed to return a result
-                    if web_search_result:
-                        result.final_result = web_search_result
-                        result.stopped_at_pass = PassType.WEB_SEARCH
-                        logger.info("Using web search result (validation not attempted)")
-                        return
 
         # Check if we should use the Channel Template result with any enrichment data
         if metadata.get("channel_template_result") and not result.final_result:
@@ -471,8 +394,10 @@ class MultiPassParsingController:
                         or metadata_found.get("year")
                     ):
                         # Merge the metadata into the channel template result
-                        enriched_result.metadata = enriched_result.metadata or {}
-                        enriched_result.metadata.update(metadata_found)
+                        if enriched_result:
+                            if enriched_result.metadata is None:
+                                enriched_result.metadata = {}
+                            enriched_result.metadata.update(metadata_found)
                         metadata_enriched = True
                         logger.info(
                             f"Enriched channel template result with metadata from {pass_result.pass_type.value}"
@@ -480,25 +405,31 @@ class MultiPassParsingController:
                         break
 
             # If we still don't have complete metadata, try a final metadata enrichment attempt
-            if not metadata_enriched and enriched_result.artist and enriched_result.song_title:
+            if (
+                not metadata_enriched
+                and enriched_result
+                and enriched_result.artist
+                and enriched_result.song_title
+            ):
                 final_metadata = await self._try_final_metadata_enrichment(
                     enriched_result.artist, enriched_result.song_title, metadata
                 )
                 if final_metadata:
-                    enriched_result.metadata = enriched_result.metadata or {}
+                    if enriched_result.metadata is None:
+                        enriched_result.metadata = {}
                     enriched_result.metadata.update(final_metadata)
                     metadata_enriched = True
                     logger.info("Final metadata enrichment successful")
 
             # Boost confidence if we successfully enriched the result
-            if metadata_enriched:
+            if metadata_enriched and enriched_result and hasattr(enriched_result, "confidence"):
                 enriched_result.confidence = min(enriched_result.confidence * 1.1, 0.95)
 
             result.final_result = enriched_result
             result.stopped_at_pass = PassType.CHANNEL_TEMPLATE
             status = "enriched" if metadata_enriched else "fallback"
             logger.info(
-                f"Using {status} channel template result with confidence {enriched_result.confidence:.2f}"
+                f"Using {status} channel template result with confidence {enriched_result.confidence if enriched_result and hasattr(enriched_result, 'confidence') else 0.0:.2f}"
             )
             return
 
@@ -754,17 +685,19 @@ class MultiPassParsingController:
 
         try:
             # Use the existing channel template pass learning functionality
-            if self.channel_template_pass and hasattr(
-                self.channel_template_pass, "_learn_from_success"
-            ):
-                self.channel_template_pass._learn_from_success(
-                    channel_id=channel_id,
-                    channel_name=channel_name,
-                    title=title,
-                    result=successful_result,
+            # Note: This would need to be implemented in the channel template pass
+            # For now, just log that we would learn from this success
+            if self.channel_template_pass:
+                # TODO: Implement learn_from_success in channel template pass
+                # self.channel_template_pass.learn_from_success(
+                #     channel_id=channel_id,
+                #     channel_name=channel_name,
+                #     title=title,
+                #     result=successful_result,
+                # )
+                logger.info(
+                    f"Would learn new pattern for channel {channel_name} from title: {title}"
                 )
-
-                logger.info(f"Learned new pattern for channel {channel_name} from title: {title}")
 
         except Exception as e:
             logger.warning(f"Failed to learn channel pattern: {e}")

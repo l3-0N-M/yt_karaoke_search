@@ -55,7 +55,6 @@ class KaraokeCollector:
             from .passes.ml_embedding_pass import EnhancedMLEmbeddingPass
             from .passes.musicbrainz_search_pass import MusicBrainzSearchPass
             from .passes.musicbrainz_validation_pass import MusicBrainzValidationPass
-            from .passes.web_search_pass import EnhancedWebSearchPass
             from .search.fuzzy_matcher import FuzzyMatcher
 
             search_engine_for_mp = self.search_engine
@@ -71,7 +70,6 @@ class KaraokeCollector:
                 DiscogsSearchPass(advanced_parser, config, self.db_manager),
                 MusicBrainzValidationPass(advanced_parser, self.db_manager),
                 EnhancedMLEmbeddingPass(advanced_parser, fuzzy_matcher, self.db_manager),
-                EnhancedWebSearchPass(advanced_parser, search_engine_for_mp, self.db_manager),
             ]
 
             self.multi_pass_controller = MultiPassParsingController(

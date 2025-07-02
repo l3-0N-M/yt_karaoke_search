@@ -1,0 +1,30 @@
+# Configuration for multi-pass karaoke collection
+search:
+  multi_pass:
+    enabled: true
+    passes:
+      - channel_template
+      - auto_retemplate
+      - musicbrainz_search
+      - discogs_search
+      - ml_embedding
+    confidence_thresholds:
+      channel_template: 0.80
+      auto_retemplate: 0.75
+      musicbrainz_search: 0.85
+      discogs_search: 0.80
+      ml_embedding: 0.70
+
+# Optional: Adjust scraping settings for channel collection
+scraping:
+  max_concurrent_workers: 5
+  timeout_seconds: 30
+
+# Optional: Database settings
+database:
+  path: "karaoke.db"
+
+# Optional: Logging settings
+logging:
+  level: "INFO"
+  console_output: true

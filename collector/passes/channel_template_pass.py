@@ -695,6 +695,604 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 self.channel_patterns[channel_id] = zzang_patterns
             logger.info(f"Loaded {len(zzang_patterns)} hardcoded patterns for zzangkaraoke")
 
+            # @singkingkaraoke patterns
+            singking_patterns = [
+                # Primary: Artist - Song Title (Karaoke Version)
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Karaoke Version\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # With Lyrics variation
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\((?:Karaoke Version )?With Lyrics\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # No Vocals/Instrumental variations
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\((?:No Vocals|Instrumental|Acoustic)\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # Generic pattern after metadata removal
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@singkingkaraoke"] = singking_patterns
+            self.channel_patterns["UCrKBJDn9yg1jZlsGpBnA2xQ"] = singking_patterns
+
+            # @MusisiKaraoke patterns
+            musisi_patterns = [
+                # Primary: Song Title - Artist (Karaoke Songs With Lyrics - Original Key)
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)\s*\(Karaoke Songs With Lyrics - Original Key\)",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # Variation: Karaoke Instrumental
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)\s*\(Karaoke Instrumental\)",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.90,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)(?:\s*\(.*\))?$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@MusisiKaraoke"] = musisi_patterns
+
+            # @AtomicKaraoke patterns
+            atomic_patterns = [
+                # Primary: Song Title - Artist (HD Karaoke)
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)\s*\(HD Karaoke\)",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # Alternative: Song Title - Artist | Karaoke
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^|]+?)\s*\|\s*Karaoke",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.90,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()|]+?)(?:\s*[|(].*)?$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@AtomicKaraoke"] = atomic_patterns
+
+            # @BandaisuanKaraoke001 patterns
+            bandaisuan_patterns = [
+                # Primary: Karaoke - Song Title - Artist
+                ChannelPattern(
+                    pattern=r"^Karaoke\s*-\s*(.+?)\s*-\s*([^-]+?)(?:\s*\[.*\])?$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # With year or context
+                ChannelPattern(
+                    pattern=r"^Karaoke\s*-\s*(.+?)\s*-\s*([^-]+?)\s*(?:\[|\().*$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.90,
+                ),
+                # Fallback without Karaoke prefix
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^-]+?)$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.70,
+                ),
+            ]
+            self.channel_patterns["@BandaisuanKaraoke001"] = bandaisuan_patterns
+
+            # @karafun patterns
+            karafun_patterns = [
+                # Consistent format: Song Title - Artist | Karaoke Version | KaraFun
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^|]+?)\s*\|\s*Karaoke Version\s*\|\s*KaraFun",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # Without full branding
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^|]+?)\s*\|\s*Karaoke",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.85,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^|]+?)(?:\s*\|.*)?$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@karafun"] = karafun_patterns
+
+            # @singkaraoke9783 patterns
+            singkaraoke_patterns = [
+                # Primary: Song Title - Artist (Karaoke)
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)\s*\(Karaoke\)",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # Without parentheses
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)\s+Karaoke$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.90,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@singkaraoke9783"] = singkaraoke_patterns
+
+            # @karaokeytv0618 patterns
+            karaokeytv_patterns = [
+                # Primary: Song Title - Artist (Karaoke Version)
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)\s*\(Karaoke Version\)",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # Cover version pattern
+                ChannelPattern(
+                    pattern=r"^.+?\s*-\s*(.+?)\s*-\s*([^()]+?)\s*\(Karaoke Version\)",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.85,
+                ),
+                # With numerical identifier
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()#]+?)(?:\s*#\d+)?\s*\(Karaoke",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.85,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()#]+?)(?:\s*[#(].*)?$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@karaokeytv0618"] = karaokeytv_patterns
+
+            # @mibalmzkaraoke patterns
+            mibalmz_patterns = [
+                # Song Title - Artist (Karaoke)
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)\s*\(Karaoke\)",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.90,
+                ),
+                # Artist - Song Title (Karaoke)
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Karaoke\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # With Instrumental variations
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)\s*\(Karaoke Instrumental(?:\s+(?:No Vocal|With Lyrics))?\)",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.70,
+                ),
+            ]
+            self.channel_patterns["@mibalmzkaraoke"] = mibalmz_patterns
+
+            # @thepropervolume patterns
+            propervolume_patterns = [
+                # Primary: Artist - Song Title | Instrumental Karaoke Version
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\|\s*Instrumental Karaoke Version",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # Without Instrumental
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\|\s*Karaoke Version",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # Backing Track/Play Along variations
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\((?:Instrumental )?(?:Backing Track|Play Along)\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^([^-|]+?)\s*-\s*([^|(]+?)(?:\s*[|(].*)?$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@thepropervolume"] = propervolume_patterns
+
+            # @sing2piano patterns
+            sing2piano_patterns = [
+                # Primary: Artist - Song Title (Piano Karaoke)
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Piano Karaoke\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # Complex format with key/version info
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*(?:\(.*?\))?\s*\[Originally Performed by ([^]]+?)\]\s*\[Piano Karaoke Version\]",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.90,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)(?:\s*\(.*)?$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@sing2piano"] = sing2piano_patterns
+
+            # @LugnKaraoke patterns
+            lugn_patterns = [
+                # Primary: Artist • Song Title • Karaoke
+                ChannelPattern(
+                    pattern=r"^([^•]+?)\s*•\s*(.+?)\s*•\s*Karaoke",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # With tempo/key info
+                ChannelPattern(
+                    pattern=r"^([^•]+?)\s*•\s*(.+?)\s*•\s*Karaoke\s*\(.*\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # Fallback with bullet points
+                ChannelPattern(
+                    pattern=r"^([^•]+?)\s*•\s*(.+?)(?:\s*•.*)?$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.80,
+                ),
+            ]
+            self.channel_patterns["@LugnKaraoke"] = lugn_patterns
+
+            # @karafunde patterns
+            karafunde_patterns = [
+                # Song Title - Artist (Karaoke)
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)\s*\(Karaoke\)",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # Song Title (Karaoke)
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*\(Karaoke\)$",
+                    artist_group=None,
+                    title_group=1,
+                    confidence=0.80,
+                ),
+                # Song Title - Artist Karaoke
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)\s+Karaoke$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.85,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*([^()]+?)$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@karafunde"] = karafunde_patterns
+
+            # @FrauKnoblauch patterns
+            frauknoblauch_patterns = [
+                # Artist - Song Title (Karaoke)
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Karaoke\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # Artist - Song Title (Instrumental)
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Instrumental\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@FrauKnoblauch"] = frauknoblauch_patterns
+
+            # @avd-karaoke patterns
+            avd_patterns = [
+                # Consistent: Artist - Song Title (Karaoke) [AVD-xxx]
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Karaoke\)\s*\[AVD-\d+\]",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # With Lyrics variation
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Karaoke Version With Lyrics\)\s*\[AVD-\d+\]",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # Without AVD code
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Karaoke",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.85,
+                ),
+            ]
+            self.channel_patterns["@avd-karaoke"] = avd_patterns
+
+            # @quantumkaraoke patterns
+            quantum_patterns = [
+                # Primary: Song Title | Quantum Karaoke | Show/Special
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*\|\s*Quantum Karaoke\s*\|",
+                    artist_group=None,
+                    title_group=1,
+                    confidence=0.90,
+                ),
+                # Show format: Quantum Karaoke | a Sing-Along Special | Show S## E##
+                ChannelPattern(
+                    pattern=r"^Quantum Karaoke\s*\|\s*a Sing-Along Special\s*\|",
+                    artist_group=None,
+                    title_group=None,
+                    confidence=0.70,
+                ),
+                # Simple format: Song Title by Artist (Karaoke)
+                ChannelPattern(
+                    pattern=r"^(.+?)\s+by\s+([^()]+?)\s*\(Karaoke\)",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.85,
+                ),
+            ]
+            self.channel_patterns["@quantumkaraoke"] = quantum_patterns
+
+            # @partytymekaraokechannel6967 patterns
+            partytyme_patterns = [
+                # Primary: Song Title (Made Popular By Artist) (Karaoke Version)
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*\(Made Popular By ([^)]+?)\)\s*\(Karaoke Version\)",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # Square bracket variation
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*\(Made Popular By ([^)]+?)\)\s*\[Karaoke Version\]",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # With Party Tyme branding
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*\(Made Popular By ([^)]+?)\)\s*\(Party Tyme Karaoke",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.90,
+                ),
+            ]
+            self.channel_patterns["@partytymekaraokechannel6967"] = partytyme_patterns
+
+            # @StingrayKaraoke patterns
+            stingray_patterns = [
+                # Primary: Artist - Song Title (Karaoke with Lyrics)
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Karaoke with Lyrics\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # Alternative: Artist - Song Title (Stingray Karaoke)
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Stingray Karaoke",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@StingrayKaraoke"] = stingray_patterns
+
+            # @TheoMusicChannel patterns
+            theo_patterns = [
+                # Primary: Artist - Song Title - Lyrics
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*-\s*Lyrics$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # With Chords
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*-\s*Lyrics and Chords$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # Instrumental/Karaoke/Cover
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\((?:Instrumental/Karaoke/Cover|Acoustic Instrumental)\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # Generic two-dash pattern
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)(?:\s*-.*)?$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@TheoMusicChannel"] = theo_patterns
+
+            # @FakeyOke patterns
+            fakeyoke_patterns = [
+                # Primary: Artist - Song Title [Karaoke]
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\[Karaoke\]",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # Alternative: Artist - Song Title (FakeyOke Karaoke)
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(FakeyOke Karaoke\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@FakeyOke"] = fakeyoke_patterns
+
+            # @songjam patterns
+            songjam_patterns = [
+                # Primary: Artist - Song Title (Official Karaoke Instrumental) | SongJam
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Official Karaoke Instrumental\)\s*\|\s*SongJam",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
+                # Backing Track variation
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Backing Track\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)(?:\s*[|(].*)?$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@songjam"] = songjam_patterns
+
+            # @edkara patterns
+            edkara_patterns = [
+                # Primary: Karaoke♬ Song Title - Artist 【With Guide Melody】 Instrumental
+                ChannelPattern(
+                    pattern=r"^Karaoke♬\s*(.+?)\s*-\s*([^【]+?)\s*【With Guide Melody】\s*Instrumental",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # No Guide Melody variation
+                ChannelPattern(
+                    pattern=r"^Karaoke♬\s*(.+?)\s*-\s*([^【]+?)\s*【No Guide Melody】\s*Instrumental",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
+                # Without the music note
+                ChannelPattern(
+                    pattern=r"^Karaoke\s*(.+?)\s*-\s*([^【]+?)\s*【.*Guide Melody】",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.90,
+                ),
+                # Generic pattern after removing Karaoke prefix
+                ChannelPattern(
+                    pattern=r"^(?:Karaoke♬?\s*)?(.+?)\s*-\s*([^【]+?)(?:\s*【.*)?$",
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.75,
+                ),
+            ]
+            self.channel_patterns["@edkara"] = edkara_patterns
+
+            logger.info("Loaded hardcoded patterns for 21 karaoke channels")
+
         except Exception as e:
             logger.warning(f"Failed to load channel patterns: {e}")
 

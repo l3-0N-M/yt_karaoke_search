@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from ..advanced_parser import AdvancedTitleParser, ParseResult
-from ..passes.web_search_pass import FillerWordProcessor
 from .base import ParsingPass, PassType
 
 logger = logging.getLogger(__name__)
@@ -16,6 +15,12 @@ logger = logging.getLogger(__name__)
 try:
     from urllib.parse import urlencode
 
+    HAS_URLLIB = True
+except ImportError:
+    urlencode = None  # type: ignore
+    HAS_URLLIB = False
+
+try:
     import aiohttp
 
     HAS_AIOHTTP = True
@@ -51,7 +56,6 @@ class MusicBrainzSearchPass(ParsingPass):
     def __init__(self, advanced_parser: AdvancedTitleParser, db_manager=None):
         self.advanced_parser = advanced_parser
         self.db_manager = db_manager
-        self.filler_processor = FillerWordProcessor()
 
         # MusicBrainz API configuration
         self.mb_base_url = "https://musicbrainz.org/ws/2"
@@ -280,9 +284,8 @@ class MusicBrainzSearchPass(ParsingPass):
 
         queries = []
 
-        # Clean the title for search
-        cleaned = self.filler_processor.clean_query(title, "english")
-        base_query = cleaned.cleaned_query
+        # Clean the title for search - simple karaoke term removal
+        base_query = self._clean_query_simple(title)
 
         if not base_query or len(base_query) < 3:
             return queries
@@ -345,6 +348,31 @@ class MusicBrainzSearchPass(ParsingPass):
 
         return unique_queries[:5]  # Limit to avoid rate limiting
 
+    def _clean_query_simple(self, query: str) -> str:
+        """Simple query cleaning to remove karaoke-related terms."""
+        if not query:
+            return ""
+
+        # Remove common karaoke-related terms
+        karaoke_terms = [
+            r"\b(?:karaoke|karaokê|karaoké)\b",
+            r"\b(?:instrumental|backing track|minus one|minusone|minus-one)\b",
+            r"\b(?:sing along|singalong)\b",
+            r"\b(?:mr|inst|playback|accompaniment|melody)\b",
+            r"\b(?:hd|hq|4k|1080p|720p|480p|high quality|high def|ultra hd|uhd|full hd)\b",
+            r"\b(?:official|music video|video|audio|clip|lyrics)\b",
+            r"\b(?:version|cover|tribute|style|remake|rendition)\b",
+        ]
+
+        cleaned = query
+        for pattern in karaoke_terms:
+            cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE)
+
+        # Clean up whitespace
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+        return cleaned
+
     async def _search_musicbrainz(
         self, query: str, timeout: float = 10.0
     ) -> List[MusicBrainzMatch]:
@@ -360,6 +388,14 @@ class MusicBrainzSearchPass(ParsingPass):
 
         # Build MusicBrainz API URL
         params = {"query": query, "limit": self.max_search_results, "fmt": "json"}
+        if not HAS_AIOHTTP:
+            logger.error("aiohttp is required for MusicBrainz API calls")
+            return []
+
+        if not HAS_URLLIB or not urlencode:
+            logger.error("urllib.parse is required for MusicBrainz API calls")
+            return []
+
         url = f"{self.mb_base_url}/recording?" + urlencode(params)
 
         headers = {"User-Agent": self.user_agent, "Accept": "application/json"}
@@ -375,6 +411,9 @@ class MusicBrainzSearchPass(ParsingPass):
         for attempt in range(max_retries):
             try:
                 # Create timeout configuration
+                if not aiohttp:
+                    raise RuntimeError("aiohttp is required for MusicBrainz API calls")
+
                 timeout_config = aiohttp.ClientTimeout(total=timeout)
 
                 async with aiohttp.ClientSession(timeout=timeout_config) as session:
@@ -422,7 +461,11 @@ class MusicBrainzSearchPass(ParsingPass):
                                 f"MusicBrainz API returned status {response.status} for query: {query}"
                             )
                             return []
-            except (asyncio.TimeoutError, aiohttp.ServerTimeoutError):
+            except (
+                (asyncio.TimeoutError, getattr(aiohttp, "ServerTimeoutError", Exception))
+                if aiohttp
+                else asyncio.TimeoutError
+            ):
                 if attempt < max_retries - 1:
                     retry_delay = base_delay * (2**attempt)
                     logger.warning(
@@ -437,7 +480,7 @@ class MusicBrainzSearchPass(ParsingPass):
                     )
                     self.stats["api_timeouts"] = self.stats.get("api_timeouts", 0) + 1
                     return []
-            except aiohttp.ClientError as e:
+            except getattr(aiohttp, "ClientError", Exception) if aiohttp else Exception as e:
                 if attempt < max_retries - 1:
                     retry_delay = base_delay * (2**attempt)
                     logger.warning(
