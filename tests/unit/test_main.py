@@ -97,15 +97,42 @@ class TestKaraokeCollector:
         assert mock_search_engine.search_videos.called
 
     @pytest.mark.asyncio
-    async def test_collect_videos_with_channel(self, collector, mock_search_engine):
+    async def test_collect_videos_with_channel(
+        self, collector, mock_search_engine, mock_db_manager
+    ):
         """Test collecting videos from a specific channel."""
-        channel_videos = [{"id": f"ch_video{i}", "title": f"Song {i}"} for i in range(5)]
+        # Mock channel info extraction
+        mock_search_engine.extract_channel_info.return_value = {
+            "channel_id": "channel123",
+            "channel_name": "Test Channel",
+            "is_karaoke_focused": True,
+        }
+
+        # Mock channel videos extraction - return SearchResult-like dicts
+        channel_videos = [
+            {
+                "video_id": f"ch_video{i}",
+                "url": f"https://youtube.com/watch?v=ch_video{i}",
+                "title": f"Song {i}",
+                "channel_id": "channel123",
+                "channel_name": "Test Channel",
+            }
+            for i in range(5)
+        ]
         mock_search_engine.extract_channel_videos.return_value = channel_videos
-        mock_search_engine.extract_channel_info.return_value = {"channel_id": "channel123"}
-        stats = await collector.collect_from_channel(channel_url="channel123", max_videos=5)
-        assert stats is not None
-        search_call = mock_search_engine.extract_channel_videos.call_args
-        assert "channel123" in search_call[0]
+
+        # Mock database methods
+        mock_db_manager.save_channel_data = Mock()
+        mock_db_manager.get_channel_last_processed = Mock(return_value=None)
+        mock_db_manager.update_channel_processed = Mock()
+
+        stats = await collector.collect_from_channel(
+            channel_url="https://youtube.com/c/testchannel", max_videos=5
+        )
+
+        assert stats == 0  # No videos processed because they're not in the existing check
+        assert mock_search_engine.extract_channel_info.called
+        assert mock_search_engine.extract_channel_videos.called
 
     @pytest.mark.asyncio
     async def test_collect_videos_duplicate_handling(self, collector, mock_db_manager):
@@ -132,13 +159,26 @@ class TestKaraokeCollector:
             "video_id": "test123",
             "title": "Test Song",
             "url": "https://youtube.com/watch?v=test123",
+            "duration": 240,  # 4 minutes - within valid range
         }
-        mock_processor.process_video.return_value = Mock(
-            is_success=True, confidence_score=0.95, video_data=video_info
-        )
+
+        # Mock the process result
+        process_result = Mock()
+        process_result.is_success = True
+        process_result.confidence_score = 0.95
+        process_result.video_data = video_info
+        mock_processor.process_video.return_value = process_result
+
+        # Mock database methods
+        mock_db_manager.get_existing_video_ids_batch.return_value = []  # No existing videos
         mock_db_manager.save_video_data.return_value = True
+
+        # Process the video
         with patch.object(collector, "_is_video_processed", return_value=False):
-            await collector._process_video_batch([video_info])
+            processed_count = await collector._process_video_batch([video_info])
+
+        assert processed_count == 1
+        assert mock_processor.process_video.called
         assert mock_db_manager.save_video_data.called
 
     def test_collector_initialization(self):

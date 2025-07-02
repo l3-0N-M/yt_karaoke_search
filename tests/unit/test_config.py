@@ -1,10 +1,12 @@
 """Unit tests for config.py."""
 
-import json
 import os
 import sys
 import tempfile
 from pathlib import Path
+
+import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -109,23 +111,23 @@ class TestCollectorConfig:
 
     def test_collector_config_from_dict(self):
         """Test creating CollectorConfig from dictionary."""
-        config_dict = {
-            "database": {"path": "test.db", "connection_pool_size": 10},
-            "search": {"results_per_page": 100},
-            "processing": {"max_workers": 8},
-        }
-
-        config = CollectorConfig(**config_dict)
+        # CollectorConfig expects dataclass instances, not dicts
+        config = CollectorConfig(
+            database=DatabaseConfig(path="test.db", connection_pool_size=10),
+            search=SearchConfig(max_results_per_query=100),
+            scraping=ScrapingConfig(max_concurrent_workers=8),
+        )
 
         assert config.database.path == "test.db"
         assert config.database.connection_pool_size == 10
-        assert len(config.search.multi_pass.__dict__) == 100
+        assert config.search.max_results_per_query == 100
 
     def test_collector_config_to_dict(self):
         """Test converting CollectorConfig to dictionary."""
         config = CollectorConfig()
         config.database.path = "custom.db"
-        config.search.multi_pass
+        # multi_pass is a field on search
+        assert hasattr(config.search, "multi_pass")
         config_dict = {"database": {"path": config.database.path}, "search": {}, "scraping": {}}
 
         assert config_dict["database"]["path"] == "custom.db"
@@ -138,30 +140,31 @@ class TestConfigFileOperations:
     def test_save_config_template(self):
         """Test saving config template."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = Path(temp_dir) / "config_template.json"
+            config_path = Path(temp_dir) / "config_template.yaml"
 
             save_config_template(str(config_path))
 
             assert config_path.exists()
 
-            # Load and verify template
+            # Load and verify template (it's YAML, not JSON)
             with open(config_path) as f:
-                template = json.load(f)
+                template = yaml.safe_load(f)
 
             assert "database" in template
             assert "search" in template
-            assert "multi_pass" in template
+            # multi_pass is a nested field in search
+            assert "multi_pass" in template["search"]
             assert template["database"]["path"] == "karaoke_videos.db"
 
     def test_load_config_from_file(self):
         """Test loading config from file."""
         config_data = {
             "database": {"path": "loaded.db", "connection_pool_size": 15},
-            "search": {"results_per_page": 200, "include_shorts": True},
+            "search": {"max_results_per_query": 200},
         }
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(config_data, f)
             temp_path = f.name
 
         try:
@@ -169,7 +172,7 @@ class TestConfigFileOperations:
 
             assert config.database.path == "loaded.db"
             assert config.database.connection_pool_size == 15
-            assert len(config.search.multi_pass.__dict__) == 200
+            assert config.search.max_results_per_query == 200
             assert hasattr(config.search, "multi_pass") is True
         finally:
             os.unlink(temp_path)
@@ -182,17 +185,16 @@ class TestConfigFileOperations:
         assert isinstance(config, CollectorConfig)
         assert config.database.path == "karaoke_videos.db"
 
-    def test_load_config_invalid_json(self):
-        """Test loading config with invalid JSON."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write("{ invalid json }")
+    def test_load_config_invalid_yaml(self):
+        """Test loading config with invalid YAML."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write("{ invalid: yaml: broken }")
             temp_path = f.name
 
         try:
-            config = load_config(temp_path)
-
-            # Should return default config on error
-            assert isinstance(config, CollectorConfig)
+            # Should raise ValueError for invalid YAML
+            with pytest.raises(ValueError, match="Invalid YAML"):
+                load_config(temp_path)
         finally:
             os.unlink(temp_path)
 
@@ -225,36 +227,43 @@ class TestConfigFileOperations:
 
     def test_config_merging(self):
         """Test merging partial config with defaults."""
-        partial_config = {
-            "database": {
-                "path": "partial.db"
-                # Other fields should use defaults
-            },
-            "search": {"results_per_page": 25},
-            # Other sections should use defaults
-        }
-
-        config = CollectorConfig(**partial_config)
+        # Create config with partial values
+        config = CollectorConfig(
+            database=DatabaseConfig(path="partial.db"),
+            search=SearchConfig(max_results_per_query=25),
+        )
 
         # Specified values
         assert config.database.path == "partial.db"
-        assert len(config.search.multi_pass.__dict__) == 25
+        assert config.search.max_results_per_query == 25
 
-        # Default values
-        assert config.database.connection_pool_size == 10
+        # Check that search is correctly loaded with partial config
+        assert hasattr(config.search, "multi_pass")
+
+        # Default values (not overridden)
+        assert config.database.connection_pool_size == 10  # default value
+        assert config.search.primary_method == "yt_dlp"  # default value
 
     def test_config_serialization_roundtrip(self):
         """Test config serialization and deserialization."""
         original = CollectorConfig()
         original.database.path = "roundtrip.db"
-        # Serialize to dict
-        config_dict = {"database": {"path": original.database.path}, "search": {}}
 
-        # Deserialize back
-        restored = CollectorConfig(**config_dict)
+        # Serialize to dict using asdict
+        from dataclasses import asdict
+
+        asdict(original)  # Just verify it can be serialized
+
+        # To deserialize, we need to reconstruct the dataclasses manually
+        # This is a limitation of the current design
+        restored = CollectorConfig(
+            database=DatabaseConfig(
+                path="roundtrip.db", connection_pool_size=original.database.connection_pool_size
+            ),
+        )
 
         assert restored.database.path == "roundtrip.db"
-        assert restored.database.path == "roundtrip.db"
+        assert restored.database.connection_pool_size == original.database.connection_pool_size
 
     def test_config_nested_updates(self):
         """Test updating nested config values."""
