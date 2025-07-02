@@ -5,7 +5,7 @@ import logging
 import random
 import time
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 try:
     import yt_dlp  # type: ignore
@@ -483,7 +483,7 @@ class YouTubeSearchProvider(SearchProvider):
 
         return min(score, 2.0)
 
-    def _get_channel_duration_limits(self, channel_name_lower: str) -> tuple[int, int]:
+    def _get_channel_duration_limits(self, channel_name_lower: str) -> Tuple[int, int]:
         """Get duration limits based on channel characteristics."""
         # Channel-specific duration limits (min_seconds, max_seconds)
         channel_patterns = {

@@ -8,7 +8,7 @@ import time
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Generator
+from typing import Any, Dict, Generator, List
 
 from .config import DatabaseConfig
 from .data_transformer import DataTransformer
@@ -1198,7 +1198,7 @@ class OptimizedDatabaseManager:
             logger.error(f"Failed to save channel data: {e}")
             return False
 
-    def get_processed_channels(self) -> list[dict[str, Any]]:
+    def get_processed_channels(self) -> List[Dict[str, Any]]:
         """Get list of all processed channels with their stats."""
         try:
             with self.get_connection() as conn:
@@ -1268,7 +1268,7 @@ class OptimizedDatabaseManager:
             logger.error(f"Failed to check if video exists {video_id}: {e}")
             return False
 
-    def get_existing_video_ids_batch(self, video_ids: list[str]) -> set:
+    def get_existing_video_ids_batch(self, video_ids: List[str]) -> set:
         """Get set of video IDs that already exist in database (batch operation)."""
         if not video_ids:
             return set()
