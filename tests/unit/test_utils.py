@@ -107,10 +107,16 @@ class TestDiscogsRateLimiter:
         backoff_times = []
 
         for i in range(5):
-            rate_limiter.consecutive_429_errors = i + 1
-            rate_limiter.handle_429_error()
+            # Reset state before each test
+            rate_limiter.consecutive_429_errors = 0
+            rate_limiter.backoff_until = 0
+
+            # Simulate i+1 consecutive errors
+            for _ in range(i + 1):
+                rate_limiter.handle_429_error()
 
             # Calculate expected backoff (without jitter)
+            # Implementation uses (consecutive_429_errors - 1) as exponent
             expected = min(
                 rate_limiter.max_backoff,
                 rate_limiter.min_backoff * (rate_limiter.backoff_multiplier**i),
@@ -120,8 +126,8 @@ class TestDiscogsRateLimiter:
             actual_backoff = rate_limiter.backoff_until - time.time()
             backoff_times.append(actual_backoff)
 
-            # Should be close to expected (accounting for jitter)
-            assert abs(actual_backoff - expected) < expected * 0.2
+            # Should be close to expected (accounting for jitter which is ±10%)
+            assert abs(actual_backoff - expected) < expected * 0.15
 
     def test_backoff_max_limit(self, rate_limiter):
         """Test that backoff doesn't exceed maximum."""

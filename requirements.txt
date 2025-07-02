@@ -20,3 +20,8 @@ numpy>=1.21.0
 # Optional ML dependencies (have fallbacks in code)
 # sentence-transformers>=2.0.0
 # scikit-learn>=1.0.0
+
+# Testing dependencies
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0

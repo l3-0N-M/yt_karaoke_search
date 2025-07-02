@@ -109,7 +109,10 @@ class TestMusicBrainzValidationPass:
         """Test validation failure when no MusicBrainz match found."""
         web_result = ParseResult(artist="Unknown Artist", song_title="Unknown Song", confidence=0.7)
 
-        # Mock no MusicBrainz results
+        # Mock no existing MusicBrainz data in database
+        validation_pass._check_existing_musicbrainz_data = AsyncMock(return_value=None)
+
+        # Mock no MusicBrainz search results
         validation_pass.mb_search_pass._search_musicbrainz = AsyncMock(return_value=[])
 
         validation_result = await validation_pass._validate_against_musicbrainz(
@@ -137,18 +140,19 @@ class TestMusicBrainzValidationPass:
 
     def test_calculate_validation_confidence_mismatch(self, validation_pass):
         """Test confidence calculation with mismatched names."""
-        parse_result = ParseResult(artist="Wrong Artist", song_title="Wrong Song", confidence=0.7)
+        parse_result = ParseResult(artist="ABC", song_title="XYZ", confidence=0.7)
 
         mb_match = Mock()
-        mb_match.artist_name = "Correct Artist"
-        mb_match.song_title = "Correct Song"
+        mb_match.artist_name = "Totally Different Artist Name"
+        mb_match.song_title = "Completely Different Song Title"
         mb_match.score = 80
 
         confidence = validation_pass._calculate_validation_confidence(
             parse_result, mb_match, "Test"
         )
 
-        assert confidence < 0.7  # Should be penalized
+        # With very different names, confidence should be low
+        assert confidence < 0.5  # Should be significantly penalized
 
     def test_extract_enrichment_data(self, validation_pass):
         """Test extraction of enrichment data from MusicBrainz match."""

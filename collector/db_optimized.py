@@ -103,6 +103,9 @@ class OptimizedDatabaseManager:
             self.create_tables()
         else:
             logger.info(f"Using existing database: {self.db_path}")
+            # Run migrations on existing database
+            with self.get_connection() as conn:
+                self._add_missing_columns(conn)
 
     def create_tables(self):
         """Create the optimized database schema."""
