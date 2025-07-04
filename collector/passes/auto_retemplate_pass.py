@@ -1,5 +1,3 @@
-"""Pass 1: Auto-re-template on recent uploads with temporal pattern analysis."""
-
 import logging
 import re
 import time
@@ -213,9 +211,11 @@ class AutoRetemplatePass(ParsingPass):
         # Look for new recurring patterns
         for structure, videos in structure_groups.items():
             if len(videos) >= 3:  # Need at least 3 examples
-                pattern = self._structure_to_pattern(structure)
-                if pattern and not self._pattern_exists(trend, pattern):
-                    self._add_new_pattern(trend, pattern, videos)
+                pattern_info = self._structure_to_pattern(structure)
+                if pattern_info:
+                    pattern, _, _ = pattern_info
+                    if not self._pattern_exists(trend, pattern):
+                        self._add_new_pattern(trend, pattern_info, videos, structure)
 
     def _extract_title_structure(self, title: str) -> Optional[str]:
         """Extract the structural pattern from a title."""
@@ -223,13 +223,19 @@ class AutoRetemplatePass(ParsingPass):
         # Common karaoke title patterns
         structures = [
             # Artist - Song (Karaoke)
-            (r"^([^-–—]+)\s*[-–—]\s*([^(]+)\s*\([^)]*[Kk]araoke[^)]*\)", "ARTIST-SONG-KARAOKE"),
+            (r"^([^-–—]+)\s*[-–—]\s*([^(]+)\s*\([^)]*[Kk]araoke[^)]*\)$", "ARTIST-SONG-KARAOKE"),
             # "Artist" - "Song" Karaoke
             (r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*[Kk]araoke', "QUOTED-ARTIST-SONG-KARAOKE"),
             # [Channel] Artist - Song
             (r"^\[[^\]]+\]\s*([^-–—]+)[-–—](.+)", "CHANNEL-ARTIST-SONG"),
             # Song by Artist (Karaoke)
-            (r"^([^(]+?)\s*by\s+([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)", "SONG-BY-ARTIST-KARAOKE"),
+            (r"^([^(]+?)\s*by\s+([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)$", "SONG-BY-ARTIST-KARAOKE"),
+            # Song - Artist (Karaoke)
+            (r"^([^(]+)\s*[-–—]\s*([^-–—]+)\s*\([^)]*[Kk]araoke[^)]*\)$", "SONG-ARTIST-KARAOKE"),
+            # Artist - Song | Channel/Extra Info
+            (r"^([^-–—|]+)\s*[-–—]\s*([^|]+)\s*\|", "ARTIST-SONG-PIPE"),
+            # Song - Artist | Channel/Extra Info
+            (r"^([^-–—|]+)\s*[-–—]\s*([^-–—|]+)\s*\|.*[Kk]araoke", "SONG-ARTIST-PIPE-KARAOKE"),
         ]
 
         for pattern, structure_name in structures:
@@ -238,14 +244,37 @@ class AutoRetemplatePass(ParsingPass):
 
         return None
 
-    def _structure_to_pattern(self, structure: str) -> Optional[str]:
-        """Convert a structure identifier to a regex pattern."""
+    def _structure_to_pattern(self, structure: str) -> Optional[tuple[str, int, int]]:
+        """Convert a structure identifier to a regex pattern with group mappings.
+
+        Returns: (pattern, artist_group, title_group) or None
+        """
 
         pattern_map = {
-            "ARTIST-SONG-KARAOKE": r"^([^-–—]+)\s*[-–—]\s*([^(]+)\s*\([^)]*[Kk]araoke[^)]*\)",
-            "QUOTED-ARTIST-SONG-KARAOKE": r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*[Kk]araoke',
-            "CHANNEL-ARTIST-SONG": r"^\[[^\]]+\]\s*([^-–—]+)[-–—](.+)",
-            "SONG-BY-ARTIST-KARAOKE": r"^([^(]+?)\s*by\s+([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)",
+            # Format: (pattern, artist_group, title_group)
+            "ARTIST-SONG-KARAOKE": (
+                r"^([^-–—]+)\s*[-–—]\s*([^(]+)\s*\([^)]*[Kk]araoke[^)]*\)$",
+                1,
+                2,
+            ),
+            "QUOTED-ARTIST-SONG-KARAOKE": (r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*[Kk]araoke', 1, 2),
+            "CHANNEL-ARTIST-SONG": (r"^\[[^\]]+\]\s*([^-–—]+)[-–—](.+)", 1, 2),
+            "SONG-BY-ARTIST-KARAOKE": (
+                r"^([^(]+?)\s*by\s+([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)$",
+                2,
+                1,
+            ),
+            "SONG-ARTIST-KARAOKE": (
+                r"^([^(]+)\s*[-–—]\s*([^-–—]+)\s*\([^)]*[Kk]araoke[^)]*\)$",
+                2,
+                1,
+            ),
+            "ARTIST-SONG-PIPE": (r"^([^-–—|]+)\s*[-–—]\s*([^|]+)\s*\|", 1, 2),
+            "SONG-ARTIST-PIPE-KARAOKE": (
+                r"^([^-–—|]+)\s*[-–—]\s*([^-–—|]+)\s*\|.*[Kk]araoke",
+                2,
+                1,
+            ),
         }
 
         return pattern_map.get(structure)
@@ -259,13 +288,21 @@ class AutoRetemplatePass(ParsingPass):
 
         return False
 
-    def _add_new_pattern(self, trend: ChannelTrend, pattern: str, examples: List[Dict]):
+    def _add_new_pattern(
+        self,
+        trend: ChannelTrend,
+        pattern_info: tuple[str, int, int],
+        examples: List[Dict],
+        structure: str,
+    ):
         """Add a new pattern to the channel's active patterns."""
+
+        pattern, artist_group, title_group = pattern_info
 
         temporal_pattern = TemporalPattern(
             pattern=pattern,
-            artist_group=1,  # Assuming first group is artist
-            title_group=2,  # Assuming second group is title
+            artist_group=artist_group,
+            title_group=title_group,
             confidence=0.8,  # Start with high confidence for detected patterns
             first_seen=datetime.now(),
             last_seen=datetime.now(),
@@ -334,22 +371,24 @@ class AutoRetemplatePass(ParsingPass):
         if not structure:
             return
 
-        pattern = self._structure_to_pattern(structure)
-        if pattern and not self._pattern_exists(trend, pattern):
-            # Create a new pattern based on this single example
-            temporal_pattern = TemporalPattern(
-                pattern=pattern,
-                artist_group=1,
-                title_group=2,
-                confidence=0.6,  # Lower confidence for single example
-                first_seen=datetime.now(),
-                last_seen=datetime.now(),
-                video_count=1,
-                success_count=0,  # Haven't validated yet
-                recent_examples=deque([title], maxlen=10),
-            )
+        pattern_info = self._structure_to_pattern(structure)
+        if pattern_info:
+            pattern, artist_group, title_group = pattern_info
+            if not self._pattern_exists(trend, pattern):
+                # Create a new pattern based on this single example
+                temporal_pattern = TemporalPattern(
+                    pattern=pattern,
+                    artist_group=artist_group,
+                    title_group=title_group,
+                    confidence=0.6,  # Lower confidence for single example
+                    first_seen=datetime.now(),
+                    last_seen=datetime.now(),
+                    video_count=1,
+                    success_count=0,  # Haven't validated yet
+                    recent_examples=deque([title], maxlen=10),
+                )
 
-            trend.active_patterns.append(temporal_pattern)
+                trend.active_patterns.append(temporal_pattern)
 
     def _try_deprecated_patterns(
         self, trend: ChannelTrend, title: str, description: str, tags: str
@@ -400,44 +439,72 @@ class AutoRetemplatePass(ParsingPass):
         if basic_result and basic_result.confidence > 0.5:
             # Try to create a new pattern based on this successful parse
             if basic_result.artist and basic_result.song_title:
-                new_pattern = self._create_pattern_from_parse(title, basic_result)
-                if new_pattern:
-                    self._add_learned_pattern(trend, new_pattern, title)
+                new_pattern_info = self._create_pattern_from_parse(title, basic_result)
+                if new_pattern_info:
+                    new_pattern, artist_group, title_group = new_pattern_info
+                    self._add_learned_pattern(trend, new_pattern, title, artist_group, title_group)
                     return basic_result
 
         return None
 
-    def _create_pattern_from_parse(self, title: str, result: ParseResult) -> Optional[str]:
+    def _create_pattern_from_parse(
+        self, title: str, result: ParseResult
+    ) -> Optional[tuple[str, int, int]]:
         """Create a pattern from a successful parse."""
 
         try:
-            # Escape the extracted parts
-            # Replace the parts with capturing groups
-            pattern = title or ""
-            if result.artist:
-                pattern = pattern.replace(result.artist, "([^-–—\"']+?)")
-            if result.song_title:
-                pattern = pattern.replace(result.song_title, "([^(\\[]+?)")
+            if not (result.artist and result.song_title):
+                return None
 
-            # Clean up and validate
-            pattern = f"^{pattern}$"
-            pattern = re.sub(r"\s+", r"\\s+", pattern)
+            # Escape the artist and title to handle special regex characters safely
+            escaped_artist = re.escape(result.artist)
+            escaped_title = re.escape(result.song_title)
 
-            # Test the pattern
-            re.compile(pattern)
-            return pattern
+            # Determine the order of artist and title in the original string
+            artist_pos = title.find(result.artist)
+            title_pos = title.find(result.song_title)
 
-        except (re.error, AttributeError):
+            # Define the capturing groups. The problematic backtick has been removed.
+            artist_capture_group = r"([^-–—'\"_]+?)"
+            title_capture_group = r"([^(\[]+?)"
+
+            if artist_pos == -1 or title_pos == -1:
+                # If artist or title not found, can't create a pattern
+                return None
+
+            if artist_pos < title_pos:
+                # Artist appears before the song title
+                pattern = re.sub(escaped_artist, artist_capture_group, title, count=1)
+                pattern = re.sub(escaped_title, title_capture_group, pattern, count=1)
+                artist_group, title_group = 1, 2
+            else:
+                # Song title appears before the artist
+                pattern = re.sub(escaped_title, title_capture_group, title, count=1)
+                pattern = re.sub(escaped_artist, artist_capture_group, pattern, count=1)
+                artist_group, title_group = 2, 1
+
+            # Anchor the pattern to the start and end of the string
+            final_pattern = f"^{pattern}$"
+
+            # Test the pattern to ensure it's valid
+            re.compile(final_pattern)
+
+            return final_pattern, artist_group, title_group
+
+        except (re.error, AttributeError) as e:
+            logger.warning(f"Failed to create pattern from parse: {e}")
             return None
 
-    def _add_learned_pattern(self, trend: ChannelTrend, pattern: str, example: str):
+    def _add_learned_pattern(
+        self, trend: ChannelTrend, pattern: str, example: str, artist_group: int, title_group: int
+    ):
         """Add a pattern learned from a single example."""
 
         temporal_pattern = TemporalPattern(
             pattern=pattern,
-            artist_group=1,
-            title_group=2,
-            confidence=0.5,  # Low confidence for learned patterns
+            artist_group=artist_group,
+            title_group=title_group,
+            confidence=0.5,
             first_seen=datetime.now(),
             last_seen=datetime.now(),
             video_count=1,

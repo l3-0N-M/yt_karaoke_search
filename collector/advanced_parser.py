@@ -8,6 +8,12 @@ from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional
 
+from .channel_formats import (
+    CHANNEL_FORMAT_CONFIDENCE_BOOST,
+    TitleFormat,
+    get_channel_format,
+    should_trust_channel_format,
+)
 from .validation_corrector import ValidationResult
 
 try:
@@ -96,6 +102,16 @@ class AdvancedTitleParser:
 
         # Core karaoke patterns (existing + new)
         self.core_patterns = [
+            # KaraFun Deutschland specific format: "DE artist song number"
+            # Examples: "DE sarah lombardi wohin gehst du 57948"
+            #           "DE helene fischer driving home for christmas 56433"
+            (
+                r"^DE\s+(.+?)\s+\d{4,}$",
+                "custom_karafun_de",  # Special handling to split artist/song
+                None,  # No title group since we need custom splitting
+                0.85,
+                "karafun_de_format",
+            ),
             # Channel-specific patterns - Highest priority
             # Let's Sing Karaoke format: "LastName, FirstName - Song Title (Karaoke & Lyrics)"
             (
@@ -104,6 +120,57 @@ class AdvancedTitleParser:
                 3,
                 0.95,
                 "lets_sing_karaoke_format",
+            ),
+            # ZZang format: "Song (Karaoke) - Artist"
+            (
+                r"^([^(]+?)\s*\([Kk]araoke\)\s*[-–—]\s*(.+)$",
+                2,  # Artist is after dash
+                1,  # Song is before parentheses
+                0.95,
+                "zzang_karaoke_format",
+            ),
+            # BandaisuanKaraoke format: "Song / Artist (Karaoke)"
+            (
+                r"^([^/]+?)\s*/\s*([^(]+?)\s*\([^)]*[Kk]araoke[^)]*\)",
+                2,  # Artist is after slash
+                1,  # Song is before slash
+                0.95,
+                "bandaisuan_slash_format",
+            ),
+            # KaraokeyTV format: "Song Artist (Karaoke)" - no separator!
+            # Look for pattern like "My Heart Will Go On Celine Dion (Karaoke)"
+            # Strategy: Last 1-3 capitalized words before (Karaoke) are likely the artist
+            (
+                r"^(.+?)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s*\([Kk]araoke\)(?:\s*#\d+)?$",
+                2,  # Last 1-3 capitalized words before (Karaoke) are artist
+                1,  # Everything before that is song
+                0.75,  # Lower confidence due to ambiguity
+                "karaokeyTV_no_separator",
+            ),
+            # Pipe-separated format with Karaoke indicator: "Song - Artist | Karaoke..."
+            # More specific pattern to avoid false matches
+            (
+                r"^([^-]+?)\s*[-–—]\s*([^|]+?)\s*\|.*[Kk]araoke",
+                2,  # Artist is after dash
+                1,  # Song is before dash
+                0.92,
+                "pipe_separated_song_artist_karaoke",
+            ),
+            # Pipe format with parentheses in first part: "Song (version) - Artist | ..."
+            (
+                r"^([^-]+?\([^)]+?\)[^-]*?)\s*[-–—]\s*([^|]+?)\s*\|",
+                2,  # Artist is after dash
+                1,  # Song is before dash (includes parentheses)
+                0.91,
+                "pipe_separated_song_with_parens_artist",
+            ),
+            # Generic pipe format - lower priority
+            (
+                r"^([^-|]+?)\s*[-–—]\s*([^|]+?)\s*\|",
+                1,  # Artist is before dash
+                2,  # Song is after dash
+                0.85,
+                "pipe_separated_artist_song",
             ),
             # Lugn format: "ARTIST • Song Title • Karaoke"
             (
@@ -184,6 +251,23 @@ class AdvancedTitleParser:
                 0.85,
                 "bracket_suffix",
             ),
+            # Song - Artist (Karaoke) pattern - must come before standard pattern
+            # Detects when text after dash is likely an artist name
+            (
+                r"^([^-–—]+?)\s*[-–—]\s*([^([\]]+?)\s*\([^)]*[Kk]araoke[^)]*\)$",
+                2,  # Artist is after dash
+                1,  # Song is before dash
+                0.82,  # Slightly higher than standard to take precedence
+                "song_artist_karaoke_pattern",
+            ),
+            # Pattern for "Song - Artist Karaoke" (no parentheses)
+            (
+                r"^([^-–—]+?)\s*[-–—]\s*([^([\]|]+?)\s*[Kk]araoke\s*$",
+                2,  # Artist is before "Karaoke"
+                1,  # Song is before dash
+                0.82,
+                "song_artist_karaoke_no_parens",
+            ),
             # Standard patterns
             (
                 r"^([^-–—]+?)\s*[-–—]\s*([^([\]]+?)\s*\([^)]*[Kk]araoke[^)]*\)",
@@ -201,6 +285,15 @@ class AdvancedTitleParser:
                 2,
                 0.75,
                 "known_artist_pattern",
+            ),
+            # Special case for hyphenated titles that are likely single songs
+            # e.g., "no na-shoot (Karaoke Version)"
+            (
+                r"^([a-zA-Z]+(?:\s+[a-zA-Z]+)*-[a-zA-Z]+)\s*\(",
+                None,  # No artist
+                1,  # Whole match is the song title
+                0.75,
+                "hyphenated_song_title",
             ),
             # Fallback patterns
             (
@@ -362,6 +455,10 @@ class AdvancedTitleParser:
         # Clean and normalize input
         clean_title = self._advanced_clean_title(title)
 
+        # IMPORTANT: Preserve original title for special pattern matching
+        # Some patterns need to see pipe characters before they're removed
+        original_title = title
+
         # Multi-pass parsing
         results = []
 
@@ -381,7 +478,11 @@ class AdvancedTitleParser:
             results.append(lang_result)
 
         # Pass 3: Core pattern matching
-        core_result = self._parse_with_core_patterns(clean_title)
+        # Use original title to preserve pipe characters for specific patterns
+        core_result = self._parse_with_core_patterns(original_title, channel_name)
+        # If that fails, try with clean title
+        if core_result.confidence == 0:
+            core_result = self._parse_with_core_patterns(clean_title, channel_name)
         results.append(core_result)
 
         # Pass 4: ML-inspired heuristic parsing
@@ -440,6 +541,18 @@ class AdvancedTitleParser:
         for prefix in prefixes:
             cleaned = re.sub(prefix, "", cleaned, flags=re.IGNORECASE)
 
+        # Remove common pipe-separated suffixes
+        # These often appear at the end of titles and confuse parsing
+        pipe_suffixes = [
+            r"\s*\|\s*[Kk]araoke\s+[Vv]ersion\s*\|\s*[Kk]ara[Ff]un$",  # | Karaoke Version | KaraFun
+            r"\s*\|\s*[Kk]araoke\s+[Vv]ersion$",  # | Karaoke Version
+            r"\s*\|\s*[Kk]ara[Ff]un$",  # | KaraFun
+            r"\s*\|\s*[Oo]fficial\s+[Kk]araoke.*$",  # | Official Karaoke...
+        ]
+
+        for suffix in pipe_suffixes:
+            cleaned = re.sub(suffix, "", cleaned, flags=re.IGNORECASE)
+
         # Additional fallback cleaning for problematic patterns
         if not self.filler_processor:
             # Remove large ID numbers (fallback)
@@ -492,7 +605,7 @@ class AdvancedTitleParser:
                 artist_group,
                 title_group,
                 confidence,
-                pattern_name,
+                _,  # pattern_name
             ) in self.channel_patterns[channel_type]:
                 match = re.search(pattern, title, re.IGNORECASE | re.UNICODE)
                 if match:
@@ -516,7 +629,7 @@ class AdvancedTitleParser:
                 artist_group,
                 title_group,
                 confidence,
-                pattern_name,
+                _,  # pattern_name
             ) in self.language_patterns[language]:
                 match = re.search(pattern, title, re.IGNORECASE | re.UNICODE)
                 if match:
@@ -531,21 +644,75 @@ class AdvancedTitleParser:
 
         return ParseResult(method=f"language_{language}")
 
-    def _parse_with_core_patterns(self, title: str) -> ParseResult:
-        """Parse using core regex patterns."""
+    def _parse_with_core_patterns(self, title: str, channel_name: str = "") -> ParseResult:
+        """Parse using core regex patterns with channel-aware selection."""
 
+        # Check if this channel has a known format preference
+        channel_format = get_channel_format(channel_name) if channel_name else None
+
+        # If channel has known format, prioritize matching patterns
+        if channel_format in [TitleFormat.ARTIST_SONG, TitleFormat.SONG_ARTIST]:
+            # Try channel-preferred patterns first
+            for pattern, artist_group, title_group, confidence, pattern_name in self.core_patterns:
+                # Skip patterns that don't match the channel's known format
+                if channel_format == TitleFormat.ARTIST_SONG:
+                    # For Artist-Song channels, skip Song-Artist patterns
+                    if pattern_name in [
+                        "song_artist_karaoke_pattern",
+                        "pipe_separated_song_artist_karaoke",
+                        "pipe_separated_song_with_parens_artist",
+                        "by_pattern",
+                        "style_of_standard",
+                    ]:
+                        continue
+                elif channel_format == TitleFormat.SONG_ARTIST:
+                    # For Song-Artist channels, prioritize those patterns
+                    if pattern_name not in [
+                        "song_artist_karaoke_pattern",
+                        "pipe_separated_song_artist_karaoke",
+                        "pipe_separated_song_with_parens_artist",
+                        "by_pattern",
+                        "style_of_standard",
+                    ]:
+                        continue
+
+                match = re.search(pattern, title, re.IGNORECASE | re.UNICODE)
+                if match:
+                    result = self._create_result_from_match(
+                        match,
+                        artist_group,
+                        title_group,
+                        confidence + CHANNEL_FORMAT_CONFIDENCE_BOOST,
+                        "core_patterns",
+                        pattern,
+                        pattern_name,
+                        title,
+                        channel_name,
+                    )
+                    if result.confidence > 0:
+                        return result
+
+        # Standard pattern matching for unknown channels or if preferred patterns didn't match
         for pattern, artist_group, title_group, confidence, pattern_name in self.core_patterns:
             match = re.search(pattern, title, re.IGNORECASE | re.UNICODE)
             if match:
                 result = self._create_result_from_match(
-                    match, artist_group, title_group, confidence, "core_patterns", pattern
+                    match,
+                    artist_group,
+                    title_group,
+                    confidence,
+                    "core_patterns",
+                    pattern,
+                    pattern_name,
+                    title,
+                    channel_name,
                 )
                 if result.confidence > 0:
                     return result
 
         return ParseResult(method="core_patterns")
 
-    def _parse_with_heuristics(self, title: str, description: str, tags: str) -> ParseResult:
+    def _parse_with_heuristics(self, title: str, description: str, _: str) -> ParseResult:
         """ML-inspired heuristic parsing using statistical analysis."""
 
         # Analyze word frequencies and positions
@@ -714,11 +881,71 @@ class AdvancedTitleParser:
         return ParseResult(method="advanced_fuzzy_matching")
 
     def _create_result_from_match(
-        self, match, artist_group, title_group, confidence, method, pattern
+        self,
+        match,
+        artist_group,
+        title_group,
+        confidence,
+        method,
+        pattern,
+        pattern_name=None,
+        original_title="",
+        channel_name="",
     ) -> ParseResult:
         """Create ParseResult from regex match."""
 
         result = ParseResult(method=method, pattern_used=pattern)
+
+        # Check if channel has known format - if so, trust it over validation
+        if channel_name and should_trust_channel_format(channel_name):
+            channel_format = get_channel_format(channel_name)
+
+            # For known Song-Artist channels, ensure we use Song-Artist extraction
+            if channel_format == TitleFormat.SONG_ARTIST:
+                # If pattern assumes Artist-Song but channel uses Song-Artist, switch
+                if pattern_name in ["standard_artist_title", "pipe_separated_artist_song"]:
+                    artist_group, title_group = title_group, artist_group
+
+            # For known Artist-Song channels, ensure we use Artist-Song extraction
+            elif channel_format == TitleFormat.ARTIST_SONG:
+                # If pattern assumes Song-Artist but channel uses Artist-Song, switch
+                if pattern_name in [
+                    "song_artist_karaoke_pattern",
+                    "song_artist_karaoke_no_parens",
+                    "pipe_separated_song_artist_karaoke",
+                    "pipe_separated_song_with_parens_artist",
+                ]:
+                    artist_group, title_group = title_group, artist_group
+                # Also handle patterns that might extract in wrong order for non-karaoke titles
+                elif (
+                    pattern_name in ["basic_dash", "pipe_separated_artist_song"]
+                    and title_group < artist_group
+                ):
+                    # These patterns might have wrong group order, ensure artist comes first
+                    artist_group, title_group = title_group, artist_group
+
+        # For unknown channels, use validation logic
+        elif pattern_name not in [
+            "song_artist_karaoke_pattern",
+            "song_artist_karaoke_no_parens",
+            "pipe_separated_song_artist_karaoke",
+            "pipe_separated_song_with_parens_artist",
+            "song_by_artist_pattern",
+            "style_of_standard",
+            "by_pattern",
+            "zzang_karaoke_format",
+            "bandaisuan_slash_format",
+            "karaokeyTV_no_separator",
+        ]:
+            # For other patterns, check if we need to switch based on content
+            if pattern_name in ["standard_artist_title", "pipe_separated_artist_song"]:
+                # Use validation to determine if this is actually Song - Artist format
+                should_switch = self._should_switch_artist_song(
+                    match, artist_group, title_group, original_title
+                )
+                if should_switch:
+                    # Switch the groups
+                    artist_group, title_group = title_group, artist_group
 
         # Special handling for Let's Sing Karaoke format
         if artist_group == "custom_lets_sing":
@@ -731,6 +958,17 @@ class AdvancedTitleParser:
                 artist = f"{first_name.strip()} {last_name.strip()}".strip()
                 if self._is_valid_artist_name(artist):
                     result.artist = artist
+        # Special handling for KaraFun Deutschland format
+        elif artist_group == "custom_karafun_de":
+            # Format: "DE artist_and_song number"
+            # Need to intelligently split artist and song
+            if len(match.groups()) >= 1:
+                artist_and_song = self._clean_extracted_text(match.group(1))
+                artist, song = self._split_karafun_de_title(artist_and_song)
+                if artist and self._is_valid_artist_name(artist):
+                    result.artist = artist
+                if song and self._is_valid_song_title(song):
+                    result.song_title = song
         elif artist_group and artist_group <= len(match.groups()):
             artist = self._clean_extracted_text(match.group(artist_group))
             if self._is_valid_artist_name(artist):
@@ -751,7 +989,7 @@ class AdvancedTitleParser:
 
         return result
 
-    def _select_best_result(self, results: List[ParseResult], original_title: str) -> ParseResult:
+    def _select_best_result(self, results: List[ParseResult], _: str) -> ParseResult:
         """Select the best result from multiple parsing attempts."""
 
         # Filter out empty results
@@ -798,7 +1036,7 @@ class AdvancedTitleParser:
 
         return best_result
 
-    def _validate_and_enhance_result(self, result: ParseResult, description: str, tags: str):
+    def _validate_and_enhance_result(self, result: ParseResult, description: str, _: str):
         """Validate and enhance the result using external information."""
 
         # Cross-validate with description/tags
@@ -851,7 +1089,7 @@ class AdvancedTitleParser:
 
         return ", ".join(sorted(featured)) if featured else None
 
-    def _learn_from_parse(self, original_title: str, result: ParseResult):
+    def _learn_from_parse(self, _: str, result: ParseResult):
         """Learn from parsing results to improve future performance."""
 
         # Update pattern statistics
@@ -897,9 +1135,20 @@ class AdvancedTitleParser:
         cleaned = re.sub(r"^[Kk]araoke\s+", "", cleaned).strip()
 
         # Remove trailing noise
+        # IMPORTANT: Be careful not to remove legitimate parentheses content
+        # like "(From F1® The Movie)" which is part of the song title
         noise_patterns = [
-            r"\s*\([^)]*(?:[Kk]araoke|[Ii]nstrumental|[Mm]inus|[Mm][Rr])[^)]*\)$",
-            r"\s*\[[^\]]*(?:[Kk]araoke|[Ii]nstrumental|[Mm]inus|[Mm][Rr])[^\]]*\]$",
+            r"\s*\|.*$",  # Remove everything after pipe character
+            # Only remove parentheses if they contain ONLY karaoke-related terms
+            r"\s*\(\s*(?:[Kk]araoke|[Ii]nstrumental|[Mm]inus|[Mm][Rr]|[Bb]acking [Tt]rack|[Vv]ersion)\s*\)$",
+            r"\s*\[\s*(?:[Kk]araoke|[Ii]nstrumental|[Mm]inus|[Mm][Rr])\s*\]$",
+            # Combined karaoke indicators in parentheses
+            r"\s*\([^)]*[Kk]araoke\s+[Vv]ersion\s*\)$",
+            r"\s*\([Oo]fficial\s+[Kk]araoke\s+[Ii]nstrumental\s*\)$",  # Remove (Official Karaoke Instrumental)
+            # Version indicators - can be configured to keep or remove
+            r"\s*\(\s*(?:[Rr]ock|[Aa]coustic|[Ll]ive|[Dd]emo|[Rr]adio|[Pp]iano|[Jj]azz|[Cc]lub|[Dd]ance|[Ee]dit|[Mm]ix)\s+[Vv]ersion\s*\)$",
+            r"\s*\([^)]*[Mm]elody\s*\)$",
+            r"\s*\([^)]*MR/Instrumental\s*\)$",
             r"\s*-\s*[Kk]araoke.*$",
             r"\s*[Mm][Rr]$",
             r"\s*[Ii]nst\.?$",
@@ -966,6 +1215,140 @@ class AdvancedTitleParser:
 
         # Allow reasonable length
         return len(title) <= 200
+
+    def _should_switch_artist_song(
+        self, match, artist_group, title_group, original_title: str
+    ) -> bool:
+        """Determine if artist and song groups should be switched based on content analysis."""
+        if (
+            not artist_group
+            or not title_group
+            or artist_group > len(match.groups())
+            or title_group > len(match.groups())
+        ):
+            return False
+
+        potential_artist = self._clean_extracted_text(match.group(artist_group))
+        potential_song = self._clean_extracted_text(match.group(title_group))
+
+        # Common artist name indicators
+        artist_indicators = [
+            r"\b(band|boys|girls|brothers|sisters|orchestra|ensemble|duo|trio|quartet)\b",
+            r"\b(ft\.|feat\.|featuring|with|and|&)\b",
+            r"^(the|los|las|le|la|der|die|das)\s+\w+",  # Articles often start band names
+            r"^\w+\s+(and|&)\s+\w+$",  # "X and Y" format common for duos
+        ]
+
+        # Common song title indicators
+        song_indicators = [
+            r"\b(love|heart|soul|dream|night|day|time|life|world|baby|girl|boy)\b",
+            r"\b(dance|sing|song|music|melody|rhythm)\b",
+            r"(n't|'s|'ve|'re|'ll|'d)\b",  # Contractions more common in song titles
+            r"^(i|you|we|they|he|she|it)\s+",  # Personal pronouns often start songs
+            r"\?$",  # Questions are often song titles
+        ]
+
+        artist_score = 0
+        song_score = 0
+
+        # Check artist indicators
+        for pattern in artist_indicators:
+            if re.search(pattern, potential_artist, re.IGNORECASE):
+                artist_score += 1
+            if re.search(pattern, potential_song, re.IGNORECASE):
+                song_score += 1
+
+        # Check song indicators
+        for pattern in song_indicators:
+            if re.search(pattern, potential_song, re.IGNORECASE):
+                artist_score += 1
+            if re.search(pattern, potential_artist, re.IGNORECASE):
+                song_score += 1
+
+        # Check if text after dash in original is in parentheses (often indicates it's the artist)
+        if " - " in original_title:
+            parts = original_title.split(" - ", 1)
+            if len(parts) == 2:
+                after_dash = parts[1].strip()
+                # Remove everything after first parenthesis or pipe
+                after_dash_clean = re.sub(r"[\(\|].*", "", after_dash).strip()
+
+                # If what we have as potential_song matches what's after the dash, it's likely the artist
+                if after_dash_clean.lower() == potential_song.lower():
+                    return True
+
+        # If song indicators strongly favor switching
+        return song_score > artist_score + 1
+
+    def _split_karafun_de_title(self, text: str) -> tuple[str, str]:
+        """Split KaraFun Deutschland format intelligently.
+
+        Examples:
+        - "sarah lombardi wohin gehst du" -> ("Sarah Lombardi", "Wohin Gehst Du")
+        - "helene fischer driving home for christmas" -> ("Helene Fischer", "Driving Home For Christmas")
+        - "the little mermaid 1989 film unter dem meer" -> ("The Little Mermaid", "Unter Dem Meer")
+        """
+        words = text.strip().split()
+
+        # Known German artists and patterns
+        known_artists = {
+            "helene fischer": 2,
+            "sarah lombardi": 2,
+            "andrea berg": 2,
+            "beatrice egli": 2,
+            "unheilig": 1,
+            "peter wackel": 2,
+            "gregor meyle": 2,
+            "de toppers": 2,
+            "german nursery rhyme": 3,
+            "the little mermaid": 3,
+        }
+
+        # Check for known artists
+        for artist_pattern, word_count in known_artists.items():
+            if text.lower().startswith(artist_pattern):
+                artist = " ".join(words[:word_count]).title()
+                song = " ".join(words[word_count:]).title()
+                return artist, song
+
+        # Special case for movie soundtracks
+        if "film" in text.lower() or "movie" in text.lower():
+            # Find the word "film" or "movie" and split there
+            film_idx = next((i for i, w in enumerate(words) if w.lower() in ["film", "movie"]), -1)
+            if film_idx > 0:
+                # Include "film" in the artist/movie name, song comes after
+                artist = " ".join(words[: film_idx + 1]).title()
+                song = " ".join(words[film_idx + 1 :]).title()
+                return artist, song
+
+        # Heuristic: First 1-2 words are usually the artist
+        # Unless the first word is very common (the, a, etc.)
+        common_words = {"the", "a", "an", "der", "die", "das", "ein", "eine"}
+
+        if len(words) >= 3:
+            if words[0].lower() in common_words:
+                # If starts with common word, take first 3 words as potential artist
+                # But if word 3 is also common, just take 2
+                if len(words) > 3 and words[2].lower() not in common_words:
+                    artist = " ".join(words[:3]).title()
+                    song = " ".join(words[3:]).title()
+                else:
+                    artist = " ".join(words[:2]).title()
+                    song = " ".join(words[2:]).title()
+            else:
+                # Standard case: first 2 words are artist
+                artist = " ".join(words[:2]).title()
+                song = " ".join(words[2:]).title()
+        elif len(words) == 2:
+            # Only 2 words - assume first is artist, second is song
+            artist = words[0].title()
+            song = words[1].title()
+        else:
+            # Single word or empty - can't split meaningfully
+            artist = text.title()
+            song = ""
+
+        return artist, song
 
     def get_statistics(self) -> Dict:
         """Get parser performance statistics."""

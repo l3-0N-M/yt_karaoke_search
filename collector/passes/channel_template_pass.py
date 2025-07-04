@@ -6,7 +6,7 @@ import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from ..advanced_parser import AdvancedTitleParser, ParseResult
 from .base import ParsingPass, PassType
@@ -64,6 +64,27 @@ class EnhancedChannelTemplatePass(ParsingPass):
         self.pattern_decay_days = 30
         self.drift_check_interval = timedelta(days=7)
 
+        # Channels that intentionally use reversed formats (Song - Artist)
+        # These channels should be exempt from swap detection
+        self.swap_exempt_channels = {
+            "@MusisiKaraoke",
+            "UCJw1qyMF4m3ZIBWdhogkcsw",  # Musisi Karaoke
+            "@AtomicKaraoke",
+            "UCutZyApGOjqhOS-pp7yAj4Q",  # Atomic Karaoke
+            "@singkaraoke9783",
+            "UC1AgLpY5t66HaI3ejzLoyOg",  # Sing Karaoke
+            "@karaokeytv0618",
+            "UCNbFgUCJj2Ls6LVzBbL8fqA",  # KaraokeyTV
+            "@karafun",
+            "UCbqcG1rdt9LMwOJN4PyGTKg",  # KaraFun Karaoke
+            "@BandaisuanKaraoke001",
+            "UCuyBQQ2CISV0ptQRHBHzGuA",  # BandaisuanKaraoke001
+            "@quantumkaraoke",
+            "UCY_0l0AngUurGCwAqF4NkzA",  # Quantum Karaoke
+            "@edkara",
+            "UCRrNOLvQ1LztDKbXtxvDAEQ",  # EdKara
+        }
+
         # Load existing patterns if available
         self._load_channel_patterns()
 
@@ -88,13 +109,31 @@ class EnhancedChannelTemplatePass(ParsingPass):
         start_time = time.time()
 
         try:
+            logger.debug(
+                f"Channel template pass starting for title: '{title}', channel_id: '{channel_id}', channel_name: '{channel_name}'"
+            )
             # Step 1: Try channel-specific learned patterns first
-            if channel_id in self.channel_patterns:
-                result = self._try_channel_patterns(
-                    channel_id, title, description, tags, channel_name
+            # Check both channel_id and channel_name (e.g., "@singkingkaraoke")
+            channel_keys = [
+                k for k in [channel_id, channel_name] if k and k in self.channel_patterns
+            ]
+
+            # Also check if channel_name maps to additional keys
+            if channel_name in self.channel_name_mapping:
+                mapped_keys = self.channel_name_mapping[channel_name]
+                channel_keys.extend(
+                    [k for k in mapped_keys if k in self.channel_patterns and k not in channel_keys]
                 )
-                if result and result.confidence > 0.8:
-                    self._update_pattern_success(channel_id, result.pattern_used, title)
+
+            logger.debug(
+                f"Found channel keys: {channel_keys}, available pattern keys: {list(self.channel_patterns.keys())[:5]}"
+            )
+            for channel_key in channel_keys:
+                result = self._try_channel_patterns(
+                    channel_key, title, description, tags, channel_name
+                )
+                if result and result.confidence > 0.75:
+                    self._update_pattern_success(channel_key, result.pattern_used, title)
                     return result
 
             # Step 2: Try enhanced channel name detection
@@ -135,9 +174,16 @@ class EnhancedChannelTemplatePass(ParsingPass):
 
         patterns = self.channel_patterns.get(channel_id, [])
 
-        # Sort patterns by success rate and recency
+        logger.debug(
+            f"Trying channel patterns for channel_id: {channel_id}, found {len(patterns)} patterns"
+        )
+        if patterns:
+            logger.debug(f"Available patterns: {[p.pattern for p in patterns[:3]]}")
+
+        # Sort patterns by confidence first, then success rate and recency
         patterns.sort(
-            key=lambda p: (p.success_count / max(p.total_attempts, 1), p.last_used), reverse=True
+            key=lambda p: (p.confidence, p.success_count / max(p.total_attempts, 1), p.last_used),
+            reverse=True,
         )
 
         # Try both original title and cleaned title
@@ -148,13 +194,25 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 try:
                     match = re.search(pattern.pattern, test_title, re.IGNORECASE | re.UNICODE)
                     if match:
+                        logger.debug(
+                            f"Pattern matched! Pattern: {pattern.pattern}, Title: {test_title}"
+                        )
                         result = self._create_result_from_pattern_match(
-                            match, pattern, f"learned_channel_{channel_id}", test_title
+                            match, pattern, f"learned_channel_{channel_id}", test_title, channel_id
                         )
                         if result and result.confidence > 0:
+                            logger.debug(
+                                f"Result created with confidence: {result.confidence}, artist: {result.artist}, song: {result.song_title}"
+                            )
                             pattern.total_attempts += 1
                             pattern.last_used = datetime.now()
                             return result
+                        else:
+                            logger.debug("Result validation failed or zero confidence")
+                    else:
+                        logger.debug(
+                            f"Pattern did NOT match. Pattern: {pattern.pattern}, Title: {test_title}"
+                        )
 
                 except re.error as e:
                     logger.warning(f"Invalid regex pattern for channel {channel_id}: {e}")
@@ -356,8 +414,8 @@ class EnhancedChannelTemplatePass(ParsingPass):
 
         # Try to extract without requiring "karaoke" in title since channel is karaoke-focused
         simple_patterns = [
-            (r"^([^-–—]+)\s*[-–—]\s*([^(\[]+)", 2, 1, 0.65, "simple_dash"),
-            (r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"', 2, 1, 0.7, "simple_quoted"),
+            (r"^([^-–—]+)\s*[-–—]\s*([^(\[]+)", 1, 2, 0.65, "simple_dash"),
+            (r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"', 1, 2, 0.7, "simple_quoted"),
             (r"^([^(]+?)\s*\([^)]*by\s+([^)]+)\)", 2, 1, 0.6, "by_in_parentheses"),
         ]
 
@@ -386,10 +444,16 @@ class EnhancedChannelTemplatePass(ParsingPass):
         return None
 
     def _create_result_from_pattern_match(
-        self, match, pattern: ChannelPattern, method: str, original_title: str
+        self,
+        match,
+        pattern: ChannelPattern,
+        method: str,
+        original_title: str,
+        channel_id: Optional[str] = None,
     ) -> Optional[ParseResult]:
         """Create a ParseResult from a pattern match."""
 
+        logger.debug(f"Creating result from pattern match: {pattern.pattern}")
         try:
             result = ParseResult(method=method, pattern_used=pattern.pattern)
 
@@ -397,8 +461,15 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 artist = self.advanced_parser._clean_extracted_text(
                     match.group(pattern.artist_group)
                 )
+                # Handle middot character as artist separator
+                if "·" in artist:
+                    # Replace middot with comma for multiple artists
+                    artist = artist.replace(" · ", ", ").replace("·", ", ")
+
                 if self.advanced_parser._is_valid_artist_name(artist):
                     result.artist = artist
+                else:
+                    logger.debug(f"Artist validation failed for: '{artist}'")
 
             if pattern.title_group and pattern.title_group <= len(match.groups()):
                 song_title = self.advanced_parser._clean_extracted_text(
@@ -406,6 +477,8 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 )
                 if self.advanced_parser._is_valid_song_title(song_title):
                     result.song_title = song_title
+                else:
+                    logger.debug(f"Song title validation failed for: '{song_title}'")
 
             # Calculate confidence based on pattern history and extraction success
             base_confidence = pattern.confidence
@@ -426,15 +499,44 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 logger.debug(f"Korean content confidence boost applied: {result.artist}")
 
             # Boost confidence based on pattern success history
-            if pattern.total_attempts > 0:
+            # For hardcoded patterns (high initial confidence), don't penalize for lack of history
+            if pattern.total_attempts > 0 and pattern.confidence < 0.9:
                 success_rate = pattern.success_count / pattern.total_attempts
                 result.confidence *= 0.8 + 0.2 * success_rate  # 80-100% multiplier
+            elif pattern.total_attempts == 0 and pattern.confidence >= 0.9:
+                # Hardcoded patterns start with high confidence, keep it high
+                result.confidence *= 0.95  # Small penalty for being untested
 
             result.metadata = {
                 "pattern_success_rate": pattern.success_count / max(pattern.total_attempts, 1),
                 "pattern_age_days": (datetime.now() - pattern.created).days,
                 "pattern_last_used": pattern.last_used.isoformat(),
             }
+
+            # Check for potential artist/song swap
+            # Skip swap detection for:
+            # 1. High confidence patterns (>= 0.95) - trust the pattern
+            # 2. Channels in the exemption list - they use reversed formats intentionally
+            should_check_swap = (
+                result.artist
+                and result.song_title
+                and pattern.confidence < 0.95
+                and (not channel_id or channel_id not in self.swap_exempt_channels)
+            )
+
+            if should_check_swap and result.artist is not None and result.song_title is not None:
+                swap_detected, swap_confidence = self._detect_artist_song_swap(
+                    result.artist, result.song_title
+                )
+                if swap_detected and swap_confidence > 0.8:  # Increased threshold from 0.7 to 0.8
+                    # Swap the fields
+                    logger.debug(
+                        f"Detected artist/song swap with confidence {swap_confidence}: '{result.artist}' <-> '{result.song_title}'"
+                    )
+                    result.artist, result.song_title = result.song_title, result.artist
+                    result.metadata = result.metadata or {}
+                    result.metadata["swap_corrected"] = True
+                    result.metadata["swap_confidence"] = swap_confidence
 
             return result
 
@@ -503,6 +605,120 @@ class EnhancedChannelTemplatePass(ParsingPass):
             return False
         # Check for Hangul Syllables, Jamo, and Compatibility Jamo
         return bool(re.search(r"[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]", text))
+
+    def _detect_artist_song_swap(self, artist: str, song_title: str) -> Tuple[bool, float]:
+        """Detect if artist and song title are potentially swapped."""
+        swap_indicators = {
+            # Song-related keywords that shouldn't be in artist field
+            # Require more specific/uncommon words for better detection
+            "song_keywords_in_artist": [
+                "love",
+                "heart",
+                "baby",
+                "tonight",
+                "forever",
+                "heaven",
+                "dream",
+                "fire",
+                "dance",
+                "party",
+                "night",
+                "life",
+                "world",
+                "time",
+            ],
+            # Strong artist-related indicators that shouldn't be in song field
+            "strong_artist_indicators": [
+                "feat.",
+                "ft.",
+                "featuring",
+                " x ",
+                "prod.",
+                "produced by",
+            ],
+            # Weaker indicators (common in both)
+            "weak_artist_indicators": [" & ", " and ", "with"],
+            # Common band/artist prefixes/suffixes
+            "band_indicators": [
+                "The ",
+                "DJ ",
+                "MC ",
+                "Sir ",
+                "Lady ",
+                "Dr. ",
+                "Mr. ",
+                "Ms. ",
+                " Band",
+                " Orchestra",
+                " Quartet",
+                " Trio",
+                " Duo",
+            ],
+        }
+
+        confidence = 0.0
+        reasons = []
+
+        # Check for song keywords in artist field - require at least 3 for significance
+        artist_lower = artist.lower()
+        artist_words = set(artist_lower.split())
+        song_keywords_found = sum(
+            1 for keyword in swap_indicators["song_keywords_in_artist"] if keyword in artist_words
+        )
+        if song_keywords_found >= 3:  # Increased from 2 to 3
+            confidence += 0.3
+            reasons.append(f"multiple_song_keywords_in_artist:{song_keywords_found}")
+        elif song_keywords_found >= 2:
+            confidence += 0.15  # Reduced confidence for 2 keywords
+            reasons.append(f"some_song_keywords_in_artist:{song_keywords_found}")
+
+        # Check for strong artist indicators in song field
+        song_lower = song_title.lower()
+        for indicator in swap_indicators["strong_artist_indicators"]:
+            if indicator in song_lower:
+                confidence += 0.4
+                reasons.append(f"strong_artist_indicator_in_song:{indicator}")
+                break
+
+        # Check for weak indicators (only add small confidence)
+        for indicator in swap_indicators["weak_artist_indicators"]:
+            if indicator in song_lower and indicator not in artist_lower:
+                confidence += 0.1
+                reasons.append(f"weak_artist_indicator_in_song:{indicator}")
+                break
+
+        # Check for band indicators
+        for indicator in swap_indicators["band_indicators"]:
+            if song_title.startswith(indicator) or song_title.endswith(indicator):
+                confidence += 0.25  # Reduced from 0.3
+                reasons.append(f"band_indicator_in_song:{indicator}")
+                break
+
+        # Length heuristic - only apply if significantly longer
+        if len(artist) > len(song_title) * 2.0:  # Increased from 1.5 to 2.0
+            confidence += 0.2
+            reasons.append("artist_much_longer_than_song")
+
+        # All caps detection - only for full caps, not title case
+        if artist.isupper() and not song_title.isupper() and len(artist) > 3:
+            confidence += 0.25  # Reduced from 0.3
+            reasons.append("artist_all_caps")
+
+        # Penalize if artist looks like a valid artist name
+        # Check for common artist name patterns
+        if re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+$", artist):  # "First Last" pattern
+            confidence -= 0.2
+            reasons.append("valid_artist_name_pattern")
+
+        # If we have high confidence from multiple strong indicators
+        swap_detected = confidence >= 0.8  # Increased threshold
+
+        if swap_detected or confidence >= 0.5:  # Log significant detections
+            logger.debug(
+                f"Swap detection for '{artist}' <-> '{song_title}': confidence={confidence:.2f}, reasons={reasons}"
+            )
+
+        return swap_detected, confidence
 
     def _add_or_update_pattern(self, channel_id: str, pattern: str, example: str):
         """Add or update a channel pattern."""
@@ -637,9 +853,7 @@ class EnhancedChannelTemplatePass(ParsingPass):
 
     def _load_channel_patterns(self):
         """Load existing channel patterns from database."""
-        if not self.db_manager:
-            return
-
+        # Always load hardcoded patterns regardless of db_manager
         try:
             # Both possible channel IDs for zzangkaraoke
             zzang_channel_ids = ["UCzv4mCu3YS_9WjAWSt9Xg9Q", "@zzangkaraoke"]
@@ -699,35 +913,37 @@ class EnhancedChannelTemplatePass(ParsingPass):
             singking_patterns = [
                 # Primary: Artist - Song Title (Karaoke Version)
                 ChannelPattern(
-                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Karaoke Version\)",
+                    pattern=r"^(.+?)\s*-\s*(.+?)\s*\(Karaoke Version\)",
                     artist_group=1,
                     title_group=2,
                     confidence=0.95,
                 ),
                 # With Lyrics variation
                 ChannelPattern(
-                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\((?:Karaoke Version )?With Lyrics\)",
+                    pattern=r"^(.+?)\s*-\s*(.+?)\s*\((?:Karaoke Version )?With Lyrics\)",
                     artist_group=1,
                     title_group=2,
                     confidence=0.90,
                 ),
                 # No Vocals/Instrumental variations
                 ChannelPattern(
-                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\((?:No Vocals|Instrumental|Acoustic)\)",
+                    pattern=r"^(.+?)\s*-\s*(.+?)\s*\((?:No Vocals|Instrumental|Acoustic)\)",
                     artist_group=1,
                     title_group=2,
                     confidence=0.90,
                 ),
                 # Generic pattern after metadata removal
                 ChannelPattern(
-                    pattern=r"^([^-]+?)\s*-\s*(.+?)$",
+                    pattern=r"^(.+?)\s*-\s*(.+?)$",
                     artist_group=1,
                     title_group=2,
                     confidence=0.75,
                 ),
             ]
             self.channel_patterns["@singkingkaraoke"] = singking_patterns
-            self.channel_patterns["UCrKBJDn9yg1jZlsGpBnA2xQ"] = singking_patterns
+            self.channel_patterns["UCwTRjvjVge51X-ILJ4i22ew"] = (
+                singking_patterns  # Correct Sing King channel ID
+            )
 
             # @MusisiKaraoke patterns
             musisi_patterns = [
@@ -736,24 +952,27 @@ class EnhancedChannelTemplatePass(ParsingPass):
                     pattern=r"^(.+?)\s*-\s*([^()]+?)\s*\(Karaoke Songs With Lyrics - Original Key\)",
                     artist_group=2,
                     title_group=1,
-                    confidence=0.95,
+                    confidence=0.98,  # Increased confidence for this very specific pattern
                 ),
                 # Variation: Karaoke Instrumental
                 ChannelPattern(
                     pattern=r"^(.+?)\s*-\s*([^()]+?)\s*\(Karaoke Instrumental\)",
                     artist_group=2,
                     title_group=1,
-                    confidence=0.90,
+                    confidence=0.95,  # Increased confidence
                 ),
-                # Generic pattern
+                # Generic pattern (reversed)
                 ChannelPattern(
                     pattern=r"^(.+?)\s*-\s*([^()]+?)(?:\s*\(.*\))?$",
                     artist_group=2,
                     title_group=1,
-                    confidence=0.75,
+                    confidence=0.85,  # Increased confidence for this channel's reversed format
                 ),
             ]
             self.channel_patterns["@MusisiKaraoke"] = musisi_patterns
+            self.channel_patterns["UCJw1qyMF4m3ZIBWdhogkcsw"] = (
+                musisi_patterns  # Musisi Karaoke channel ID
+            )
 
             # @AtomicKaraoke patterns
             atomic_patterns = [
@@ -762,24 +981,27 @@ class EnhancedChannelTemplatePass(ParsingPass):
                     pattern=r"^(.+?)\s*-\s*([^()]+?)\s*\(HD Karaoke\)",
                     artist_group=2,
                     title_group=1,
-                    confidence=0.95,
+                    confidence=0.98,  # Increased confidence for specific pattern
                 ),
                 # Alternative: Song Title - Artist | Karaoke
                 ChannelPattern(
                     pattern=r"^(.+?)\s*-\s*([^|]+?)\s*\|\s*Karaoke",
                     artist_group=2,
                     title_group=1,
-                    confidence=0.90,
+                    confidence=0.95,  # Increased confidence
                 ),
-                # Generic pattern
+                # Generic pattern (reversed for this channel)
                 ChannelPattern(
                     pattern=r"^(.+?)\s*-\s*([^()|]+?)(?:\s*[|(].*)?$",
                     artist_group=2,
                     title_group=1,
-                    confidence=0.75,
+                    confidence=0.85,  # Increased confidence
                 ),
             ]
             self.channel_patterns["@AtomicKaraoke"] = atomic_patterns
+            self.channel_patterns["UCutZyApGOjqhOS-pp7yAj4Q"] = (
+                atomic_patterns  # Atomic Karaoke channel ID
+            )
 
             # @BandaisuanKaraoke001 patterns
             bandaisuan_patterns = [
@@ -806,6 +1028,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@BandaisuanKaraoke001"] = bandaisuan_patterns
+            self.channel_patterns["UCuyBQQ2CISV0ptQRHBHzGuA"] = (
+                bandaisuan_patterns  # BandaisuanKaraoke001 channel ID
+            )
 
             # @karafun patterns
             karafun_patterns = [
@@ -832,6 +1057,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@karafun"] = karafun_patterns
+            self.channel_patterns["UCbqcG1rdt9LMwOJN4PyGTKg"] = (
+                karafun_patterns  # KaraFun Karaoke channel ID
+            )
 
             # @singkaraoke9783 patterns
             singkaraoke_patterns = [
@@ -858,6 +1086,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@singkaraoke9783"] = singkaraoke_patterns
+            self.channel_patterns["UC1AgLpY5t66HaI3ejzLoyOg"] = (
+                singkaraoke_patterns  # Sing Karaoke channel ID
+            )
 
             # @karaokeytv0618 patterns
             karaokeytv_patterns = [
@@ -891,6 +1122,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@karaokeytv0618"] = karaokeytv_patterns
+            self.channel_patterns["UCNbFgUCJj2Ls6LVzBbL8fqA"] = (
+                karaokeytv_patterns  # KaraokeyTV channel ID
+            )
 
             # @mibalmzkaraoke patterns
             mibalmz_patterns = [
@@ -924,6 +1158,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@mibalmzkaraoke"] = mibalmz_patterns
+            self.channel_patterns["UCRoAoGqqLuOIWztkcxUiYoA"] = (
+                mibalmz_patterns  # Mi Balmz Karaoke Tracks channel ID
+            )
 
             # @thepropervolume patterns
             propervolume_patterns = [
@@ -957,6 +1194,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@thepropervolume"] = propervolume_patterns
+            self.channel_patterns["UCw0WVzCSi9-X0RMxaj3gTpg"] = (
+                propervolume_patterns  # The Proper Volume Karaoke Studio channel ID
+            )
 
             # @sing2piano patterns
             sing2piano_patterns = [
@@ -983,6 +1223,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@sing2piano"] = sing2piano_patterns
+            self.channel_patterns["UCIk6z4gxI5ADYK7HmNiJvNg"] = (
+                sing2piano_patterns  # Sing2Piano channel ID
+            )
 
             # @LugnKaraoke patterns
             lugn_patterns = [
@@ -1009,6 +1252,7 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@LugnKaraoke"] = lugn_patterns
+            self.channel_patterns["UCS4Q7GGXKdZW9uZ6YySe34Q"] = lugn_patterns  # Lugn channel ID
 
             # @karafunde patterns
             karafunde_patterns = [
@@ -1042,6 +1286,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@karafunde"] = karafunde_patterns
+            self.channel_patterns["UCzEav_eOAmp23-s_cqBDpbA"] = (
+                karafunde_patterns  # KaraFun Deutschland channel ID
+            )
 
             # @FrauKnoblauch patterns
             frauknoblauch_patterns = [
@@ -1068,6 +1315,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@FrauKnoblauch"] = frauknoblauch_patterns
+            self.channel_patterns["UC-AdlzvbJi7LvBkja531tVQ"] = (
+                frauknoblauch_patterns  # FrauKnoblauch channel ID
+            )
 
             # @avd-karaoke patterns
             avd_patterns = [
@@ -1094,6 +1344,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@avd-karaoke"] = avd_patterns
+            self.channel_patterns["UCvh3Hf-Ub4ZecC09RD2igjQ"] = (
+                avd_patterns  # AVD Karaoke channel ID
+            )
 
             # @quantumkaraoke patterns
             quantum_patterns = [
@@ -1120,6 +1373,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@quantumkaraoke"] = quantum_patterns
+            self.channel_patterns["UCY_0l0AngUurGCwAqF4NkzA"] = (
+                quantum_patterns  # Quantum Karaoke channel ID
+            )
 
             # @partytymekaraokechannel6967 patterns
             partytyme_patterns = [
@@ -1137,6 +1393,13 @@ class EnhancedChannelTemplatePass(ParsingPass):
                     title_group=1,
                     confidence=0.95,
                 ),
+                # Standard format: Artist - Song Title (Karaoke Version)
+                ChannelPattern(
+                    pattern=r"^([^-]+?)\s*-\s*(.+?)\s*\(Karaoke Version\)",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.95,
+                ),
                 # With Party Tyme branding
                 ChannelPattern(
                     pattern=r"^(.+?)\s*\(Made Popular By ([^)]+?)\)\s*\(Party Tyme Karaoke",
@@ -1146,6 +1409,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@partytymekaraokechannel6967"] = partytyme_patterns
+            self.channel_patterns["UCWLqO9ztz16a_Ko4YB9PnFQ"] = (
+                partytyme_patterns  # PARTY TYME KARAOKE CHANNEL ID
+            )
 
             # @StingrayKaraoke patterns
             stingray_patterns = [
@@ -1172,9 +1438,19 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@StingrayKaraoke"] = stingray_patterns
+            self.channel_patterns["UCYi9TC1HC_U2kaRAK6I4FSQ"] = (
+                stingray_patterns  # Stingray Karaoke channel ID
+            )
 
             # @TheoMusicChannel patterns
             theo_patterns = [
+                # Pipe separator format: Song Title | Artist · Featured Artist
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*\|\s*(.+?)$",  # Capture all artists including middot
+                    artist_group=2,
+                    title_group=1,
+                    confidence=0.95,
+                ),
                 # Primary: Artist - Song Title - Lyrics
                 ChannelPattern(
                     pattern=r"^([^-]+?)\s*-\s*(.+?)\s*-\s*Lyrics$",
@@ -1205,6 +1481,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@TheoMusicChannel"] = theo_patterns
+            self.channel_patterns["UCWyWC9jEp_0ecel6Usj7j8Q"] = (
+                theo_patterns  # Theo's Music channel ID
+            )
 
             # @FakeyOke patterns
             fakeyoke_patterns = [
@@ -1231,6 +1510,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@FakeyOke"] = fakeyoke_patterns
+            self.channel_patterns["UCvtLVf1qXFe_hmxlaB4Gh8Q"] = (
+                fakeyoke_patterns  # FakeyOke channel ID
+            )
 
             # @songjam patterns
             songjam_patterns = [
@@ -1257,6 +1539,9 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@songjam"] = songjam_patterns
+            self.channel_patterns["UCLYRNIeTQNmx1E9jVAFxSlA"] = (
+                songjam_patterns  # Songjam channel ID
+            )
 
             # @edkara patterns
             edkara_patterns = [
@@ -1290,8 +1575,50 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 ),
             ]
             self.channel_patterns["@edkara"] = edkara_patterns
+            self.channel_patterns["UCRrNOLvQ1LztDKbXtxvDAEQ"] = edkara_patterns  # EdKara channel ID
 
             logger.info("Loaded hardcoded patterns for 21 karaoke channels")
+
+            # Create channel name to ID/handle mapping for easier lookup
+            self.channel_name_mapping = {
+                "Sing King": ["@singkingkaraoke", "UCwTRjvjVge51X-ILJ4i22ew"],
+                "Musisi Karaoke": ["@MusisiKaraoke", "UCJw1qyMF4m3ZIBWdhogkcsw"],
+                "ZZang KARAOKE": ["@zzangkaraoke", "UCzv4mCu3YS_9WjAWSt9Xg9Q"],
+                "Atomic Karaoke...": ["@AtomicKaraoke", "UCutZyApGOjqhOS-pp7yAj4Q"],
+                "BandaisuanKaraoke001": ["@BandaisuanKaraoke001", "UCuyBQQ2CISV0ptQRHBHzGuA"],
+                "KaraFun Karaoke": ["@karafun", "UCbqcG1rdt9LMwOJN4PyGTKg"],
+                "Sing Karaoke": ["@singkaraoke9783", "UC1AgLpY5t66HaI3ejzLoyOg"],
+                "KaraokeyTV": ["@karaokeytv0618", "UCNbFgUCJj2Ls6LVzBbL8fqA"],
+                "Mi Balmz Karaoke Tracks": ["@mibalmzkaraoke", "UCRoAoGqqLuOIWztkcxUiYoA"],
+                "The Proper Volume Karaoke Studio": [
+                    "@thepropervolume",
+                    "UCw0WVzCSi9-X0RMxaj3gTpg",
+                ],
+                "Sing2Piano | Piano Karaoke Instrumentals": [
+                    "@sing2piano",
+                    "UCIk6z4gxI5ADYK7HmNiJvNg",
+                ],
+                "Lugn": ["@LugnKaraoke", "UCS4Q7GGXKdZW9uZ6YySe34Q"],
+                "KaraFun Deutschland - Karaoke": ["@karafunde", "UCzEav_eOAmp23-s_cqBDpbA"],
+                "FrauKnoblauch": ["@FrauKnoblauch", "UC-AdlzvbJi7LvBkja531tVQ"],
+                "AVD Karaoke": ["@avd-karaoke", "UCvh3Hf-Ub4ZecC09RD2igjQ"],
+                "Quantum Karaoke": ["@quantumkaraoke", "UCY_0l0AngUurGCwAqF4NkzA"],
+                "PARTY TYME KARAOKE CHANNEL": [
+                    "@partytymekaraokechannel6967",
+                    "UCWLqO9ztz16a_Ko4YB9PnFQ",
+                ],
+                "Stingray Karaoke": ["@StingrayKaraoke", "UCYi9TC1HC_U2kaRAK6I4FSQ"],
+                "Theo's Music": ["@TheoMusicChannel", "UCWyWC9jEp_0ecel6Usj7j8Q"],
+                "FakeyOke": ["@FakeyOke", "UCvtLVf1qXFe_hmxlaB4Gh8Q"],
+                "Songjam: Official Karaoke": ["@songjam", "UCLYRNIeTQNmx1E9jVAFxSlA"],
+                "EdKara": ["@edkara", "UCRrNOLvQ1LztDKbXtxvDAEQ"],
+            }
+
+            # Load additional patterns from database if available
+            if self.db_manager:
+                # Here we would load learned patterns from database
+                # For now, just log that we would do this
+                logger.debug("Database manager available, would load learned patterns")
 
         except Exception as e:
             logger.warning(f"Failed to load channel patterns: {e}")

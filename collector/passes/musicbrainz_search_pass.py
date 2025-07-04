@@ -257,13 +257,23 @@ class MusicBrainzSearchPass(ParsingPass):
                     # Convert best MusicBrainz match to ParseResult
                     parse_result = self._convert_to_parse_result(mb_matches[0], query)
 
-                    if parse_result and parse_result.confidence > best_confidence:
-                        best_confidence = parse_result.confidence
-                        best_result = parse_result
+                    if parse_result:
+                        # Validate the result against the original title
+                        validation_score = self._validate_result_against_title(
+                            parse_result, title, query
+                        )
 
-                        # Early exit if confidence is high enough
-                        if best_confidence > 0.9:
-                            break
+                        # Adjust confidence based on validation
+                        adjusted_confidence = parse_result.confidence * validation_score
+                        parse_result.confidence = adjusted_confidence
+
+                        if adjusted_confidence > best_confidence:
+                            best_confidence = adjusted_confidence
+                            best_result = parse_result
+
+                            # Early exit if confidence is high enough
+                            if best_confidence > 0.9:
+                                break
 
             if best_result:
                 self.stats["successful_matches"] += 1
@@ -888,6 +898,81 @@ class MusicBrainzSearchPass(ParsingPass):
             penalty = 0.0  # No penalty for very good matches
 
         return penalty
+
+    def _validate_result_against_title(
+        self, parse_result: ParseResult, original_title: str, query: str
+    ) -> float:
+        """Validate MusicBrainz result against original title to catch mismatches.
+
+        Returns a score between 0 and 1 to multiply with confidence.
+        """
+        if not parse_result.artist or not parse_result.song_title:
+            return 0.5  # Penalize incomplete results
+
+        # Clean the original title for comparison
+        clean_title = self._clean_query_simple(original_title).lower()
+
+        # Extract the MusicBrainz result
+        mb_artist = parse_result.artist.lower()
+        mb_song = parse_result.song_title.lower()
+        mb_combined = f"{mb_artist} {mb_song}"
+
+        # Calculate similarity scores
+        from difflib import SequenceMatcher
+
+        # Check if artist appears in original title
+        artist_in_title = mb_artist in clean_title
+        artist_similarity = SequenceMatcher(None, mb_artist, clean_title).ratio()
+
+        # Check if song appears in original title
+        song_in_title = mb_song in clean_title
+        song_similarity = SequenceMatcher(None, mb_song, clean_title).ratio()
+
+        # Check combined similarity
+        combined_similarity = SequenceMatcher(None, mb_combined, clean_title).ratio()
+
+        # Calculate validation score
+        validation_score = 1.0
+
+        # Strong validation if both artist and song appear in title
+        if artist_in_title and song_in_title:
+            validation_score = 1.1  # Boost for perfect match
+        # Good validation if high combined similarity
+        elif combined_similarity > 0.6:
+            validation_score = 0.9 + (combined_similarity - 0.6) * 0.5
+        # Moderate validation if at least one component matches well
+        elif artist_similarity > 0.7 or song_similarity > 0.7:
+            validation_score = 0.8
+        # Poor validation if very low similarity
+        elif combined_similarity < 0.3:
+            # This catches cases like "Elton John - Sorry..." returning "( ) - non serviam"
+            validation_score = 0.2
+            logger.warning(
+                f"Low similarity detected - Original: '{original_title}', "
+                f"MB Result: '{mb_artist} - {mb_song}' (similarity: {combined_similarity:.2f})"
+            )
+        else:
+            # Default moderate penalty
+            validation_score = 0.6
+
+        # Additional checks for specific mismatches
+        # Check for suspicious patterns like "( )" as artist
+        if mb_artist in ["( )", "unknown", "various", "n/a", ""]:
+            validation_score *= 0.3
+
+        # Check if the result seems completely unrelated (no words in common)
+        original_words = set(clean_title.split())
+        result_words = set(mb_combined.split())
+        common_words = original_words & result_words
+
+        # Remove common stop words
+        stop_words = {"the", "a", "an", "of", "in", "on", "and", "or", "for", "to", "is"}
+        meaningful_common = common_words - stop_words
+
+        if not meaningful_common and len(original_words) > 2:
+            validation_score *= 0.4
+
+        return min(validation_score, 1.0)  # Cap at 1.0
 
     def _convert_to_parse_result(self, match: MusicBrainzMatch, query: str) -> ParseResult:
         """Convert MusicBrainz match to ParseResult."""

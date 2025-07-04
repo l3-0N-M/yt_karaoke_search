@@ -402,7 +402,6 @@ def load_config(config_path: Optional[str] = None) -> CollectorConfig:
                 "channel_template",
                 "auto_retemplate",
                 "ml_embedding",
-                "web_search",
                 "discogs_search",
             ]:
                 pass_data = multi_pass_data.pop(pass_name, {})
