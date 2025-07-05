@@ -255,7 +255,9 @@ class MusicBrainzSearchPass(ParsingPass):
 
                 if mb_matches:
                     # Convert best MusicBrainz match to ParseResult
-                    parse_result = self._convert_to_parse_result(mb_matches[0], query)
+                    parse_result = self._convert_to_parse_result(
+                        mb_matches[0], query, parsed_artist
+                    )
 
                     if parse_result:
                         # Validate the result against the original title
@@ -290,39 +292,43 @@ class MusicBrainzSearchPass(ParsingPass):
                 logger.warning(f"MusicBrainz search took {processing_time:.2f}s")
 
     def _generate_search_queries(self, title: str) -> List[str]:
-        """Generate search queries optimized for MusicBrainz."""
+        """Generate search queries optimized for MusicBrainz, with multi-artist support."""
 
         queries = []
-
-        # Clean the title for search - simple karaoke term removal
         base_query = self._clean_query_simple(title)
 
-        if not base_query or len(base_query) < 3:
+        if not base_query or len(base_query) < 3 or not self._is_valid_query(base_query):
             return queries
 
-        # Pre-filter for query quality
-        if not self._is_valid_query(base_query):
-            logger.debug(f"Skipping low-quality query: {base_query}")
-            return queries
+        # Multi-artist detection
+        multi_artist_patterns = [r"feat\.", r"ft\.", r"featuring", r"&", r",", r" x "]
+        detected_artists = []
+        remaining_title = base_query
 
-        # Add spaces around dashes that don't have them (but preserve double dashes)
-        # This helps with titles like "Artist-Song" → "Artist - Song"
+        for pattern in multi_artist_patterns:
+            if re.search(pattern, remaining_title, re.IGNORECASE):
+                # Split artists and assume the first part is the primary artist
+                parts = re.split(pattern, remaining_title, 1, re.IGNORECASE)
+                if len(parts) > 1:
+                    detected_artists.append(parts[0].strip())
+                    remaining_title = parts[1].strip()
+
+        if detected_artists:
+            detected_artists.append(remaining_title)  # Add the last part
+            # Create queries for multi-artist combinations
+            queries.append(f'artist:"{base_query}" AND recording:"{base_query}"')
+            queries.append(f'artist:"{detected_artists[0]}" AND recording:"{remaining_title}"')
+
+        # Standard query generation
         spaced_query = re.sub(r"(?<=[a-zA-Z0-9])(?<!-)[-](?!-)(?=[a-zA-Z0-9])", " - ", base_query)
-
-        # Strategy 1: Use spaced query first (more likely to be correct)
         if spaced_query != base_query:
             queries.append(spaced_query)
-            queries.append(base_query)  # Add unspaced as fallback
-        else:
-            queries.append(base_query)
+        queries.append(base_query)
 
-        # Strategy 2: Try to split into artist and song if possible
-        # Look for common separators (use spaced_query for better splitting)
         for separator in [" - ", " by ", " from ", ":", " | "]:
             if separator in spaced_query:
                 parts = spaced_query.split(separator, 1)
                 if len(parts) == 2:
-                    # Try both orders
                     queries.append(
                         f'artist:"{parts[0].strip()}" AND recording:"{parts[1].strip()}"'
                     )
@@ -331,24 +337,6 @@ class MusicBrainzSearchPass(ParsingPass):
                     )
                 break
 
-        # Strategy 3: Extract quoted parts (often song titles)
-        quoted_parts = re.findall(r'["\u201c\u201d]([^"\u201c\u201d]+)["\u201c\u201d]', title)
-        for quoted in quoted_parts:
-            if len(quoted.strip()) > 2:
-                queries.append(f'recording:"{quoted.strip()}"')
-
-        # Strategy 4: Try minimal query (remove only most obvious noise)
-        minimal = re.sub(
-            r"\b(?:karaoke|instrumental|backing|track|melody)\b", "", title, flags=re.IGNORECASE
-        ).strip()
-        # Also add spaces to minimal query
-        minimal_spaced = re.sub(r"(?<=[a-zA-Z0-9])(?<!-)[-](?!-)(?=[a-zA-Z0-9])", " - ", minimal)
-        if minimal and minimal != base_query and len(minimal) > 3:
-            queries.append(minimal)
-            if minimal_spaced != minimal:
-                queries.append(minimal_spaced)
-
-        # Remove duplicates and limit
         unique_queries = []
         seen = set()
         for query in queries:
@@ -356,7 +344,7 @@ class MusicBrainzSearchPass(ParsingPass):
                 seen.add(query)
                 unique_queries.append(query)
 
-        return unique_queries[:5]  # Limit to avoid rate limiting
+        return unique_queries[:7]  # Increased limit for more query variations
 
     def _clean_query_simple(self, query: str) -> str:
         """Simple query cleaning to remove karaoke-related terms."""
@@ -527,18 +515,31 @@ class MusicBrainzSearchPass(ParsingPass):
             # Handle artist-credit structure in JSON API
             artist_name = ""
             artist_id = ""
+            all_artists = []
 
             if isinstance(artist_credits, list) and len(artist_credits) > 0:
-                first_credit = artist_credits[0]
-                if isinstance(first_credit, dict):
-                    if "artist" in first_credit:
-                        artist_info = first_credit["artist"]
-                        artist_name = artist_info.get("name", "")
-                        artist_id = artist_info.get("id", "")
-                    elif "name" in first_credit:
-                        # Sometimes the artist info is directly in the credit
-                        artist_name = first_credit.get("name", "")
-                        artist_id = first_credit.get("id", "")
+                # Extract ALL artist credits, not just the first
+                for credit in artist_credits:
+                    if isinstance(credit, dict):
+                        artist_info = None
+                        if "artist" in credit:
+                            artist_info = credit["artist"]
+                            current_artist = artist_info.get("name", "")
+                            if current_artist:
+                                all_artists.append(current_artist)
+                        elif "name" in credit:
+                            # Sometimes the artist info is directly in the credit
+                            current_artist = credit.get("name", "")
+                            if current_artist:
+                                all_artists.append(current_artist)
+
+                        # Get the first artist's ID for backward compatibility
+                        if not artist_id and artist_info:
+                            artist_id = artist_info.get("id", "")
+
+                # Join all artists with proper separators
+                if all_artists:
+                    artist_name = ", ".join(all_artists)
 
             if not artist_name or not title:
                 continue
@@ -974,11 +975,46 @@ class MusicBrainzSearchPass(ParsingPass):
 
         return min(validation_score, 1.0)  # Cap at 1.0
 
-    def _convert_to_parse_result(self, match: MusicBrainzMatch, query: str) -> ParseResult:
+    def _should_preserve_multi_artist(self, original_artist: str, api_artist: str) -> bool:
+        """Check if we should preserve the original multi-artist string."""
+        if not original_artist or not api_artist:
+            return False
+
+        # Check if original has multiple artists
+        multi_artist_indicators = [",", "&", " feat.", " ft.", " featuring", " x ", " and "]
+        has_multi = any(
+            indicator in original_artist.lower() for indicator in multi_artist_indicators
+        )
+
+        if not has_multi:
+            return False
+
+        # Check if API result has fewer artists than original
+        original_artist_count = len(
+            re.split(r",|&|feat\.|ft\.|featuring| x ", original_artist.lower())
+        )
+        api_artist_count = len(re.split(r",|&|feat\.|ft\.|featuring| x ", api_artist.lower()))
+
+        # If API has fewer artists, preserve original
+        return api_artist_count < original_artist_count
+
+    def _convert_to_parse_result(
+        self, match: MusicBrainzMatch, query: str, original_artist: Optional[str] = None
+    ) -> ParseResult:
         """Convert MusicBrainz match to ParseResult."""
 
+        # Decide which artist string to use
+        final_artist = match.artist_name
+        if original_artist and self._should_preserve_multi_artist(
+            original_artist, match.artist_name
+        ):
+            final_artist = original_artist
+            logger.debug(
+                f"Preserving original multi-artist string: {original_artist} instead of {match.artist_name}"
+            )
+
         result = ParseResult(
-            artist=match.artist_name,
+            artist=final_artist,
             song_title=match.song_title,
             confidence=match.confidence,
             method="musicbrainz_search",
@@ -986,9 +1022,13 @@ class MusicBrainzSearchPass(ParsingPass):
             metadata={
                 "musicbrainz_recording_id": match.recording_id,
                 "musicbrainz_artist_id": match.artist_id,
+                "musicbrainz_artist_name": match.artist_name,  # Store the API result
                 "musicbrainz_score": match.score,
                 "search_query": query,
                 "api_confidence": match.confidence,
+                "multi_artist_preserved": final_artist != match.artist_name,
+                "source": "musicbrainz",
+                "metadata_sources": ["musicbrainz"],
                 **match.metadata,
             },
         )

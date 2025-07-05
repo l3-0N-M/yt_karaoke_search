@@ -1171,7 +1171,57 @@ class AdvancedTitleParser:
         # Clean up whitespace
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
+        # Remove title repetitions (e.g., "My Girl - MY GIRL" -> "My Girl")
+        cleaned = self._remove_title_repetitions(cleaned)
+
+        # Remove trailing non-alphanumeric characters (but preserve intentional punctuation)
+        # Skip if it ends with common punctuation that might be intentional
+        if not re.search(r"[!?\.]$", cleaned):
+            cleaned = re.sub(r"[^\w\s]+$", "", cleaned).strip()
+
         return cleaned
+
+    def _remove_title_repetitions(self, text: str) -> str:
+        """Remove title repetitions like 'My Girl - MY GIRL' -> 'My Girl'."""
+        if not text or " - " not in text:
+            return text
+
+        # Split by common separators
+        separators = [" - ", " – ", " — ", " | ", " / "]
+        for sep in separators:
+            if sep in text:
+                parts = text.split(sep)
+                if len(parts) == 2:
+                    part1 = parts[0].strip()
+                    part2 = parts[1].strip()
+
+                    # Check if they're the same ignoring case
+                    if part1.lower() == part2.lower():
+                        # Return the better formatted one (prefer title case or original case)
+                        if part1.istitle() and not part2.istitle():
+                            return part1
+                        elif part2.istitle() and not part1.istitle():
+                            return part2
+                        else:
+                            # Default to first part
+                            return part1
+
+        # Also check for repetitions without separator (e.g., "Love Love" -> "Love")
+        words = text.split()
+        if len(words) >= 2:
+            # Check for exact word repetition
+            cleaned_words = []
+            prev_word_lower = ""
+            for word in words:
+                word_lower = word.lower()
+                if word_lower != prev_word_lower:
+                    cleaned_words.append(word)
+                    prev_word_lower = word_lower
+
+            if len(cleaned_words) < len(words):
+                return " ".join(cleaned_words)
+
+        return text
 
     def _is_valid_artist_name(self, artist: str) -> bool:
         """Enhanced artist name validation."""

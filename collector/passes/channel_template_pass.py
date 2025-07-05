@@ -71,8 +71,7 @@ class EnhancedChannelTemplatePass(ParsingPass):
             "UCJw1qyMF4m3ZIBWdhogkcsw",  # Musisi Karaoke
             "@AtomicKaraoke",
             "UCutZyApGOjqhOS-pp7yAj4Q",  # Atomic Karaoke
-            "@singkaraoke9783",
-            "UC1AgLpY5t66HaI3ejzLoyOg",  # Sing Karaoke
+            # Note: Sing Karaoke removed - uses standard "Artist - Song" format
             "@karaokeytv0618",
             "UCNbFgUCJj2Ls6LVzBbL8fqA",  # KaraokeyTV
             "@karafun",
@@ -319,6 +318,24 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 0.8,
                 "channel_double_dash",
             ),
+            # Complex title patterns with source references (lower priority)
+            # These patterns are handled specially to extract source information
+            # Pattern: Artist - Song Title From "Movie/Show"
+            (
+                r'^(.+?)\s*[-–—]\s*(.+?)\s+[Ff]rom\s+"([^"]+)"(?:\s*\([Kk]araoke[^)]*\))?$',
+                1,  # artist
+                2,  # song title (without the "from" part)
+                0.7,
+                "artist_song_from_quoted_source",
+            ),
+            # Pattern: Artist - Song Title (From "Movie/Show")
+            (
+                r'^(.+?)\s*[-–—]\s*(.+?)\s*\([Ff]rom\s+"([^"]+)"\)(?:\s*\([Kk]araoke[^)]*\))?$',
+                1,  # artist
+                2,  # song title (without the "from" part)
+                0.7,
+                "artist_song_from_quoted_source_parens",
+            ),
             # Popular karaoke channel specific patterns
             (
                 r'^"([^"]+)"\s*[-–—]\s*"([^"]+)"\s*[-–—]\s*[Kk]araoke',
@@ -513,6 +530,22 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 "pattern_last_used": pattern.last_used.isoformat(),
             }
 
+            # Handle special patterns that extract source information
+            # Check if the pattern has groups for source extraction
+            if "from" in pattern.pattern.lower() and match.lastindex and match.lastindex >= 3:
+                source = match.group(3)
+                if source:
+                    result.metadata["source"] = source.strip()
+                    result.metadata["source_type"] = "movie/show"
+                    logger.debug(f"Extracted source information: {source}")
+
+                    # Clean the song title to remove "from" part if needed
+                    if result.song_title and " from " in result.song_title.lower():
+                        # Remove the "from X" part from the title
+                        result.song_title = re.sub(
+                            r"\s+[Ff]rom\s+.*$", "", result.song_title
+                        ).strip()
+
             # Check for potential artist/song swap
             # Skip swap detection for:
             # 1. High confidence patterns (>= 0.95) - trust the pattern
@@ -607,27 +640,22 @@ class EnhancedChannelTemplatePass(ParsingPass):
         return bool(re.search(r"[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]", text))
 
     def _detect_artist_song_swap(self, artist: str, song_title: str) -> Tuple[bool, float]:
-        """Detect if artist and song title are potentially swapped."""
+        """Detect if artist and song title are potentially swapped with improved heuristics."""
         swap_indicators = {
-            # Song-related keywords that shouldn't be in artist field
-            # Require more specific/uncommon words for better detection
+            # More specific song-related keywords
             "song_keywords_in_artist": [
-                "love",
-                "heart",
-                "baby",
-                "tonight",
-                "forever",
-                "heaven",
-                "dream",
-                "fire",
-                "dance",
-                "party",
-                "night",
-                "life",
-                "world",
-                "time",
+                "live",
+                "acoustic",
+                "remix",
+                "unplugged",
+                "medley",
+                "reprise",
+                "interlude",
+                "outro",
+                "intro",
+                "bonus track",
             ],
-            # Strong artist-related indicators that shouldn't be in song field
+            # Strong artist indicators (less likely to be in a song title)
             "strong_artist_indicators": [
                 "feat.",
                 "ft.",
@@ -635,9 +663,10 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 " x ",
                 "prod.",
                 "produced by",
+                " & ",
+                " and ",
+                " with ",
             ],
-            # Weaker indicators (common in both)
-            "weak_artist_indicators": [" & ", " and ", "with"],
             # Common band/artist prefixes/suffixes
             "band_indicators": [
                 "The ",
@@ -653,67 +682,273 @@ class EnhancedChannelTemplatePass(ParsingPass):
                 " Quartet",
                 " Trio",
                 " Duo",
+                " Project",
+                " Experience",
+            ],
+            # Common English words that are often song titles (not artists)
+            "common_song_words": [
+                "love",
+                "heart",
+                "life",
+                "time",
+                "world",
+                "dream",
+                "night",
+                "day",
+                "home",
+                "away",
+                "gone",
+                "back",
+                "down",
+                "up",
+                "over",
+                "under",
+                "fire",
+                "water",
+                "rain",
+                "sun",
+                "moon",
+                "star",
+                "sky",
+                "heaven",
+                "hell",
+                "angel",
+                "devil",
+                "god",
+                "soul",
+                "mind",
+                "body",
+                "eyes",
+                "kiss",
+                "touch",
+                "feel",
+                "hurt",
+                "pain",
+                "joy",
+                "happy",
+                "sad",
+                "lonely",
+                "alone",
+                "together",
+                "forever",
+                "never",
+                "always",
+                "maybe",
+                "halo",
+                "hero",
+                "zero",
+                "one",
+                "two",
+                "three",
+                "four",
+                "five",
+                "baby",
+                "girl",
+                "boy",
+                "man",
+                "woman",
+                "lady",
+                "crazy",
+                "wild",
+                "free",
+                "young",
+                "old",
+                "new",
+                "last",
+                "first",
+                "only",
+                "real",
+                "true",
+                "false",
+                "right",
+                "wrong",
+                "good",
+                "bad",
+                "better",
+                "best",
+                "beautiful",
+                "perfect",
+                "broken",
+                "lost",
+                "found",
+                "gone",
+                "stay",
+                "leave",
+                "run",
+                "walk",
+                "dance",
+                "sing",
+                "cry",
+                "smile",
+                "laugh",
+            ],
+            # Common song title patterns that should NOT trigger swaps
+            "song_title_patterns": [
+                # Religious/spiritual songs
+                "just as i am",
+                "as i am",
+                "take me as i am",
+                "come as you are",
+                "here i am",
+                "where i am",
+                "who i am",
+                "what i am",
+                # Common song phrases with pronouns
+                "love me",
+                "hold me",
+                "kiss me",
+                "take me",
+                "make me",
+                "help me",
+                "save me",
+                "tell me",
+                "show me",
+                "teach me",
+                "leave me",
+                "let me",
+                "call me",
+                "find me",
+                "miss me",
+                "want me",
+                "need me",
+                "free me",
+                # Titles ending with pronouns
+                "with me",
+                "for me",
+                "to me",
+                "by me",
+                "in me",
+                "on me",
+                "without me",
+                "about me",
+                "around me",
+                "before me",
+                "after me",
+                # "I" phrases
+                "i am",
+                "i was",
+                "i will",
+                "i can",
+                "i do",
+                "i don't",
+                "i want",
+                "i need",
+                "i love",
+                "i hate",
+                "i know",
+                "i think",
+                "i feel",
+                "i believe",
+                "i remember",
+                "i forget",
+                "i miss",
+                "i wish",
+                # Other common patterns
+                "my way",
+                "my love",
+                "my life",
+                "my heart",
+                "my soul",
+                "my mind",
+                "my baby",
+                "my girl",
+                "my boy",
+                "my man",
+                "my woman",
+                "my world",
             ],
         }
 
         confidence = 0.0
         reasons = []
-
-        # Check for song keywords in artist field - require at least 3 for significance
         artist_lower = artist.lower()
-        artist_words = set(artist_lower.split())
-        song_keywords_found = sum(
-            1 for keyword in swap_indicators["song_keywords_in_artist"] if keyword in artist_words
-        )
-        if song_keywords_found >= 3:  # Increased from 2 to 3
-            confidence += 0.3
-            reasons.append(f"multiple_song_keywords_in_artist:{song_keywords_found}")
-        elif song_keywords_found >= 2:
-            confidence += 0.15  # Reduced confidence for 2 keywords
-            reasons.append(f"some_song_keywords_in_artist:{song_keywords_found}")
-
-        # Check for strong artist indicators in song field
         song_lower = song_title.lower()
+
+        # Check if we have a known artist in our cache
+        if hasattr(self, "advanced_parser") and hasattr(self.advanced_parser, "known_artists"):
+            if artist_lower in [ka.lower() for ka in self.advanced_parser.known_artists]:
+                confidence -= 0.4
+                reasons.append("known_artist_in_cache")
+
+        # Heuristic 1: Song keywords in artist field (high confidence indicator)
+        for keyword in swap_indicators["song_keywords_in_artist"]:
+            if f"({keyword})" in artist_lower or f"[{keyword}]" in artist_lower:
+                confidence += 0.5
+                reasons.append(f"strong_song_keyword_in_artist:{keyword}")
+                break
+
+        # Heuristic 2: Strong artist indicators in song field
         for indicator in swap_indicators["strong_artist_indicators"]:
             if indicator in song_lower:
                 confidence += 0.4
                 reasons.append(f"strong_artist_indicator_in_song:{indicator}")
                 break
 
-        # Check for weak indicators (only add small confidence)
-        for indicator in swap_indicators["weak_artist_indicators"]:
-            if indicator in song_lower and indicator not in artist_lower:
-                confidence += 0.1
-                reasons.append(f"weak_artist_indicator_in_song:{indicator}")
-                break
-
-        # Check for band indicators
+        # Heuristic 3: Band/artist indicators in song field
         for indicator in swap_indicators["band_indicators"]:
-            if song_title.startswith(indicator) or song_title.endswith(indicator):
-                confidence += 0.25  # Reduced from 0.3
+            if song_lower.startswith(indicator.lower()) or song_lower.endswith(indicator.lower()):
+                confidence += 0.3
                 reasons.append(f"band_indicator_in_song:{indicator}")
                 break
 
-        # Length heuristic - only apply if significantly longer
-        if len(artist) > len(song_title) * 2.0:  # Increased from 1.5 to 2.0
+        # Heuristic 4: Modified all caps check - exclude short words and common song titles
+        if artist.isupper() and len(artist) > 4:
+            # Check if it's a common song word
+            if artist_lower in swap_indicators["common_song_words"]:
+                confidence += 0.15  # Much lower weight for common words
+                reasons.append("common_song_word_in_caps")
+            elif song_title.istitle():
+                confidence += 0.1  # Reduced from 0.25
+                reasons.append("artist_all_caps_vs_title_case_song")
+
+        # Heuristic 5: Song title looks like a typical artist name
+        if re.match(r"^[A-Z][a-z']+(\s[A-Z][a-z']+)+$", song_title):  # e.g., "Firstname Lastname"
+            confidence += 0.2
+            reasons.append("song_looks_like_artist_name")
+
+        # Heuristic 6: Length mismatch (artist much longer than song)
+        if len(artist) > len(song_title) * 2.5 and len(song_title) < 15:
             confidence += 0.2
             reasons.append("artist_much_longer_than_song")
 
-        # All caps detection - only for full caps, not title case
-        if artist.isupper() and not song_title.isupper() and len(artist) > 3:
-            confidence += 0.25  # Reduced from 0.3
-            reasons.append("artist_all_caps")
+        # Counter-Heuristic 1: Penalize if artist looks like a valid artist name
+        if re.match(r"^[A-Z][a-z']+(\s[A-Z][a-z']+)+$", artist):
+            confidence -= 0.25
+            reasons.append("valid_artist_name_pattern_penalty")
 
-        # Penalize if artist looks like a valid artist name
-        # Check for common artist name patterns
-        if re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+$", artist):  # "First Last" pattern
+        # Counter-Heuristic 2: Penalize if song contains year in parentheses
+        if re.search(r"\(\d{4}\)", song_lower):
+            confidence -= 0.3
+            reasons.append("year_in_song_title_penalty")
+
+        # Counter-Heuristic 3: Penalize if artist is a common song word
+        if artist_lower in swap_indicators["common_song_words"]:
             confidence -= 0.2
-            reasons.append("valid_artist_name_pattern")
+            reasons.append("artist_is_common_song_word")
 
-        # If we have high confidence from multiple strong indicators
-        swap_detected = confidence >= 0.8  # Increased threshold
+        # Counter-Heuristic 4: Strong penalty if artist matches common song title patterns
+        for pattern in swap_indicators["song_title_patterns"]:
+            if pattern in artist_lower or artist_lower == pattern:
+                confidence -= 0.5  # Strong penalty
+                reasons.append(f"artist_matches_song_pattern:{pattern}")
+                break
 
-        if swap_detected or confidence >= 0.5:  # Log significant detections
+        # Counter-Heuristic 5: Check for specific problematic patterns
+        # Songs like "Just As I Am", "Take Me As I Am" etc.
+        if (
+            artist_lower.endswith(" as i am")
+            or artist_lower.endswith(" me")
+            or artist_lower.startswith("take me")
+            or artist_lower.startswith("love me")
+            or artist_lower.startswith("hold me")
+        ):
+            confidence -= 0.4
+            reasons.append("artist_has_pronoun_ending")
+
+        # Final decision with higher threshold
+        swap_detected = confidence >= 0.8  # Increased from 0.7
+
+        if swap_detected or confidence >= 0.4:
             logger.debug(
                 f"Swap detection for '{artist}' <-> '{song_title}': confidence={confidence:.2f}, reasons={reasons}"
             )
@@ -1577,7 +1812,41 @@ class EnhancedChannelTemplatePass(ParsingPass):
             self.channel_patterns["@edkara"] = edkara_patterns
             self.channel_patterns["UCRrNOLvQ1LztDKbXtxvDAEQ"] = edkara_patterns  # EdKara channel ID
 
-            logger.info("Loaded hardcoded patterns for 21 karaoke channels")
+            # @singkaraoke patterns (NOT @singkingkaraoke - different channel!)
+            # Sing Karaoke uses standard "Artist - Song (Karaoke)" format
+            singkaraoke_patterns = [
+                # Primary: Artist - Song Title (Karaoke)
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*(.+?)\s*\(Karaoke\)",
+                    artist_group=1,  # Artist is FIRST (standard format)
+                    title_group=2,  # Song is SECOND
+                    confidence=0.95,
+                ),
+                # Without parentheses
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*(.+?)\s+Karaoke",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.90,
+                ),
+                # Generic pattern
+                ChannelPattern(
+                    pattern=r"^(.+?)\s*-\s*(.+?)$",
+                    artist_group=1,
+                    title_group=2,
+                    confidence=0.80,
+                ),
+            ]
+            self.channel_patterns["@singkaraoke"] = singkaraoke_patterns
+            self.channel_patterns["Sing Karaoke"] = singkaraoke_patterns  # Channel name fallback
+            self.channel_patterns["@singkaraoke9783"] = (
+                singkaraoke_patterns  # Actual channel handle
+            )
+            self.channel_patterns["UC1AgLpY5t66HaI3ejzLoyOg"] = (
+                singkaraoke_patterns  # Sing Karaoke channel ID
+            )
+
+            logger.info("Loaded hardcoded patterns for 22 karaoke channels")
 
             # Create channel name to ID/handle mapping for easier lookup
             self.channel_name_mapping = {

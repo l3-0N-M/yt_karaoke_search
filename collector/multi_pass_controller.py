@@ -159,6 +159,68 @@ class MultiPassParsingController:
 
         return bool(has_genre and has_year)
 
+    def _merge_parse_metadata(self, base_metadata: Dict, channel_metadata: Dict) -> Dict:
+        """Merge channel template metadata with enrichment metadata.
+
+        Preserves all channel template fields (pattern_used, swap_corrected, etc.)
+        while adding enrichment fields without overwriting.
+        """
+        if not channel_metadata:
+            return base_metadata or {}
+
+        if not base_metadata:
+            return channel_metadata.copy()
+
+        # Start with a copy of base metadata (from enrichment pass)
+        merged = base_metadata.copy()
+
+        # Add all channel template fields that aren't already in base
+        # These are typically parsing-specific fields we want to preserve
+        channel_specific_fields = [
+            "pattern_used",
+            "pattern_success_rate",
+            "pattern_age_days",
+            "pattern_last_used",
+            "swap_corrected",
+            "swap_confidence",
+            "karaoke_channel_boost",
+            "source_type",
+            "method",  # method might come from channel template
+        ]
+
+        for field_name in channel_specific_fields:
+            if field_name in channel_metadata and field_name not in merged:
+                merged[field_name] = channel_metadata[field_name]
+
+        # Also preserve any other fields from channel template that don't conflict
+        for key, value in channel_metadata.items():
+            if key not in merged:
+                merged[key] = value
+
+        # Merge metadata_sources arrays if they exist
+        sources = set()
+        if "metadata_sources" in base_metadata:
+            sources.update(base_metadata["metadata_sources"])
+        if "metadata_sources" in channel_metadata:
+            sources.update(channel_metadata["metadata_sources"])
+
+        # Add sources based on specific fields present
+        if any(
+            f in merged for f in ["musicbrainz_recording_id", "musicbrainz_artist_id", "mb_score"]
+        ):
+            sources.add("musicbrainz")
+        if any(f in merged for f in ["discogs_id", "discogs_url", "discogs_genre"]):
+            sources.add("discogs")
+
+        if sources:
+            merged["metadata_sources"] = list(sources)
+
+        logger.debug(
+            f"Merged metadata: {len(channel_metadata)} channel fields + {len(base_metadata)} enrichment fields = {len(merged)} total fields"
+        )
+
+        return merged
+
     async def _execute_parsing_ladder(
         self,
         result: MultiPassResult,
@@ -324,6 +386,17 @@ class MultiPassParsingController:
                             f"genre={genre}, year={year}"
                         )
 
+                    # Merge channel template metadata with MB result metadata
+                    if metadata.get("channel_template_result") and mb_search_result:
+                        channel_template_result = metadata["channel_template_result"]
+                        if hasattr(channel_template_result, "metadata") and channel_template_result:
+                            channel_template_metadata = (
+                                getattr(channel_template_result, "metadata", None) or {}
+                            )
+                            mb_search_result.metadata = self._merge_parse_metadata(
+                                mb_search_result.metadata or {}, channel_template_metadata
+                            )
+
                     result.final_result = mb_search_result
                     result.stopped_at_pass = PassType.MUSICBRAINZ_SEARCH
                     logger.info("Using enriched MB result")
@@ -370,6 +443,18 @@ class MultiPassParsingController:
                     discogs_confidence
                     >= self.pass_configs[PassType.DISCOGS_SEARCH].confidence_threshold
                 ):
+                    # Merge channel template metadata with Discogs result metadata
+                    if metadata.get("channel_template_result") and discogs_result.parse_result:
+                        channel_template_result = metadata["channel_template_result"]
+                        if hasattr(channel_template_result, "metadata") and channel_template_result:
+                            channel_template_metadata = (
+                                getattr(channel_template_result, "metadata", None) or {}
+                            )
+                            discogs_result.parse_result.metadata = self._merge_parse_metadata(
+                                discogs_result.parse_result.metadata or {},
+                                channel_template_metadata,
+                            )
+
                     result.final_result = discogs_result.parse_result
                     result.stopped_at_pass = PassType.DISCOGS_SEARCH
                     logger.info(f"High Discogs confidence {discogs_confidence:.2f}")
@@ -451,6 +536,18 @@ class MultiPassParsingController:
                     continue
 
                 if fallback_result.confidence >= self.pass_configs[pass_type].confidence_threshold:
+                    # Merge channel template metadata with fallback result metadata
+                    if metadata.get("channel_template_result") and fallback_result.parse_result:
+                        channel_template_result = metadata["channel_template_result"]
+                        if hasattr(channel_template_result, "metadata") and channel_template_result:
+                            channel_template_metadata = (
+                                getattr(channel_template_result, "metadata", None) or {}
+                            )
+                            fallback_result.parse_result.metadata = self._merge_parse_metadata(
+                                fallback_result.parse_result.metadata or {},
+                                channel_template_metadata,
+                            )
+
                     result.final_result = fallback_result.parse_result
                     result.stopped_at_pass = pass_type
                     logger.info(
@@ -465,6 +562,19 @@ class MultiPassParsingController:
             if successful_passes:
                 best_pass = max(successful_passes, key=lambda p: p.confidence)
                 if best_pass.parse_result:
+                    # Merge channel template metadata if best pass is not channel template
+                    if best_pass.pass_type != PassType.CHANNEL_TEMPLATE and metadata.get(
+                        "channel_template_result"
+                    ):
+                        channel_template_result = metadata["channel_template_result"]
+                        if hasattr(channel_template_result, "metadata") and channel_template_result:
+                            channel_template_metadata = (
+                                getattr(channel_template_result, "metadata", None) or {}
+                            )
+                            best_pass.parse_result.metadata = self._merge_parse_metadata(
+                                best_pass.parse_result.metadata or {}, channel_template_metadata
+                            )
+
                     result.final_result = best_pass.parse_result
                     result.stopped_at_pass = best_pass.pass_type
                     logger.info(f"Using best available result from {best_pass.pass_type.value}")

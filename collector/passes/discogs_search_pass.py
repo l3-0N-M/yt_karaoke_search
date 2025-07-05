@@ -572,114 +572,56 @@ class DiscogsClient:
     def _calculate_confidence(
         self, item: Dict, result_artist: str, result_title: str, query_artist: str, query_track: str
     ) -> float:
-        """Calculate confidence score for a Discogs match."""
+        """Calculate confidence score for a Discogs match with stricter validation."""
 
-        confidence = 0.0  # Start at zero - must earn confidence
-
-        # Artist name similarity with much stricter matching
+        confidence = 0.0
         artist_similarity = self._text_similarity(
             query_artist.lower(), result_artist.lower(), is_artist=True
         )
 
-        # Apply heavy penalties for non-exact artist matches
-        if artist_similarity < 0.95:
-            artist_similarity *= 0.7  # 30% penalty for non-exact matches
-        if artist_similarity < 0.85:
-            artist_similarity *= 0.5  # 50% additional penalty (total 65% reduction)
         if artist_similarity < 0.75:
-            # Below 75% is likely a wrong artist entirely
-            return 0.0  # Reject completely
+            return 0.0
 
-        confidence += artist_similarity * 0.45  # Increased weight for artist
+        confidence += artist_similarity * 0.5  # Increased weight for artist
 
-        # Track title similarity
         title_similarity = self._text_similarity(query_track.lower(), result_title.lower())
-        confidence += title_similarity * 0.35
+        confidence += title_similarity * 0.4
 
-        # Only apply bonuses if we have strong core matching
-        core_match_score = artist_similarity * 0.45 + title_similarity * 0.35
+        # Penalties for mismatches and compilations
+        if result_artist.lower() in ["various", "various artists", "compilation"]:
+            confidence *= 0.2  # 80% penalty
 
-        # Calculate bonus multiplier based on core match score
-        if core_match_score >= 0.5:
-            bonus_multiplier = min(1.0, (core_match_score - 0.5) * 2)  # Full bonuses above 50%
-        elif core_match_score >= 0.3:
-            bonus_multiplier = (core_match_score - 0.3) * 0.5  # Reduced bonuses 30-50%
-        else:
-            bonus_multiplier = 0.0  # No bonuses below 30%
+        if any(indicator in result_title.lower() for indicator in ["soundtrack", "ost"]):
+            confidence *= 0.5  # 50% penalty
 
-        if core_match_score >= 0.5:  # Apply full bonuses
-            if item.get("master_id"):
-                confidence += 0.05 * bonus_multiplier
-            if item.get("year"):
-                year = item.get("year")
-                current_year = datetime.datetime.now().year
-                # Special handling for recent releases - they might not have much community data
-                if year and int(year) >= current_year - 1:  # Current year and last year
-                    confidence += 0.20 * bonus_multiplier  # Higher bonus for very recent releases
-                elif year and int(year) >= current_year - 2:
-                    confidence += 0.15 * bonus_multiplier  # Bonus for recent releases
-                elif year and int(year) >= current_year - 3:
-                    confidence += 0.10 * bonus_multiplier
-                else:
-                    confidence += 0.05 * bonus_multiplier
-            if item.get("genre"):
-                confidence += 0.05 * bonus_multiplier
-            if item.get("style"):
-                confidence += 0.03 * bonus_multiplier
-
-        # Community popularity (more owned = more reliable)
-        # But don't penalize new releases too much
-        if core_match_score >= 0.3:  # Only apply community bonuses with decent core match
-            community = item.get("community", {})
-            have_count = community.get("have", 0)
-            want_count = community.get("want", 0)
-            year = item.get("year", 0)
-
-            # Adjust expectations for recent releases
-            current_year = datetime.datetime.now().year
-            if year and int(year) >= current_year - 1:
-                # Very new releases - any community data is good
-                if have_count > 5 or want_count > 10:
-                    confidence += 0.15 * bonus_multiplier
-                elif have_count > 0 or want_count > 0:
-                    confidence += 0.1 * bonus_multiplier
-            elif year and int(year) >= current_year - 2:
-                if have_count > 10:
-                    confidence += 0.1 * bonus_multiplier
-                elif have_count > 0:
-                    confidence += 0.05 * bonus_multiplier
-            else:
-                if have_count > 100:
-                    confidence += 0.1 * bonus_multiplier
-                elif have_count > 10:
-                    confidence += 0.05 * bonus_multiplier
-
-        # Special boost for exact matches
-        if artist_similarity >= 0.95 and title_similarity >= 0.95:
-            confidence = min(confidence + 0.2, 1.0)
-
-        # Strong penalty for compilation albums or various artists
-        if result_artist.lower() in [
-            "various",
-            "various artists",
-            "compilation",
-            "soundtrack",
-            "ost",
-        ]:
-            confidence *= 0.3  # 70% penalty - these are almost never correct
-
-        # Check if result title suggests it's from a different context
-        wrong_context_indicators = ["soundtrack", "ost", "score", "theme from", "music from"]
-        if any(indicator in result_title.lower() for indicator in wrong_context_indicators):
-            confidence *= 0.4  # 60% penalty
-
-        # Penalty for results that look like karaoke versions
-        karaoke_indicators = ["karaoke", "instrumental", "backing track", "sing along"]
-        result_text = f"{result_artist} {result_title}".lower()
-        if any(indicator in result_text for indicator in karaoke_indicators):
-            confidence *= 0.5  # 50% penalty - we want original recordings
+        # Bonus for having a master_id
+        if item.get("master_id"):
+            confidence = min(confidence + 0.1, 1.0)
 
         return min(confidence, 1.0)
+
+    def _should_preserve_multi_artist(self, original_artist: str, api_artist: str) -> bool:
+        """Check if we should preserve the original multi-artist string."""
+        if not original_artist or not api_artist:
+            return False
+
+        # Check if original has multiple artists
+        multi_artist_indicators = [",", "&", " feat.", " ft.", " featuring", " x ", " and "]
+        has_multi = any(
+            indicator in original_artist.lower() for indicator in multi_artist_indicators
+        )
+
+        if not has_multi:
+            return False
+
+        # Check if API result has fewer artists than original
+        original_artist_count = len(
+            re.split(r",|&|feat\.|ft\.|featuring| x ", original_artist.lower())
+        )
+        api_artist_count = len(re.split(r",|&|feat\.|ft\.|featuring| x ", api_artist.lower()))
+
+        # If API has fewer artists, preserve original
+        return api_artist_count < original_artist_count
 
     def _text_similarity(self, text1: str, text2: str, is_artist: bool = False) -> float:
         """Enhanced text similarity using multiple strategies.
@@ -1028,6 +970,7 @@ class DiscogsSearchPass(ParsingPass):
             # Create parse result
             discogs_metadata = {
                 "source": "discogs",
+                "metadata_sources": ["discogs"],
                 "discogs_release_id": best_match.release_id,
                 "discogs_master_id": best_match.master_id,
                 "year": best_match.year,
@@ -1049,8 +992,31 @@ class DiscogsSearchPass(ParsingPass):
                 f"year={best_match.year}, genres={best_match.genres}, confidence={best_confidence:.2f}"
             )
 
+            # Preserve original multi-artist string if needed
+            final_artist = best_match.artist_name
+            original_artist = None
+
+            # Get original artist from metadata
+            if metadata and metadata.get("parsed_artist"):
+                original_artist = metadata["parsed_artist"]
+            elif metadata and metadata.get("channel_template_result"):
+                ct_result = metadata["channel_template_result"]
+                if hasattr(ct_result, "artist") and ct_result.artist:
+                    original_artist = ct_result.artist
+
+            # Check if we should preserve multi-artist
+            if original_artist and self.client._should_preserve_multi_artist(
+                original_artist, best_match.artist_name
+            ):
+                final_artist = original_artist
+                logger.debug(
+                    f"Preserving original multi-artist string: {original_artist} instead of {best_match.artist_name}"
+                )
+                discogs_metadata["multi_artist_preserved"] = True
+                discogs_metadata["discogs_artist_name"] = best_match.artist_name
+
             result = ParseResult(
-                artist=best_match.artist_name,
+                artist=final_artist,
                 song_title=best_match.song_title,
                 confidence=best_confidence,
                 metadata=discogs_metadata,
@@ -1087,7 +1053,7 @@ class DiscogsSearchPass(ParsingPass):
             return None
 
     def _extract_search_candidates(self, title: str) -> List[tuple]:
-        """Extract potential artist/track combinations from title."""
+        """Extract potential artist/track combinations from title, with multi-artist support."""
         candidates = []
 
         # Use advanced parser first
@@ -1095,7 +1061,6 @@ class DiscogsSearchPass(ParsingPass):
             try:
                 parse_result = self.advanced_parser.parse_title(title)
                 if parse_result and parse_result.original_artist and parse_result.song_title:
-                    # Normalize the parsed results
                     if self.client:
                         normalized_artist = self.client._normalize_search_query(
                             parse_result.original_artist
@@ -1104,21 +1069,25 @@ class DiscogsSearchPass(ParsingPass):
                             parse_result.song_title
                         )
                     else:
-                        # Fallback to simple normalization if client not available
                         normalized_artist = parse_result.original_artist.strip()
                         normalized_title = parse_result.song_title.strip()
                     candidates.append((normalized_artist, normalized_title))
+
+                    # Handle multi-artist from parser
+                    if "," in normalized_artist or "&" in normalized_artist:
+                        artists = re.split(r",|&", normalized_artist)
+                        for artist in artists:
+                            if len(artist.strip()) > 2:
+                                candidates.append((artist.strip(), normalized_title))
+
             except Exception as e:
                 logger.debug(f"Advanced parser failed: {e}")
 
-        # Common karaoke patterns
+        # Fallback to regex patterns
         patterns = [
-            r"^(.+?)\s*-\s*(.+?)(?:\s*\(.*\))?$",  # Artist - Song (optional parentheses)
-            r"^(.+?)\s*–\s*(.+?)(?:\s*\[.*\])?$",  # Artist – Song (em dash)
-            r"^(.+?)\s*—\s*(.+?)(?:\s*\[.*\])?$",  # Artist — Song (long dash)
-            r"^(.+?)\s*:\s*(.+?)$",  # Artist : Song
-            r"^(.+?)\s*\|\s*(.+?)$",  # Artist | Song
-            r"^(.+?)\s*/\s*(.+?)$",  # Artist / Song
+            r"^(.+?)\s*-\s*(.+?)(?:\s*\(.*\))?$",
+            r"^(.+?)\s*–\s*(.+?)(?:\s*\[.*\])?$",
+            r"^(.+?)\s*—\s*(.+?)(?:\s*\[.*\])?$",
         ]
 
         for pattern in patterns:
@@ -1126,35 +1095,9 @@ class DiscogsSearchPass(ParsingPass):
             if match:
                 artist = match.group(1).strip()
                 track = match.group(2).strip()
-
-                # Clean up common karaoke suffixes
-                track = re.sub(
-                    r"\s*(karaoke|instrumental|backing track|official|video|audio|hd|4k|lyrics?).*$",
-                    "",
-                    track,
-                    flags=re.IGNORECASE,
-                )
-                artist = re.sub(
-                    r"\s*(karaoke|instrumental|backing track|official|video|audio|hd|4k).*$",
-                    "",
-                    artist,
-                    flags=re.IGNORECASE,
-                )
-
-                # Handle "feat." or "ft." in artist name
-                if " feat." in artist.lower() or " ft." in artist.lower():
-                    # Try both with and without featured artist
-                    main_artist = re.split(r"\s+(?:feat\.|ft\.)", artist, flags=re.IGNORECASE)[
-                        0
-                    ].strip()
-                    if main_artist and track and len(main_artist) > 1 and len(track) > 1:
-                        candidates.append((main_artist, track))
-
-                # Also add the full artist name
                 if artist and track and len(artist) > 1 and len(track) > 1:
                     candidates.append((artist, track))
 
-        # Remove duplicates while preserving order
         seen = set()
         unique_candidates = []
         for candidate in candidates:

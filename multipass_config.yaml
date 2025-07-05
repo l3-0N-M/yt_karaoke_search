@@ -17,8 +17,8 @@ search:
 
 # Optional: Adjust scraping settings for channel collection
 scraping:
-  max_concurrent_workers: 5
-  timeout_seconds: 30
+  max_concurrent_workers: 3
+  timeout_seconds: 20
 
 # Optional: Database settings
 database:

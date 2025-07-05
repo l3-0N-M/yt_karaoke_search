@@ -155,6 +155,8 @@ class OptimizedDatabaseManager:
                     musicbrainz_checked BOOLEAN DEFAULT 0,
                     -- Web search metadata
                     web_search_performed BOOLEAN DEFAULT 0,
+                    -- Parsing metadata
+                    parsing_metadata TEXT,  -- JSON string containing swap_corrected, pattern_used, etc.
                     -- Single timestamp
                     scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (channel_id) REFERENCES channels(channel_id)
@@ -350,6 +352,7 @@ class OptimizedDatabaseManager:
                 ("discogs_checked", "BOOLEAN DEFAULT 0"),
                 ("musicbrainz_checked", "BOOLEAN DEFAULT 0"),
                 ("web_search_performed", "BOOLEAN DEFAULT 0"),
+                ("parsing_metadata", "TEXT"),
             ]
 
             for col_name, col_type in columns_to_add:
@@ -362,23 +365,32 @@ class OptimizedDatabaseManager:
 
     @retry_on_database_error()
     def save_video_data(self, result):
-        """Save video data using the optimized schema."""
-        logger.debug(
-            "ENHANCED_DB_FIX_V2: save_video_data called"
-        )  # Version marker to confirm our code is running
+        """Save video data using the optimized schema with final validation."""
+        logger.debug("ENHANCED_DB_FIX_V2: save_video_data called")
         try:
-            # Handle ProcessingResult objects
             if hasattr(result, "video_data"):
                 video_data = result.video_data
             else:
                 video_data = result
 
-            # Transform data to optimized format
             optimized_result = DataTransformer.transform_video_data_to_optimized(video_data)
 
+            # Final validation before saving
+            artist = optimized_result.get("artist")
+            song_title = optimized_result.get("song_title")
+            if artist and song_title:
+                # Simplified swap check
+                song_keywords = ["live", "acoustic", "remix", "medley"]
+                if any(keyword in artist.lower() for keyword in song_keywords) and not any(
+                    keyword in song_title.lower() for keyword in song_keywords
+                ):
+                    logger.warning(
+                        f"Potential artist/title swap detected for video {optimized_result['video_id']}: artist='{artist}', title='{song_title}'"
+                    )
+
             with self.get_connection() as conn:
-                # Ensure channel exists before saving video
                 self._ensure_channel_exists(conn, optimized_result)
+                # ... (rest of the function remains the same)
 
                 # Round values for the optimized schema
                 parse_confidence = optimized_result.get("parse_confidence")
@@ -454,10 +466,51 @@ class OptimizedDatabaseManager:
                 else:
                     optimized_result["discogs_checked"] = optimized_result.get("discogs_checked", 0)
 
-                # Check if MusicBrainz was used
-                if "musicbrainz" in metadata_sources or metadata.get("source") == "musicbrainz":
+                # Extract parsing metadata to store swap detection and other parsing details
+                parsing_metadata = {}
+                if metadata:
+                    # Check for swap detection metadata
+                    if metadata.get("swap_corrected"):
+                        parsing_metadata["swap_corrected"] = True
+                        parsing_metadata["swap_confidence"] = metadata.get("swap_confidence", 0.0)
+
+                    # Include pattern used, parsing method, and other useful metadata
+                    if metadata.get("pattern_used"):
+                        parsing_metadata["pattern_used"] = metadata.get("pattern_used")
+                    if metadata.get("method"):
+                        parsing_metadata["method"] = metadata.get("method")
+                    if metadata.get("multi_artist_preserved"):
+                        parsing_metadata["multi_artist_preserved"] = True
+                    if metadata.get("source"):
+                        parsing_metadata["source"] = metadata.get("source")
+
+                # Store as JSON string
+                import json
+
+                parsing_metadata_json = json.dumps(parsing_metadata) if parsing_metadata else None
+
+                # Check if MusicBrainz was used - check for MB-specific fields
+                # This is more reliable than checking source since Discogs enrichment can overwrite it
+                mb_fields = [
+                    "musicbrainz_recording_id",
+                    "musicbrainz_artist_id",
+                    "musicbrainz_artist_name",
+                    "musicbrainz_score",
+                    "mb_score",
+                ]
+
+                # Check if any MusicBrainz fields exist in metadata
+                has_mb_data = any(metadata.get(field) for field in mb_fields)
+
+                if (
+                    has_mb_data
+                    or "musicbrainz" in metadata_sources
+                    or metadata.get("source") == "musicbrainz"
+                ):
                     optimized_result["musicbrainz_checked"] = 1
-                    logger.info(f"Setting musicbrainz_checked=1 for {video_id}")
+                    logger.info(
+                        f"Setting musicbrainz_checked=1 for {video_id} (has_mb_data={has_mb_data})"
+                    )
                 else:
                     optimized_result["musicbrainz_checked"] = optimized_result.get(
                         "musicbrainz_checked", 0
@@ -651,6 +704,7 @@ class OptimizedDatabaseManager:
                     safe_convert(optimized_result.get("discogs_checked", 0)),
                     safe_convert(optimized_result.get("musicbrainz_checked", 0)),
                     safe_convert(optimized_result.get("web_search_performed", 0)),
+                    safe_convert(parsing_metadata_json),
                     datetime.now(),
                 ]
 
@@ -725,8 +779,8 @@ class OptimizedDatabaseManager:
                             discogs_artist_id, discogs_artist_name, discogs_release_id,
                             discogs_release_title, discogs_release_year, discogs_label,
                             discogs_genre, discogs_style, discogs_checked,
-                            musicbrainz_checked, web_search_performed, scraped_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            musicbrainz_checked, web_search_performed, parsing_metadata, scraped_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         params,
                     )

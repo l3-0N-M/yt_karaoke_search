@@ -175,6 +175,15 @@ class DataTransformer:
                     ratio = like_count / view_count
                 transformed["engagement_ratio"] = round(ratio * 100, 3)
 
+        # CRITICAL FIX: Preserve the original metadata field for parsing metadata extraction
+        # This ensures that metadata from parsing passes (like pattern_used, swap_corrected, etc.)
+        # is available when the database manager extracts it for the parsing_metadata column
+        if "metadata" in video_data and video_data["metadata"]:
+            transformed["metadata"] = video_data["metadata"]
+            logger.debug(
+                f"Preserved metadata field with keys: {list(video_data['metadata'].keys())}"
+            )
+
         return transformed
 
     @staticmethod

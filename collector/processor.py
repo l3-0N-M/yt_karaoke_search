@@ -172,6 +172,11 @@ class VideoProcessor:
         warnings = []
         video_url = video_info.get("url")
 
+        if not video_url:
+            return ProcessingResult(
+                {}, 0.0, time.time() - start_time, ["No video URL provided"], []
+            )
+
         try:
             # Rotate UA for each video extraction to stay under radar
             self.yt_dlp_opts["user_agent"] = random.choice(self.config.scraping.user_agents)
@@ -896,16 +901,22 @@ class VideoProcessor:
         # Don't accept current year as it's likely the upload year
         max_acceptable_year = current_year - 1
 
+        # First, remove false positive patterns
+        # Remove playlist references like "2000's Karaoke Playlist"
+        combined_text = re.sub(r"\b\d{4}'s\s+\w+\s+[Pp]laylist", "", combined_text)
+        # Remove decade references like "1990's hits"
+        combined_text = re.sub(r"\b\d{4}'s\b", "", combined_text)
+
         # Year patterns (prioritized by reliability)
         year_patterns = [
             r"\((\d{4})\)",  # (1985) - most reliable
             r"\[(\d{4})\]",  # [1985] - second most reliable
-            r"\b(\d{4})\b",  # standalone year - less reliable
             r"from\s+(\d{4})",  # "from 1985"
             r"released\s+(\d{4})",  # "released 1985"
             r"(\d{4})\s+version",  # "1985 version"
             r"circa\s+(\d{4})",  # "circa 1985"
-            r"(\d{4})s",  # "1980s" -> extract 1980
+            # Removed standalone \b(\d{4})\b pattern as it's too prone to false positives
+            # Removed (\d{4})s pattern as it was matching decade references
         ]
 
         found_years = []
